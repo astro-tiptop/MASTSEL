@@ -11,11 +11,12 @@ L0_Value = 25.0 # [m]
 Cn2_Value = [0.5, 0.5] # 
 heights_Cn2 = [5000,15000, 10000] # [m]
 #####SENSOR#####
-#Sensor 2x2 subapertures N_sa,tot=4
+#Sensor 2x2 subapertures 
+N_sa_tot=4
 SensingWavelength = 1650*1e-9 #[m]
 
-SensorFrameRate = 500 # (= loop frequency): [500 Hz]  # , 250 Hz or 100 Hz (to be optimized)
-#Corresponding delays (in frames):     [3]       # , 2, 1 
+SensorFrameRate = 500   # (= loop frequency): [500 Hz]  # , 250 Hz or 100 Hz (to be optimized)
+loopDelaySteps = 3      #Corresponding delays (in frames):     [3]       # , 2, 1 
 # dove sono usati? per ogni psf hai la FWHM in mas, con questi posso convertire in pixels
 pixel_scale = 40 # [mas]
 Npix_per_subap = 50 #
@@ -32,7 +33,6 @@ NewValueThrPix = 0
 #Gains to be explored: linear vector from 0.01 to 0.99
 #Directions for total jitter residual estimation (cartesian in arcsec): sono direzioni di puntamento, mappa 3x3
 #[0,0], [5,-5], [5,5], [-5,5], [-5,-5], [15,-15], [15,15], [-15,15], [-15,-15]
-
 cartTestPointingCoords = np.asarray([5,5])
 
 #####NGS#####
