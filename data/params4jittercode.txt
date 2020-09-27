@@ -1,0 +1,39 @@
+#####TELESCOPE#####
+Telescope diameter = 8 m
+DM height = 10000 m
+MCAO FoV (diameter) = 120 arcsec
+
+#####ATMOSPHERE#####
+Wind speed = 9 m/s
+r0 = 0.15 m
+L0 = 25 m
+Cn2 (relative) = [0.5, 0.5]
+heights Cn2 = [5000,15000] m
+
+#####SENSOR#####
+Sensor 2x2 subapertures
+Sensing wavelength = 1650 nm
+Sensor frame rate (= loop frequency): 500 Hz, 250 Hz or 100 Hz (to be optimized)
+Corresponding delays (in frames): 3, 2, 1
+pixel scale = 40 mas
+Npix per subap = 50
+Window radius for WCoG = 2 pixels
+RON = 0.5 e-
+Excess noise factor = 1.3
+Dark = 30 e-/s/pix
+Background = 35 e-/s/pix
+Threshold WCoG = 0
+New value for thresholded pixels = 0
+
+#####NGS#####
+NGS coordinates (polar in [arcsec,degrees]): [30,0], [50,100],[10,240]
+NGS flux (e-/s/subaperture): 10000, 30000, 5000
+NGS SR@1650 nm: 0.4, 0.2, 0.6
+NGS FWHM (mas): 90, 110, 85 
+
+#####OTHERS#####
+PSD wind/vibration: the one for MAVIS (forest of peaks)
+Gains to be explored: linear vector from 0.01 to 0.99
+Threshold for TSVD: 5% of the maximum singular value
+Directions for total jitter residual estimation (cartesian in arcsec):
+[0,0], [5,-5], [5,5], [-5,5], [-5,-5], [15,-15], [15,15], [-15,15], [-15,-15]
