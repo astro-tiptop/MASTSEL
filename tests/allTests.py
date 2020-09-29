@@ -1,9 +1,4 @@
-DEV_PATH = '/home/frossi/dev/'
-import sys
-if not DEV_PATH in sys.path:
-    sys.path.append(DEV_PATH)
-
-from MASTSEL.mavis import *
+from mavis import *
 import unittest
 
 

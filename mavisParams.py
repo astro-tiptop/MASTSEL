@@ -1,5 +1,3 @@
-from MASTSEL.mavisUtilities import *
-
 #####TELESCOPE#####
 TelescopeDiameter = 8.0 #[m]
 DM_height = 10000 # [m]

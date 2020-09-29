@@ -1,6 +1,6 @@
-from MASTSEL.mavisUtilities import *
-from MASTSEL.mavisParams import *
-from MASTSEL.mavisFormulas import *
+from mavisUtilities import *
+from mavisParams import *
+from mavisFormulas import *
 
 import multiprocessing as mp
 
@@ -758,10 +758,18 @@ def ellipsesFromCovMats(Ctot):
 
     
     def computeCovEllispse(CC):
-        th = leq1(CC[0,0], CC[1,1], CC[1,0])
+        th = leq1(CC[0,0], CC[1,1], CC[1,0])        
         s1 = leq2(CC[0,0], CC[1,1], CC[1,0], th)
         s2 = leq3(CC[0,0], CC[1,1], s1)
-        return th, s1, s2
+        if s2>=s1:
+            th += np.pi/2.0
+            smax = s2
+            smin = s1
+        else:
+            smax = s1
+            smin = s2
+        scale = (np.pi/(180*3600*1000) * TelescopeDiameter / (4*1e-9))        
+        return th, np.sqrt(smax)/scale, np.sqrt(smin)/scale
 
     
     def computeCovEllispses(Ctot):
