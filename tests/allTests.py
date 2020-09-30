@@ -70,7 +70,7 @@ class TestWindResiduals(unittest.TestCase):
         NGS_flux = [10000, 30000, 5000]
         NGS_SR_1650 = [0.4, 0.2, 0.6]
         NGS_FWHM_mas = [90, 110, 85]
-        mItGPU = Integrator('', cp, cp.float64)
+        mItGPU = Integrator(cp, cp.float64, '')
         r1 = computeBias(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0], mItGPU)
         r2 = computeBias(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1], mItGPU)
         r3 = computeBias(NGS_flux[2], NGS_SR_1650[2], NGS_FWHM_mas[2], mItGPU)

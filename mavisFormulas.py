@@ -4,28 +4,28 @@ from zernike import *
 
 def createMavisFormulary():
 
+    # define a set of symbols and functions with unique representations
+    
     rho = sp.symbols('rho', positive=True)
     theta = sp.symbols('theta', real=True)
-
-    f, f_min, f_max, f_loop = sp.symbols('f f_min f_max f_loop', real=True, positive=True)
+    f, f_min, f_max, f_loop = sp.symbols('f f_min f_max f_loop', positive=True)
     z = sp.symbols('z', real=False)
     d = sp.symbols('d', integer=True)
-
     k, k_y, k_y_min, k_y_max, r0, L0, k0, V, R = sp.symbols('k k_y k_y_min k_y_max r_0 L_0 k_0 V R', positive=True)
-    
     C, D, Nsa = sp.symbols('C D N_sa\,tot', real=True, positive=True)
     sigma_w = sp.symbols('sigma^2_WCoG')
     mu_w = sp.symbols('mu_WCoG')
     df, DF = sp.symbols('df Delta_F')
     
+    
     N_NGS = sp.symbols('N_NGS', integer=True, positive=True)
     H_DM, DP, r_FoV = sp.symbols('H_DM D\' r_FoV', real=True)
     x_NGS, y_NGS = sp.symbols('x_NGS y_NGS', real=True)
 
-    phi_noise_tip_f = sp.Function( 'phi^noise_Tip')(f)
-    phi_noise_tilt_f = sp.Function( 'phi^noise_Tilt')(f)
-    phi_turb_tip_f = sp.Function( 'phi^turb_Tip')(f)    
-    phi_turb_tilt_f = sp.Function( 'phi^turb_Tilt')(f)    
+    phi_noise_tip_f = sp.Function( 'phi^noise_Tip^f')(f)
+    phi_noise_tilt_f = sp.Function( 'phi^noise_Tilt^f')(f)
+    phi_turb_tip_f = sp.Function( 'phi^turb_Tip^f')(f)    
+    phi_turb_tilt_f = sp.Function( 'phi^turb_Tilt^f')(f)    
 
     res, e_tip, e_tilt = sp.symbols('res epsilon_Tip epsilon_Tilt', real=True, positive=True)
     phi_res_tip = sp.symbols( 'phi^res_Tip')
@@ -40,18 +40,26 @@ def createMavisFormulary():
     H_R_tilt = sp.symbols( 'H^R_Tilt')
     H_N_tilt = sp.symbols( 'H^N_Tilt')
     
-    H_R_tipf = sp.Function( 'H^R_Tip')(f)
-    H_R_tiltf = sp.Function( 'H^R_Tilt')(f)
-    H_N_tipf = sp.Function( 'H^N_Tip')(f)
-    H_N_tiltf = sp.Function( 'H^N_Tilt')(f)
+    H_R_tipf = sp.Function( 'H^R_Tip^f')(f)
+    H_R_tiltf = sp.Function( 'H^R_Tilt^f')(f)
+    H_N_tipf = sp.Function( 'H^N_Tip^f')(f)
+    H_N_tiltf = sp.Function( 'H^N_Tilt^f')(f)
+    H_R_tipz = sp.Function( 'H^R_Tip^z')(z)
+    H_R_tiltz = sp.Function( 'H^R_Tilt^z')(z)
+    H_N_tipz = sp.Function( 'H^N_Tip^z')(z)
+    H_N_tiltz = sp.Function( 'H^N_Tilt^z')(z)
+    
 
-    H_R_tipz = sp.Function( 'H^R_Tip')(z)
-    H_R_tiltz = sp.Function( 'H^R_Tilt')(z)
-    H_N_tipz = sp.Function( 'H^N_Tip')(z)
-    H_N_tiltz = sp.Function( 'H^N_Tilt')(z)
+    dW_phi = sp.Function('dW_phi')(rho)
+    W_phi = sp.Function('W_phi')(rho)
+
 
     g_0_tip, g_1_tip, g_0_tilt, g_1_tilt = sp.symbols('g^Tip_0 g^Tip_1 g^Tilt_0 g^Tilt_1', real=True)
-
+    
+    hh, z1, z2 = sp.symbols('h z_1 z_2', positive=True)
+    jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
+    R1, R2 = sp.symbols('R_1 R_2', positive=True)
+    
     def noisePropagationCoefficient():
         expr0 = ((sp.pi/(180*3600*1000) * D / (4*1e-9)))**2/Nsa
         return sp.Eq(C, expr0)
@@ -172,14 +180,14 @@ def createMavisFormulary():
         completeIntegralTiltV = subsParamsByName( completeIntegralTiltV, {'H^R_Tilt':tfTiltWind().rhs, 'H^N_Tilt':tfTiltNoise().rhs} )
         return completeIntegralTiltV
 
+    def zernikeCovarianceI():
+        _integrand = zernikeCovarianceD().rhs
+        _rhs = sp.Integral(_integrand, (f, f_min, f_max))
+        return sp.Eq(W_phi, _rhs)
+    
     def zernikeCovarianceD():
-        f = sp.symbols('f', positive=True)
-        hh, z1, z2 = sp.symbols('h z_1 z_2', positive=True)
-        jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
-        R1, R2 = sp.symbols('R_1 R_2', positive=True)
         f0 = (-1)**mk * sp.sqrt((nj+1)*(nk+1)) * sp.I**(nj+nk) * 2 ** ( 1 - 0.5*((sp.KroneckerDelta(0,mj) + sp.KroneckerDelta(0,mk))) )
         f1 = 1 / (sp.pi * R1 * R2) 
-        r0, L0, k0 = sp.symbols('r_0 L_0 k_0', positive=True)
         ff0 = 1 / L0
         with sp.evaluate(False):
             psd_def = 0.0229*r0**(-sp.S(5)/sp.S(3))*(f**2+ff0**2)**(-sp.S(11)/sp.S(6))
@@ -188,8 +196,7 @@ def createMavisFormulary():
         f5 = sp.cos( (mj-mk)*theta + (sp.pi/4) * ( (1-sp.KroneckerDelta(0, mj)) * ((-1)**jj-1) - (1-sp.KroneckerDelta(0, mk)) * ((-1)**kk-1)) )
         f6 = sp.I**(3*sp.Abs(mj-mk)) * sp.besselj( sp.Abs(mj-mk), 2*sp.pi*f*hh*rho)    
         _rhs = f0 * f1 * (psd_def * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R1) * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R2) / f) * (f3*f4+f5*f6)    
-        _lhs = sp.Function('dW_phi')(rho)
-        return sp.Eq(_lhs, _rhs)
+        return sp.Eq(dW_phi, _rhs)
 
     def expr_phi():
         x = sp.symbols('x', real=True)
@@ -337,6 +344,7 @@ def createMavisFormulary():
                              'completeIntegralTip',
                              'completeIntegralTilt',                            
                              'ZernikeCovarianceD', 
+                             'ZernikeCovarianceI', 
                              'TruncatedMeanBasic', 
                              'TruncatedVarianceBasic',
                              'TruncatedMean', 
@@ -375,6 +383,7 @@ def createMavisFormulary():
                              completeIntegralTip(),
                              completeIntegralTilt(),                            
                              zernikeCovarianceD(),
+                             zernikeCovarianceI(), 
                              truncatedMeanBasic(), 
                              truncatedVarianceBasic(),
                              truncatedMean(), 

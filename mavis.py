@@ -443,6 +443,9 @@ def specializedWindFuncs():
     return fTipS1, fTiltS1
 
 
+zernikeCov_rh1 = MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
+zernikeCov_lh1 = MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
+
 def buildSpecializedCovFunctions():
     covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
     cov_expr={}
@@ -464,8 +467,6 @@ sTurbPSDTip, sTurbPSDTilt = specializedTurbFuncs()
 fCValue = specializedC_coefficient()
 fTipS_LO, fTiltS_LO = specializedNoiseFuncs()
 fTipS, fTiltS = specializedWindFuncs()
-zernikeCov_rh1 = MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
-zernikeCov_lh1 = MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
 specializedCovExprs = buildSpecializedCovFunctions()
 
 # utility functions
@@ -481,7 +482,8 @@ def intRebin(arr, new_shape):
 
 
 # numerical part
-mItGPU = Integrator('', cp, cp.float64)
+mItGPU = Integrator(cp, cp.float64, '')
+mItCPU = Integrator(np, np.float64, '')
 
 def buildReconstuctor(aCartPointingCoords, aCartNGSCoords):
     P, P_func = specializedIM()
@@ -561,13 +563,13 @@ def computeBias(aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas, mIt):
 
 
 def computeWindPSDs(fmin, fmax, freq_samples):
-    mIt = mItGPU #Integrator('', cp, cp.float64)
+    mIt = mItGPU
     paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
     scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
-    xplot1, zplot1 = mIt.IntegralEval(sTurbPSDTip.lhs, sTurbPSDTip.rhs, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
+    xplot1, zplot1 = mIt.IntegralEvalE(sTurbPSDTip, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
     psd_freq = xplot1[0]
     psd_tip_wind = zplot1*scaleFactor
-    xplot1, zplot1 = mIt.IntegralEval(sTurbPSDTilt.lhs, sTurbPSDTilt.rhs, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
+    xplot1, zplot1 = mIt.IntegralEvalE(sTurbPSDTilt, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
     psd_tilt_wind = zplot1*scaleFactor
     return psd_tip_wind, psd_tilt_wind
 
@@ -646,7 +648,6 @@ def covValue(ii,jj, polarPointingCoordsDifference, li, mIt):
     return zplot1[0]
 
 
-mItCPU = Integrator('', np, np.float64)
 def computeCovMatrices( aCartPointingCoords, aCartNGSCoords):
     scaleF = (500.0/(2*np.pi))**2
     matCaaValue = np.zeros((2,2), dtype=np.float64)
