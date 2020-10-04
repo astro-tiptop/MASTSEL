@@ -12,7 +12,7 @@ def createMavisFormulary():
     z = sp.symbols('z', real=False)
     d = sp.symbols('d', integer=True)
     k, k_y, k_y_min, k_y_max, r0, L0, k0, V, R = sp.symbols('k k_y k_y_min k_y_max r_0 L_0 k_0 V R', positive=True)
-    C, D, Nsa = sp.symbols('C D N_sa\,tot', real=True, positive=True)
+    C, D, Nsa = sp.symbols('C D N_sa_tot', real=True, positive=True)
     sigma_w = sp.symbols('sigma^2_WCoG')
     mu_w = sp.symbols('mu_WCoG')
     df, DF = sp.symbols('df Delta_F')
@@ -61,7 +61,7 @@ def createMavisFormulary():
     R1, R2 = sp.symbols('R_1 R_2', positive=True)
     
     def noisePropagationCoefficient():
-        expr0 = ((sp.pi/(180*3600*1000) * D / (4*1e-9)))**2/Nsa
+        expr0 = ((sp.S.Pi/(180*3600*1000) * D / (4*1e-9)))**2/Nsa
         return sp.Eq(C, expr0)
 
     def noisePSDTip():
@@ -222,7 +222,7 @@ def createMavisFormulary():
         f3 = subsParamsByName( expr_Phi(), {'x': (t-(i-b))/sigma_ron})
         fK = expr_K_i
         _rhs = sp.Sum(fK * ( sigma_ron * f1  + (i-b) * f2 + nu * f3 ) , (i, 0, i_max))
-        _lhs = sp.symbols('mu_k\,thr')
+        _lhs = sp.symbols('mu_k_thr')
         return sp.Eq(_lhs, _rhs)
 
     def truncatedVarianceBasic():
@@ -236,7 +236,7 @@ def createMavisFormulary():
         f3 = subsParamsByName( expr_Phi(), {'x': (t-(i-b))/sigma_ron})
         fK = expr_K_i
         _rhs = sp.Sum(fK * ( sigma_ron * (t+i-b) * f1 + (sigma_ron**2 + (i-b)**2) * f2 + nu**2 * f3 ) , (i, 0, i_max)) - mu_k**2
-        _lhs = sp.symbols('sigma^2_k\,thr')
+        _lhs = sp.symbols('sigma^2_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
@@ -249,7 +249,7 @@ def createMavisFormulary():
         f5 = subsParamsByName(expr_Phi(), {'x': (z-b-t)/sigma_ron})
         f6 = subsParamsByName(expr_Phi(), {'x': (t-(z-b))/sigma_ron})
         _rhs = expr_G() * ( sigma_ron * f4 + (z-b) * f5 + nu * f6 )
-        _lhs = sp.symbols('I_mu_k\,thr')
+        _lhs = sp.symbols('I_mu_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
@@ -262,11 +262,11 @@ def createMavisFormulary():
         f5 = subsParamsByName(expr_Phi(), {'x': (z-b-t)/sigma_ron})
         f6 = subsParamsByName(expr_Phi(), {'x': (t-(z-b))/sigma_ron})
         _rhs = expr_G() * ( sigma_ron * (t+z-b) * f4 + (sigma_ron**2 + (z-b)**2) * f5 + nu**2 * f6 )
-        _lhs = sp.symbols('I_sigma_k\,thr')
-        return sp.relational.Eq(_lhs, _rhs)
+        _lhs = sp.symbols('I_sigma_k_thr')
+        return sp.Eq(_lhs, _rhs)
 
 
-    def truncatedMeanComponents():
+    def truncatedMeanComponents(ii):
         F, z = sp.symbols('F z', real=True)
         i = sp.symbols('i', integer=True, positive=True)
         f_k = sp.symbols('f_k', real=True)
@@ -277,20 +277,24 @@ def createMavisFormulary():
         f3 = subsParamsByName(expr_Phi(), {'x': (t+b)/sigma_ron})
         z_max = sp.symbols('z_max')
         expr10 = sp.exp(-(f_k+b)) * ( sigma_ron * f1  - b * f2 + nu * f3 )
-        _integrand = subsParamsByName(truncatedMeanIntegrand().rhs, {'z':z, 'i':i} )
-        return (expr10, expr_K_i, sp.Integral( _integrand, (z, 0.0001, z_max)))
-
+        _integrand = subsParamsByName(truncatedMeanIntegrand().rhs, {'z':z, 'i':i} )        
+        if ii==0:
+            return expr10
+        elif ii==1:
+            return expr_K_i
+        elif ii==2:
+            return sp.Integral( _integrand, (z, 0.0001, z_max))
 
     def truncatedMean():
-        expr10, expr_K_i, integral =  truncatedMeanComponents()
+        expr10, expr_K_i, integral =  truncatedMeanComponents(0), truncatedMeanComponents(1), truncatedMeanComponents(2)
         i_max = sp.symbols('i_max', integer=True, positive=True)
         i = getSymbolByName(expr_K_i, 'i')
         _rhs = expr10 + sp.Sum( expr_K_i *  integral , (i, 1, i_max) )
-        _lhs = sp.symbols('mu_k\,thr')
+        _lhs = sp.symbols('mu_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
-    def truncatedVarianceComponents():
+    def truncatedVarianceComponents(ii):
         F, z = sp.symbols('F z', real=True)
         i = sp.symbols('i', integer=True, positive=True)
         f_k = sp.symbols('f_k', real=True)
@@ -301,17 +305,22 @@ def createMavisFormulary():
         f3 = subsParamsByName(expr_Phi(), {'x': (t+b)/sigma_ron})
         z_max = sp.symbols('z_max')
         expr20 = sp.exp(-(f_k+b)) * (sigma_ron * (t-b) * f1 + (sigma_ron**2 + b**2) * f2 + nu**2 * f3)
-        _integrand = subsParamsByName(truncatedVarianceIntegrand().rhs, {'z':z, 'i':i} )    
-        return (expr20, expr_K_i, sp.Integral( _integrand, (z, 0.0001, z_max)))
+        _integrand = subsParamsByName(truncatedVarianceIntegrand().rhs, {'z':z, 'i':i} )
+        if ii==0:
+            return expr20
+        elif ii==1:
+            return expr_K_i
+        elif ii==2:
+            return sp.Integral( _integrand, (z, 0.0001, z_max))
 
 
     def truncatedVariance():
-        expr20, expr_K_i, integral =  truncatedVarianceComponents()
+        expr20, expr_K_i, integral =  truncatedVarianceComponents(0), truncatedVarianceComponents(1), truncatedVarianceComponents(2)
         i_max = sp.symbols('i_max', integer=True, positive=True)
         mu_k = sp.symbols('mu_k_thr')
         i = getSymbolByName(expr_K_i, 'i')
         _rhs = expr20 + sp.Sum(expr_K_i*integral , (i, 1, i_max)) - mu_k**2
-        _lhs = sp.symbols('sigma^2_k\,thr')
+        _lhs = sp.symbols('sigma^2_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
@@ -351,8 +360,12 @@ def createMavisFormulary():
                              'TruncatedMeanIntegrand', 
                              'TruncatedVariance',
                              'TruncatedVarianceIntegrand',
-                             'truncatedMeanComponents',
-                             'truncatedVarianceComponents',
+                             'truncatedMeanComponents0',
+                             'truncatedMeanComponents1',
+                             'truncatedMeanComponents2',
+                             'truncatedVarianceComponents0',
+                             'truncatedVarianceComponents1',
+                             'truncatedVarianceComponents2'
                             ],
                             [
                              noisePropagationCoefficient(),
@@ -390,18 +403,15 @@ def createMavisFormulary():
                              truncatedMeanIntegrand(), 
                              truncatedVariance(),
                              truncatedVarianceIntegrand(),
-                             truncatedMeanComponents(),
-                             truncatedVarianceComponents()   
+                             truncatedMeanComponents(0),
+                             truncatedMeanComponents(1),
+                             truncatedMeanComponents(2),
+                             truncatedVarianceComponents(0),
+                             truncatedVarianceComponents(1),
+                             truncatedVarianceComponents(2)
                            ] )
 
     return _MavisFormulas
 
 MavisFormulas = createMavisFormulary()
 mf = MavisFormulas
-
-# Covariance between zernike modes
-def cov_expr_jk(expr, jj_value, kk_value):
-    nj_value, mj_value = noll_to_zern(jj_value)
-    nk_value, mk_value = noll_to_zern(kk_value)
-    rexpr = subsParamsByName(expr, {'j': jj_value, 'k': kk_value, 'n_j': nj_value, 'm_j': abs(mj_value), 'n_k': nk_value, 'm_k': abs(mk_value)})
-    return rexpr

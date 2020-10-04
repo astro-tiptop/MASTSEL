@@ -409,7 +409,7 @@ def specializedMeanVarFormulas(kind):
     dd0 = {'t':ThresholdWCoG, 'nu':NewValueThrPix, 'sigma_RON':sigmaRON}
     dd1 = {'b':Dark/SensorFrameRate}
     dd2 = {'F':ExcessNoiseFactor}
-    expr0, exprK, integral = mf[kind]
+    expr0, exprK, integral = mf[kind+"0"], mf[kind+"1"], mf[kind+"2"]
     expr0 = subsParamsByName( expr0, {**dd0, **dd1} )
     exprK = subsParamsByName( exprK, {**dd1} )
     integral = subsParamsByName( integral,  {**dd0, **dd1, **dd2} )
@@ -425,7 +425,7 @@ def specializedTurbFuncs():
 
 def specializedC_coefficient():
     ffC = mf['noisePropagationCoefficient'].rhs
-    fCValue1 = subsParamsByName(ffC, {'D':TelescopeDiameter, 'N_sa,tot':N_sa_tot })
+    fCValue1 = subsParamsByName(ffC, {'D':TelescopeDiameter, 'N_sa_tot':N_sa_tot })
     return fCValue1
 
 
