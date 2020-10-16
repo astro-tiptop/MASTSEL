@@ -20,7 +20,12 @@ sigmaToFWHM = 2 * np.sqrt(2.0 * np.log(2.0))
 
 def cartesianToPolar(x):
     return np.asarray( [np.sqrt(x[0]**2+x[1]**2), np.arctan2(x[1],x[0])*radToDeg], dtype=np.float64 )
-    
+
+
+def cartesianToPolar2(x):
+    return np.asarray( [np.sqrt(x[:,0]**2+x[:,1]**2), np.arctan2(x[:,1],x[:,0])*radToDeg], dtype=np.float64 ).transpose()
+
+
 
 def polarToCartesian(x):
     return x[0] * np.asarray( [np.cos(x[1]*degToRad), np.sin(x[1]*degToRad)], dtype=np.float64 )
@@ -191,3 +196,27 @@ def twoPsfsPlot(result, myResult):
     plt.plot(myResult[:, myResult.shape[0] // 2])
     plt.show()
 
+
+def simple2Dgaussian(x, y, x0=0.0, y0=0.0, sg=1.0):
+    return np.exp(-((x-x0)**2)/(2*sg**2)-((y-y0)**2)/(2*sg**2) )
+
+def intRebin(arr, new_shape):
+    shape = (new_shape[0], arr.shape[0] // new_shape[0],
+             new_shape[1], arr.shape[1] // new_shape[1])
+    return arr.reshape(shape).mean(-1).mean(1)
+
+    
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
+def plotEllipses(cartPointingCoords, cov_ellipses, ss):
+    nPointings = cov_ellipses.shape[0]
+    ells = [Ellipse(xy=cartPointingCoords[i],  width=cov_ellipses[i,1]*ss, height=cov_ellipses[i,2]*ss, angle=cov_ellipses[i,0]*180/np.pi) for i in range(nPointings)]
+    fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
+    for e in ells:
+        ax.add_artist(e)
+        e.set_clip_box(ax.bbox)
+        #e.set_facecolor(np.random.rand(3))
+    ax.set_xlim(-20, 20)
+    ax.set_ylim(-20, 20)
+    plt.show()
