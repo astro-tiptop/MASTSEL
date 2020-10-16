@@ -1,19 +1,17 @@
 from mavisUtilities import *
 from mavisFormulas import *
-
 import multiprocessing as mp
 import functools
 
-class MavisLO(object):
 
+class MavisLO(object):
+    
     def __init__(self, path, parametersFile):
-        
         namespace = {}
         params_module = __import__(parametersFile, globals(), locals())
         exec( open(path + parametersFile + ".py").read(), namespace)
         globals().update(vars(params_module))
         globals().update(namespace)
-
 #
 # SETTING PARAMETERS READ FROM FILE       
 #
@@ -71,6 +69,14 @@ class MavisLO(object):
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
+
+        # self.r0_Value = 0.15 # old value 
+        self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
+        #  print(self.r0_Value) # 0.1677620373333333
+        
+        self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+        # print('WindSpeed', self.WindSpeed) # result is 11.94
+        #self.WindSpeed = 9.0 # old value
         
         self.mutex = None
         self.imax = 30
@@ -85,24 +91,22 @@ class MavisLO(object):
         self.mediumGridSize = int(self.largeGridSize/self.downsample_factor)
         self.mediumShape = (self.mediumGridSize,self.mediumGridSize)
         self.mediumPixelScale = self.pixel_scale_LO/self.downsample_factor
-
         self.zernikeCov_rh1 = MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_lh1 = MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
-
         # could use momoize instead, for now global
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.fCValue = self.specializedC_coefficient()
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
         self.specializedCovExprs = self.buildSpecializedCovFunctions()
-
-
         self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
         self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
 
+        self.mItGPU = Integrator(cp, cp.float64, '')
+        self.mItGPUcomplex = Integrator(cp, cp.complex64, '')
+        
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
-    
     def specializedIM(self, alib=cpulib):
         apIM = mf['interactionMatrixNGS']
         apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.technical_FoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
@@ -125,12 +129,8 @@ class MavisLO(object):
     
     
     def specializedTurbFuncs(self):
-        # WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0) * np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-        # print('WindSpeed', WindSpeed)
-        WindSpeed = 9.0 # old value
-        r0_Value = 0.15 # new: 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
-        aTurbPSDTip = subsParamsByName(mf['turbPSDTip'], {'V':WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
-        aTurbPSDTilt = subsParamsByName(mf['turbPSDTilt'], {'V':WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        aTurbPSDTip = subsParamsByName(mf['turbPSDTip'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        aTurbPSDTilt = subsParamsByName(mf['turbPSDTilt'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
         return aTurbPSDTip, aTurbPSDTilt
 
     
@@ -155,11 +155,10 @@ class MavisLO(object):
     
     
     def buildSpecializedCovFunctions(self):
-        r0_Value = 0.15 # new: 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
         covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
         p = sp.symbols('p', real=False)
         cov_expr={}
-        paramDictBaseCov = { 'L_0': self.L0, 'r_0': r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0} 
+        paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0} 
         for ii in [2,3]:
             for jj in [2,3]:
                 aa = subsParamsByName(cov_expr_jk(self.zernikeCov_rh1, ii, jj), paramDictBaseCov)
@@ -168,14 +167,6 @@ class MavisLO(object):
                 cov_expr[ii+10*jj] = aaint
 
         return cov_expr
-
-    # utility function
-
-    # numerical part
-    # mItGPU = Integrator(cp, cp.float64, '')
-    # mItGPUcomplex = Integrator(cp, cp.complex128, '')
-    # mItCPU = Integrator(np, np.float64, '')
-    # mItCPUcomplex = Integrator(np, np.complex128, '')
 
     
     def buildReconstuctor(self, aCartPointingCoords, aCartNGSCoords):
@@ -209,28 +200,27 @@ class MavisLO(object):
         return R_1, R_1.transpose()
 
     
-    
-    def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, mIt):
+    def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM):
         gaussianPoints = gaussianPointsM.reshape(self.smallGridSize*self.smallGridSize)
         aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
         lh = sp.Function('B')(getSymbolByName(aFunction, 'f_k'))
-        xplot1, zplot1 = mIt.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints, 'linear'), (self.imax, 'linear')], 'raw')
-        ssx, s0 = mIt.functionEval(expr0, paramsAndRanges )
+        xplot1, zplot1 = self.mItGPU.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints, 'linear'), (self.imax, 'linear')], 'raw')
+        ssx, s0 = self.mItGPU.functionEval(expr0, paramsAndRanges )
         zplot1 = zplot1 + s0
         zplot1 = zplot1.reshape((self.smallGridSize,self.smallGridSize))
         return xplot1, zplot1
 
     
-    def meanVarSigma(self, gaussianPoints, mIt):
-        xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints, mIt)
-        xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints, mIt)
+    def meanVarSigma(self, gaussianPoints):
+        xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints)
+        xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints)
         var_ktr_array = var_ktr_array - mu_ktr_array**2
         sigma_ktr_array = np.sqrt(var_ktr_array.astype(np.float32))
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
         
-    def computeBias(self, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas, mIt):
+    def computeBias(self, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
         gridSpanArcsec= self.mediumPixelScale*self.largeGridSize/1000
         gridSpanRad = gridSpanArcsec/radiansToArcsecs
         peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_1650*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
@@ -260,8 +250,8 @@ class MavisLO(object):
         fy = fy[ii1:ii2,ii1:ii2]
         gridSpanArcsec= self.mediumPixelScale*self.smallGridSize/1000
         gridSpanRad = gridSpanArcsec/radiansToArcsecs
-        mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(f_k_data, mIt)
-        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(f_k_prime_data, mIt)
+        mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(f_k_data)
+        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(f_k_prime_data)
         masked_mu0 = W_Mask*mu_ktr_array
         masked_mu = W_Mask*mu_ktr_prime_array
         masked_sigma = W_Mask*W_Mask*var_ktr_array
@@ -274,14 +264,12 @@ class MavisLO(object):
 
     
     def computeWindPSDs(self, fmin, fmax, freq_samples):    
-        mItGPU = Integrator(cp, cp.float64, '')
-        mIt = mItGPU
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
         scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
-        xplot1, zplot1 = mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        xplot1, zplot1 = self.mItGPU.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
         psd_tip_wind = zplot1*scaleFactor
-        xplot1, zplot1 = mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        xplot1, zplot1 = self.mItGPU.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_tilt_wind = zplot1*scaleFactor
         return psd_tip_wind, psd_tilt_wind
 
@@ -352,11 +340,11 @@ class MavisLO(object):
         return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
 
         
-    def covValue(self, ii,jj, pp, hh, mIt):
+    def covValue(self, ii,jj, pp, hh):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
     #    with self.mutex:
-        xplot1, zplot1 = mIt.IntegralEval(sp.Function('C_v')(p, h), self.specializedCovExprs[ii+10*jj], [('p', pp , 0, 0, 'provided'), 
+        xplot1, zplot1 = self.mItGPUcomplex.IntegralEval(sp.Function('C_v')(p, h), self.specializedCovExprs[ii+10*jj], [('p', pp , 0, 0, 'provided'), 
                                                                                                  ('h', hh , 0, 0, 'provided')], 
                                           [(self.integrationPoints, 'linear')], method='raw')
         return np.real(np.asarray(zplot1))
@@ -364,13 +352,12 @@ class MavisLO(object):
         
     def computeCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
         points = aCartPointingCoords.shape[0]
-        mItGPUcomplex = Integrator(cp, cp.complex128, '')
         scaleF = (500.0/(2*np.pi))**2
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
         matCasValue = xp.zeros((2*points,6), dtype=xp.float32)
         matCssValue = xp.zeros((6,6), dtype=xp.float32)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]), mItGPUcomplex)[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]), mItGPUcomplex)[0,0]
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]))[0,0]
         hh = xp.asarray(self.Cn2Heights[:-1])
         inputsArray = np.zeros( 3*points + 9, dtype=complex)
         iidd = 0
@@ -398,17 +385,15 @@ class MavisLO(object):
         _idx0 = {2:[0,2,4], 3:[1,3,5]}
         for ii in [2,3]:
             for jj in [2,3]:
-                outputArray1 = self.covValue(ii, jj, inputsArray, hh, mItGPUcomplex)
+                outputArray1 = self.covValue(ii, jj, inputsArray, hh)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
                         matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:3*points:points, hidx]
                         if pind==0:
                             matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[3*points:,hidx], (3,3))
-
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     
-        
     def loadWindPsd(self, filename):
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
@@ -437,7 +422,6 @@ class MavisLO(object):
             Ctot[2*i:2*(i+1),:] = ss
         return Ctot
 
-
         
     def CMatAssemble(self, aCartPointingCoordsV, aaCartNGSCoords, aCnn, aC1):
         R, RT = self.buildReconstuctor2(np.asarray(aCartPointingCoordsV), aaCartNGSCoords)
@@ -447,7 +431,6 @@ class MavisLO(object):
         Ctot = aC1 + C2 + C3
         return Ctot
 
-
         
     def initializer(self, semaphore):
         """This function is run at the Pool startup. 
@@ -456,17 +439,15 @@ class MavisLO(object):
         """
         self.mutex = semaphore
 
-
         
     def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas, mono=True):
-        mItGPU = Integrator(cp, cp.float64, '')    
         nPointings = aCartPointingCoords.shape[0]
         psd_freq, psd_tip_wind, psd_tilt_wind = self.loadWindPsd('data/windpsd_mavis.fits')
         C1 = np.zeros((2,2))
         Cnn = np.zeros((6,6))
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         for starIndex in [0,1,2]:
-            bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex], mItGPU) # one scalar, two tuples of 2
+            bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             var1x = avar[0] * self.pixel_scale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
             wr = self.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
@@ -491,7 +472,6 @@ class MavisLO(object):
             return Ctot.reshape((nPointings,2,2))
 
 
-        
     def ellipsesFromCovMats(self, Ctot):
         theta = sp.symbols('theta')
         sigma_1 = sp.symbols('sigma^2_1')
@@ -529,6 +509,3 @@ class MavisLO(object):
             return result
 
         return computeCovEllispses(Ctot)
-
-
-
