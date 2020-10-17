@@ -1,12 +1,12 @@
 from mavisUtilities import *
 from mavisFormulas import *
-import multiprocessing as mp
+# import multiprocessing as mp
 import functools
 
 
 class MavisLO(object):
     
-    def __init__(self, path, parametersFile):
+    def __init__(self, path, parametersFile, windpsdfile):
         namespace = {}
         params_module = __import__(parametersFile, globals(), locals())
         exec( open(path + parametersFile + ".py").read(), namespace)
@@ -69,31 +69,29 @@ class MavisLO(object):
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
-
-        # self.r0_Value = 0.15 # old value 
-        self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
+        self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15        
+        #self.r0_Value = 0.15 # old value 
         #  print(self.r0_Value) # 0.1677620373333333
         
         self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-        # print('WindSpeed', self.WindSpeed) # result is 11.94
         #self.WindSpeed = 9.0 # old value
+        # print('WindSpeed', self.WindSpeed) # result is 11.94
         
-        self.mutex = None
+#        self.mutex = None
         self.imax = 30
         self.zmin = 0.03
         self.zmax = 30
-        self.integrationPoints = 1000
-        self.psdIntegrationPoints = 4000
+        self.integrationPoints = 1000 # //2
+        self.psdIntegrationPoints = 4000 # //2
         self.largeGridSize = 200
-        self.smallGridSize = 8
         self.downsample_factor = 4
+        self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         self.p_offset = 1.0 # 1/4 pixel on medium grid
         self.mediumGridSize = int(self.largeGridSize/self.downsample_factor)
         self.mediumShape = (self.mediumGridSize,self.mediumGridSize)
         self.mediumPixelScale = self.pixel_scale_LO/self.downsample_factor
         self.zernikeCov_rh1 = MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_lh1 = MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
-        # could use momoize instead, for now global
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.fCValue = self.specializedC_coefficient()
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
@@ -104,7 +102,8 @@ class MavisLO(object):
 
         self.mItGPU = Integrator(cp, cp.float64, '')
         self.mItGPUcomplex = Integrator(cp, cp.complex64, '')
-        
+        self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windpsdfile)
+
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
@@ -205,7 +204,7 @@ class MavisLO(object):
         aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
         lh = sp.Function('B')(getSymbolByName(aFunction, 'f_k'))
-        xplot1, zplot1 = self.mItGPU.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints, 'linear'), (self.imax, 'linear')], 'raw')
+        xplot1, zplot1 = self.mItGPU.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints//2, 'linear'), (self.imax, 'linear')], 'raw')
         ssx, s0 = self.mItGPU.functionEval(expr0, paramsAndRanges )
         zplot1 = zplot1 + s0
         zplot1 = zplot1.reshape((self.smallGridSize,self.smallGridSize))
@@ -343,10 +342,12 @@ class MavisLO(object):
     def covValue(self, ii,jj, pp, hh):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
-    #    with self.mutex:
-        xplot1, zplot1 = self.mItGPUcomplex.IntegralEval(sp.Function('C_v')(p, h), self.specializedCovExprs[ii+10*jj], [('p', pp , 0, 0, 'provided'), 
-                                                                                                 ('h', hh , 0, 0, 'provided')], 
-                                          [(self.integrationPoints, 'linear')], method='raw')
+#    with self.mutex:
+        xplot1, zplot1 = self.mItGPUcomplex.IntegralEval(sp.Function('C_v')(p, h), 
+                                                         self.specializedCovExprs[ii+10*jj], 
+                                                         [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')], 
+                                                         [(self.integrationPoints, 'linear')], 
+                                                         method='raw')
         return np.real(np.asarray(zplot1))
 
         
@@ -432,17 +433,8 @@ class MavisLO(object):
         return Ctot
 
         
-    def initializer(self, semaphore):
-        """This function is run at the Pool startup. 
-        Use it to set your Semaphore object in the child process.
-
-        """
-        self.mutex = semaphore
-
-        
-    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas, mono=True):
+    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
-        psd_freq, psd_tip_wind, psd_tilt_wind = self.loadWindPsd('data/windpsd_mavis.fits')
         C1 = np.zeros((2,2))
         Cnn = np.zeros((6,6))
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
@@ -450,26 +442,15 @@ class MavisLO(object):
             bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             var1x = avar[0] * self.pixel_scale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
-            wr = self.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
+            wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, gpulib )
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
                 C1[0,0] = wr[0]
                 C1[1,1] = wr[1]
         # C1 and Cnn do not depend on aCartPointingCoords[i]
-        if not mono and nPointings>1:
-            # while C2 and C3 do        
-            inputs = aCartPointingCoords.tolist()
-            pool_size = int( min( mp.cpu_count()/2, nPointings) )
-            semaphore = mp.Semaphore()
-            pool = mp.Pool(initializer=self.initializer, initargs=[self, semaphore], processes=pool_size)
-            pool_outputs = pool.map(functools.partial(self.CMatAssemble, aaCartNGSCoords=aCartNGSCoords, aCnn=Cnn, aC1=C1) , inputs)
-            pool.close()
-            pool.join()
-            return pool_outputs
-        else:
-            Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
-            return Ctot.reshape((nPointings,2,2))
+        Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
+        return Ctot.reshape((nPointings,2,2))
 
 
     def ellipsesFromCovMats(self, Ctot):
@@ -509,3 +490,23 @@ class MavisLO(object):
             return result
 
         return computeCovEllispses(Ctot)
+
+    
+#        if not mono and nPointings>1:
+#            # while C2 and C3 do        
+#            inputs = aCartPointingCoords.tolist()
+#            pool_size = int( min( mp.cpu_count()/2, nPointings) )
+#            semaphore = mp.Semaphore()
+#            pool = mp.Pool(initializer=self.initializer, initargs=[self, semaphore], processes=pool_size)
+#            pool_outputs = pool.map(functools.partial(self.CMatAssemble, aaCartNGSCoords=aCartNGSCoords, aCnn=Cnn, aC1=C1) , inputs)
+#            pool.close()
+#            pool.join()
+#            return pool_outputs
+#        else:
+
+#    def initializer(self, semaphore):
+#        """This function is run at the Pool startup. 
+#        Use it to set your Semaphore object in the child process.#
+#
+#        """
+#        self.mutex = semaphore
