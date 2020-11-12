@@ -1,5 +1,6 @@
 from copy import deepcopy
 import numpy as np
+import cupy as cp
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -219,4 +220,17 @@ def plotEllipses(cartPointingCoords, cov_ellipses, ss):
         #e.set_facecolor(np.random.rand(3))
     ax.set_xlim(-20, 20)
     ax.set_ylim(-20, 20)
+    plt.show()
+
+def tiledDispaly(results):    
+    nn = len(results)
+    ncols = int(np.sqrt(nn))
+    nrows = ncols
+    fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=[10,10])
+    for i in range(nrows):
+        for j in range(ncols):
+            img = np.log(cp.asnumpy(results[i*ncols+j].sampling))
+            ax[nrows-i-1,j].imshow(img, cmap='hot')
+            ax[nrows-i-1,j].axis('off')
+    fig.tight_layout()
     plt.show()
