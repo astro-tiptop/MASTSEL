@@ -32,6 +32,17 @@ def FFTConvolve(in1, in2, xp=defaultArrayBackend):
     rr = ft_ift2(ft_ft2(in1, xp) * ft_ft2(in2, xp), xp)
     return rr
 
+
+def KernelConvolve(in1, kernel, xp=defaultArrayBackend):
+    if in1.ndim == kernel.ndim == 0:  # scalar inputs
+        return in1 * kernel
+    elif not in1.ndim == kernel.ndim:
+        raise ValueError("Dimensions do not match.")
+    elif in1.size == 0 or kernel.size == 0:  # empty arrays
+        return array([])
+    rr = ft_ift2(ft_ft2(in1, xp) * kernel, xp)
+    return rr
+
 # pixel size does not change
 
 
@@ -83,7 +94,7 @@ class Field(object):
     @wvl.setter
     def wvl(self, value):
         self.__wvl = value
-        self.__kk = 2.0 * np.pi / value / 1e9
+        self.__kk = 2.0 * np.pi / value
 
     @property
     def kk(self):
@@ -151,12 +162,10 @@ class Field(object):
             1.0)
         self.telescope_radius = telescope_radius
 
-    def setAsPSD(self, grid_diameter, r0_, L0_, l0_):
+    def setAsPSD(self, grid_diameter, r0_, L0_, l0_, method = 'VonKarman'):
         grid_pixel_scale = grid_diameter / float(self.N)
         freq_range = 1.0 / grid_pixel_scale
-        method = 'VonKarman'
-        ss, new_pixel_size = ft_PSD_phi(
-            r0_, self.N, freq_range, L0_, l0_, method)
+        ss, new_pixel_size = ft_PSD_phi( r0_, self.N, freq_range, L0_, l0_, method)
         self.sampling = self.xp.asarray(ss)
         self.unit = 'm'
         self.width = new_pixel_size * self.N
@@ -307,15 +316,15 @@ def convolve(psf, kernel, xp=defaultArrayBackend):
         print(
             'psf and kernel sampling not compatible (grids sizes in pixels are different!)')
         return
-    if xp.abs((psf.pixel_size - kernel.pixel_size)) > 0.001:
-        print('These values should be the same!!!')
-        print('psf pixel size: ', psf.pixel_size)
-        print('kernel pixel size: ', kernel.pixel_size)
-        return
+#    if xp.abs((psf.pixel_size - kernel.pixel_size)) > 0.001:
+#        print('These values should be the same!!!')
+#        print('psf pixel size: ', psf.pixel_size)
+#        print('kernel pixel size: ', kernel.pixel_size)
+#        return
     result = Field(psf.wvl, psf.N, psf.width, unit='m')
 
     if xp == cp:
-        result.sampling = FFTConvolve(psf.sampling, kernel.sampling)
+        result.sampling = xp.real( KernelConvolve(psf.sampling, kernel.sampling) )
     else:
         result.sampling = scipy.signal.fftconvolve(
             psf.sampling, kernel.sampling)
@@ -328,6 +337,7 @@ def shortExposurePsf(mask, phaseScreen):
     xp = mask.xp
     if (mask.N != phaseScreen.N):
         print('Mask and phaseScreen sampling not compatible (grids sizes in pixels are different!)')
+        print(mask.N, phaseScreen.N)
         return
     if xp.abs((mask.pixel_size - phaseScreen.pixel_size)) > 0.001:
         print('These values should be the same!!!')
@@ -345,6 +355,8 @@ def longExposurePsf(mask, psd):
     xp = mask.xp
     if (mask.N != psd.N):
         print('Mask and PSD sampling not compatible (grids sizes in pixels are different!)')
+        print('mask grid size: ', mask.N)
+        print('psf grid size: ', psd.N)
         return
     freq_range = psd.width
     pitch = 1.0 / freq_range
@@ -356,21 +368,41 @@ def longExposurePsf(mask, psd):
     p_final_psf = mask.wvl / (pitch * mask.N)  # rad
     result = Field(mask.wvl, mask.N, psd.N * p_final_psf, unit='rad')
     ################################################
+    
     # step 0 : compute telescope otf
-    mask.pupilToOtf()
-    otf_tel = mask.sampling
+    maskC = Field(mask.wvl, mask.N, pitch*mask.N)
+    maskC.sampling = xp.copy(mask.sampling)    
+    maskC.pupilToOtf()
+    otf_tel = maskC.sampling
+    
+    psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2)
+    
     # step 1 : compute phase autocorrelation
-    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))
-                    ) * (psd.kk * freq_range) ** 2
+    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) * (psd.kk * freq_range) ** 2
     b0 = B_phi[0, 0]
     B_phi = xp.fft.fftshift(B_phi)
+
     # step 2 : compute structure function
-    D_phi = 2.0 * (-B_phi + b0)
+    # D_phi = 2.0 * (-B_phi + b0)
+    D_phi = 2.0 * b0 - (B_phi + B_phi.conj())
+        
     # step 3 : compute turbolence otf
-    otf_turb = xp.exp(-0.5 * (D_phi))
+    otf_turb = xp.exp(-0.5 * (D_phi))    
     # p_otft_turb = pitch
+    otf_turb = cp.asarray(congrid(cp.asnumpy(otf_turb), [otf_turb.shape[0]//2, otf_turb.shape[0]//2]))
+
     # step 4 : combine telescope and turbolence otfs
     otf_system = otf_turb * otf_tel
+
     # step 5 : system otf to system psf
     result.sampling = xp.real(ft_ft2(otf_system))
+        
     return result
+
+
+def residualToSpectrum(ellp, N, psf_FoV):
+    fov_mas = psf_FoV*1000
+    convKernelFFT = Field(ScienceWavelength, int(N), N/fov_mas, '')
+    #convKernelFFT.setAsGaussianKernel(convKernelFFT.pixel_size*fov_mas/(2*np.pi*ellp[1]), convKernelFFT.pixel_size*fov_mas/(2*np.pi*ellp[2]), -ellp[0])
+    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]*10), 1/(2*np.pi*ellp[2]*10), -ellp[0] )
+    return convKernelFFT
