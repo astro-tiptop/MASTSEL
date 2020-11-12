@@ -2,31 +2,29 @@ from mavisUtilities import *
 from mavisFormulas import *
 # import multiprocessing as mp
 import functools
-
+from configparser import ConfigParser
 
 class MavisLO(object):
     
     def __init__(self, path, parametersFile, windpsdfile):
-        namespace = {}
-        params_module = __import__(parametersFile, globals(), locals())
-        exec( open(path + parametersFile + ".py").read(), namespace)
-        globals().update(vars(params_module))
-        globals().update(namespace)
+                
+        parser = ConfigParser()
+        parser.read(path + parametersFile + '.ini')
 #
 # SETTING PARAMETERS READ FROM FILE       
 #
 # parameters which are not used in this class reported but commented
-        self.TelescopeDiameter   = TelescopeDiameter
+        self.TelescopeDiameter   = eval(parser.get('telescope', 'TelescopeDiameter'))
 #        self.zenithAngle         = zenithAngle
 #        self.obscurationRatio    = obscurationRatio
 #        self.resolution          = resolution
 #        self.path_pupil          = path_pupil
-        self.atmosphereWavelength= atmosphereWavelength
-        self.seeing              = seeing
-        self.L0                  = L0
-        self.Cn2Weights          = Cn2Weights
-        self.Cn2Heights          = Cn2Heights
-        self.wSpeed              = wSpeed
+        self.atmosphereWavelength= eval(parser.get('atmosphere', 'atmosphereWavelength'))
+        self.seeing              = eval(parser.get('atmosphere', 'seeing'))
+        self.L0                  = eval(parser.get('atmosphere', 'L0'))
+        self.Cn2Weights          = eval(parser.get('atmosphere', 'Cn2Weights'))
+        self.Cn2Heights          = eval(parser.get('atmosphere', 'Cn2Heights'))
+        self.wSpeed              = eval(parser.get('atmosphere', 'wSpeed'))
 #        self.wDir                = wDir
 #        self.nLayersReconstructed= nLayersReconstructed
 #        self.ScienceWavelength   = ScienceWavelength
@@ -34,12 +32,12 @@ class MavisLO(object):
 #        self.ScienceAzimuth      = ScienceAzimuth
 #        self.psInMas             = psInMas
 #        self.psf_FoV             = psf_FoV
-        self.technical_FoV       = technical_FoV
+        self.technical_FoV       = eval(parser.get('PSF_DIRECTIONS', 'technical_FoV'))
 #        self.GuideStarZenith_HO  = GuideStarZenith_HO
 #        self.GuideStarAzimuth_HO = GuideStarAzimuth_HO
 #        self.GuideStarHeight_HO  = GuideStarHeight_HO
 #        self.DmPitchs            = DmPitchs
-        self.DmHeights           = DmHeights
+        self.DmHeights           = eval(parser.get('DM', 'DmHeights'))
 #        self.OptimizationZenith  = OptimizationZenith
 #        self.OptimizationAzimuth = OptimizationAzimuth
 #        self.OptimizationWeight  = OptimizationWeight
@@ -53,19 +51,19 @@ class MavisLO(object):
 #        self.sigmaRON_HO            = sigmaRON_HO
 #        self.Npix_per_subap_HO      = Npix_per_subap_HO
 #        self.pixel_scale_HO         = pixel_scale_HO
-        self.N_sa_tot_LO            = N_sa_tot_LO
-        self.SensingWavelength_LO   = SensingWavelength_LO
-        self.SensorFrameRate_LO     = SensorFrameRate_LO
-        self.loopDelaySteps_LO      = loopDelaySteps_LO
-        self.pixel_scale_LO         = pixel_scale_LO
+        self.N_sa_tot_LO            = eval(parser.get('SENSOR_LO', 'N_sa_tot_LO'))
+        self.SensingWavelength_LO   = eval(parser.get('SENSOR_LO', 'SensingWavelength_LO'))
+        self.SensorFrameRate_LO     = eval(parser.get('SENSOR_LO', 'SensorFrameRate_LO'))
+        self.loopDelaySteps_LO      = eval(parser.get('SENSOR_LO', 'loopDelaySteps_LO'))
+        self.pixel_scale_LO         = eval(parser.get('SENSOR_LO', 'pixel_scale_LO'))
 #        self.Npix_per_subap_LO      = Npix_per_subap_LO
-        self.WindowRadiusWCoG_LO    = WindowRadiusWCoG_LO
-        self.sigmaRON_LO            = sigmaRON_LO
-        self.ExcessNoiseFactor_LO   = ExcessNoiseFactor_LO
-        self.Dark_LO                = Dark_LO
-        self.skyBackground_LO       = skyBackground_LO
-        self.ThresholdWCoG_LO       = ThresholdWCoG_LO
-        self.NewValueThrPix_LO      = NewValueThrPix_LO
+        self.WindowRadiusWCoG_LO    = eval(parser.get('SENSOR_LO', 'WindowRadiusWCoG_LO'))
+        self.sigmaRON_LO            = eval(parser.get('SENSOR_LO', 'sigmaRON_LO'))
+        self.ExcessNoiseFactor_LO   = eval(parser.get('SENSOR_LO', 'ExcessNoiseFactor_LO'))
+        self.Dark_LO                = eval(parser.get('SENSOR_LO', 'Dark_LO'))
+        self.skyBackground_LO       = eval(parser.get('SENSOR_LO', 'skyBackground_LO'))
+        self.ThresholdWCoG_LO       = eval(parser.get('SENSOR_LO', 'ThresholdWCoG_LO'))
+        self.NewValueThrPix_LO      = eval(parser.get('SENSOR_LO', 'NewValueThrPix_LO'))
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
@@ -359,7 +357,7 @@ class MavisLO(object):
         matCssValue = xp.zeros((6,6), dtype=xp.float32)
         matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]))[0,0]
         matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]))[0,0]
-        hh = xp.asarray(self.Cn2Heights[:-1])
+        hh = xp.asarray(self.Cn2Heights)
         inputsArray = np.zeros( 3*points + 9, dtype=complex)
         iidd = 0
         for kk in [0,1,2]:
