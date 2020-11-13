@@ -24,6 +24,7 @@ class MavisLO(object):
         self.L0                  = eval(parser.get('atmosphere', 'L0'))
         self.Cn2Weights          = eval(parser.get('atmosphere', 'Cn2Weights'))
         self.Cn2Heights          = eval(parser.get('atmosphere', 'Cn2Heights'))
+        self.Cn2RefHeight          = eval(parser.get('atmosphere', 'Cn2RefHeight'))        
         self.wSpeed              = eval(parser.get('atmosphere', 'wSpeed'))
 #        self.wDir                = wDir
 #        self.nLayersReconstructed= nLayersReconstructed
@@ -355,8 +356,8 @@ class MavisLO(object):
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
         matCasValue = xp.zeros((2*points,6), dtype=xp.float32)
         matCssValue = xp.zeros((6,6), dtype=xp.float32)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]))[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2Heights[-1]]))[0,0]
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
         inputsArray = np.zeros( 3*points + 9, dtype=complex)
         iidd = 0
