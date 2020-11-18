@@ -68,12 +68,19 @@ class MavisLO(object):
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
-        self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15        
-        #self.r0_Value = 0.15 # old value 
+
+        vr0 = eval(parser.get('atmosphere', 'r0_Value'))
+        if vr0:
+            self.r0_Value = vr0
+        else:
+            self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15        
         #  print(self.r0_Value) # 0.1677620373333333
-        
-        self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-        #self.WindSpeed = 9.0 # old value
+
+        vSpeed = eval(parser.get('atmosphere', 'oneWindSpeed'))
+        if vr0:
+            self.WindSpeed = vSpeed
+        else:
+            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
         # print('WindSpeed', self.WindSpeed) # result is 11.94
         
 #        self.mutex = None
