@@ -2,16 +2,25 @@ from mavis import *
 import unittest
 
 
-class TestReconstructor(unittest.TestCase):
+class TestMavisLO(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        path = "/home/frossi/dev/MASTSEL/"
+        parametersFile = 'mavisParamsTests'
+        fullPathFilename = path + parametersFile + '.ini'
+        windPsdFile = '../data/windpsd_mavis.fits'
+        TestMavisLO.mLO = MavisLO(path, parametersFile, windPsdFile)
+
+class TestReconstructor(TestMavisLO):
+                    
     def test_reconstructor(self):
         """
         Test 
-        """
-        print("Running Test: TestReconstructor")
+        """                
         cartPointingCoords = np.asarray([5,5])
         polarNGSCoords = np.asarray([[30.0,0.0], [50.0,100.0],[10.0,240.0]])
         cartNGSCoords = np.asarray([polarToCartesian(polarNGSCoords[0]), polarToCartesian(polarNGSCoords[1]), polarToCartesian(polarNGSCoords[2])])
-        P_mat, rec_tomo, R_0, R_1 = buildReconstuctor(cartPointingCoords, cartNGSCoords)
+        P_mat, rec_tomo, R_0, R_1 = TestMavisLO.mLO.buildReconstuctor(cartPointingCoords, cartNGSCoords)
         a1 = [[ 1.,          0.,          0.42221252,  0.,          0.29854934],
          [ 0.,          1.,          0.,          0.29854934, -0.        ],
          [ 1.,          0.,         -0.12219406,  0.49002284, -0.08640425],
@@ -31,13 +40,13 @@ class TestReconstructor(unittest.TestCase):
         rec_tomo__ = np.asarray(a2)
         R_0__ = np.asarray(a3)
         R_1__ = np.asarray(a4)
-        self.assertTrue( np.testing.assert_allclose(P_mat, P_mat__, rtol=1e-04, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(rec_tomo, rec_tomo__, rtol=1e-04, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(R_0, R_0__, rtol=1e-04, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(R_1, R_1__, rtol=1e-04, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(P_mat, P_mat__, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(rec_tomo, rec_tomo__, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(R_0, R_0__, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(R_1, R_1__, rtol=1e-03, atol=1e-5)==None)
 
 
-class TestCovMatrices(unittest.TestCase):
+class TestCovMatrices(TestMavisLO):
     def test_cov_matrices(self):
         """
         Test 
@@ -46,7 +55,7 @@ class TestCovMatrices(unittest.TestCase):
         polarNGSCoords = np.asarray([[30.0,0.0], [50.0,100.0],[10.0,240.0]])
         cartNGSCoords = np.asarray([polarToCartesian(polarNGSCoords[0]), polarToCartesian(polarNGSCoords[1]), polarToCartesian(polarNGSCoords[2])])
         print("Running Test: TestCovMatrices")
-        matCaaValue, matCasValue, matCssValue = computeCovMatrices(cartPointingCoords, cartNGSCoords)        
+        matCaaValue, matCasValue, matCssValue = TestMavisLO.mLO.computeCovMatrices(cartPointingCoords, cartNGSCoords)        
         hdul = fits.open('../data/Caa.fits')
         Caa_data = np.asarray(hdul[0].data, np.float64)
         hdul.close()
@@ -56,12 +65,12 @@ class TestCovMatrices(unittest.TestCase):
         hdul = fits.open('../data/Css.fits')
         Css_data = np.asarray(hdul[0].data, np.float64)
         hdul.close()
-        self.assertTrue( np.testing.assert_allclose(Caa_data,matCaaValue, rtol=1e-02, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(Cas_data,matCasValue, rtol=1e-02, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(Css_data,matCssValue, rtol=1e-02, atol=1e-5)==None)        
+        self.assertTrue( np.testing.assert_allclose(Caa_data,matCaaValue[:2,:], rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(Cas_data,matCasValue[:2,:], rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(Css_data,matCssValue, rtol=1e-03, atol=1e-5)==None)        
 
 
-class TestWindResiduals(unittest.TestCase):
+class TestWindResiduals(TestMavisLO):
     def test_wind_residuals(self):
         """
         Test 
@@ -71,9 +80,9 @@ class TestWindResiduals(unittest.TestCase):
         NGS_SR_1650 = [0.4, 0.2, 0.6]
         NGS_FWHM_mas = [90, 110, 85]
         mItGPU = Integrator(cp, cp.float64, '')
-        r1 = computeBias(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0], mItGPU)
-        r2 = computeBias(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1], mItGPU)
-        r3 = computeBias(NGS_flux[2], NGS_SR_1650[2], NGS_FWHM_mas[2], mItGPU)
+        r1 = TestMavisLO.mLO.computeBias(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
+        r2 = TestMavisLO.mLO.computeBias(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
+        r3 = TestMavisLO.mLO.computeBias(NGS_flux[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
 
         '''
         self.assertTrue( np.testing.assert_allclose( np.asarray(r1), np.asarray((0.4592354532951008, (0.1148088633237752, 3.348938898539153e-17), (0.08617446983322877, 0.08617446983322877))), rtol=1e-03, atol=1e-5)==None)
@@ -84,22 +93,28 @@ class TestWindResiduals(unittest.TestCase):
         self.assertTrue( np.testing.assert_allclose( np.asarray(r2), np.asarray( (0.43007711055063774, (0.10751927763765944, 2.0234128532071065e-17), (0.059932427347737786, 0.059932427347737786))), rtol=1e-03, atol=1e-5)==None)
         self.assertTrue( np.testing.assert_allclose( np.asarray(r3), np.asarray((0.42097905807645625, (0.10524476451911406, 0.0), (0.10381564644797976, 0.10381564644797978))), rtol=1e-03, atol=1e-5)==None)
         '''
-        self.assertAlmostEqual(r1, (0.4592354532951008, (0.1148088633237752, 3.348938898539153e-17), (0.08617446983322877, 0.08617446983322877)))
-        self.assertAlmostEqual(r2, (0.43007711055063774, (0.10751927763765944, 2.0234128532071065e-17), (0.059932427347737786, 0.059932427347737786)))
-        self.assertAlmostEqual(r3, (0.42097905807645625, (0.10524476451911406, 0.0), (0.10381564644797976, 0.10381564644797978)) )
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.4592354532951008)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.1148088633237752, 3.348938898539153e-17)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[2]), np.array((0.08617446983322877, 0.08617446983322877)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[0]), np.array((0.43007711055063774)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[1]), np.array((0.10751927763765944, 2.0234128532071065e-17)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[2]), np.array((0.059932427347737786, 0.059932427347737786)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[0]), np.array((0.42097905807645625)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[1]), np.array((0.10524476451911406, 0.0)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[2]), np.array( (0.10381564644797976, 0.10381564644797978)), rtol=1e-03, atol=1e-5)==None)
 
 
-class TestNoiseResiduals(unittest.TestCase):
+class TestNoiseResiduals(TestMavisLO):
     def test_noise_residuals(self):
         """
         Test 
         """
         print("Running Test: TestNoiseResiduals")
-        psd_freq, psd_tip_wind, psd_tilt_wind = loadWindPsd('../data/windpsd_mavis.fits')
-        var1x = 0.05993281522281573 * pixel_scale**2
+        psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('../data/windpsd_mavis.fits')
+        var1x = 0.05993281522281573 * TestMavisLO.mLO.pixel_scale_LO**2
         bias = 0.4300779971881394
-        nr = computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
-        wr = computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
+        nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
+        wr = TestMavisLO.mLO.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
         result = nr[0]
         self.assertTrue( np.testing.assert_allclose(result, 2108.89544168, rtol=1e-03, atol=1e-5)==None)
         result = nr[1]
@@ -108,8 +123,19 @@ class TestNoiseResiduals(unittest.TestCase):
         self.assertTrue( np.testing.assert_allclose(result, 71.89646223, rtol=1e-03, atol=1e-5)==None)
         result = wr[1]
         self.assertTrue( np.testing.assert_allclose(result, 61.02400116, rtol=1e-03, atol=1e-5)==None)
-        
-    
-        
+
+
+
+def suite():
+    suite = unittest.TestSuite()
+    suite.addTest(TestReconstructor('test_reconstructor'))
+    suite.addTest(TestCovMatrices('test_cov_matrices'))
+    suite.addTest(TestWindResiduals('test_wind_residuals'))
+    suite.addTest(TestNoiseResiduals('test_noise_residuals'))
+    return suite
+
+
+
 if __name__ == '__main__':
-    unittest.main()
+    runner = unittest.TextTestRunner()
+    runner.run(suite())
