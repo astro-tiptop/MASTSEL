@@ -213,11 +213,10 @@ from matplotlib.patches import Ellipse
 def plotEllipses(cartPointingCoords, cov_ellipses, ss):
     nPointings = cov_ellipses.shape[0]
     ells = [Ellipse(xy=cartPointingCoords[i],  width=cov_ellipses[i,1]*ss, height=cov_ellipses[i,2]*ss, angle=cov_ellipses[i,0]*180/np.pi) for i in range(nPointings)]
-    fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
+    fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'}, figsize=[8,8])
     for e in ells:
         ax.add_artist(e)
         e.set_clip_box(ax.bbox)
-        #e.set_facecolor(np.random.rand(3))
     ax.set_xlim(-20, 20)
     ax.set_ylim(-20, 20)
     plt.show()
