@@ -1,5 +1,4 @@
 from mavisUtilities import *
-from mavisParams import *
 from mavisFormulas import *
 
 fit_window_max_size = 512
@@ -401,8 +400,8 @@ def longExposurePsf(mask, psd):
 
 
 def residualToSpectrum(ellp, N, psf_FoV):
-    fov_mas = psf_FoV*1000
+    fov_mas = psf_FoV
     convKernelFFT = Field(ScienceWavelength, int(N), N/fov_mas, '')
     #convKernelFFT.setAsGaussianKernel(convKernelFFT.pixel_size*fov_mas/(2*np.pi*ellp[1]), convKernelFFT.pixel_size*fov_mas/(2*np.pi*ellp[2]), -ellp[0])
-    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]*10), 1/(2*np.pi*ellp[2]*10), -ellp[0] )
+    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), -ellp[0] )
     return convKernelFFT
