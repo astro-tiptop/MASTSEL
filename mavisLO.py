@@ -15,7 +15,7 @@ class MavisLO(object):
 #
 # parameters which are not used in this class reported but commented
         self.TelescopeDiameter   = eval(parser.get('telescope', 'TelescopeDiameter'))
-#        self.zenithAngle         = zenithAngle
+        self.zenithAngle         = zenithAngle
 #        self.obscurationRatio    = obscurationRatio
 #        self.resolution          = resolution
 #        self.path_pupil          = path_pupil
@@ -68,14 +68,14 @@ class MavisLO(object):
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
-
+        
         vr0 = eval(parser.get('atmosphere', 'r0_Value'))
         if vr0:
             self.r0_Value = vr0
-        else:
-            self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15        
-        #  print(self.r0_Value) # 0.1677620373333333
-
+        else:                        
+            airmass = 1/np.cos(self.zenithAngle*np.pi/180)
+            self.r0_Value = ( 0.976*self.atmosphereWavelength/self.seeing*206264.8 ) * airmass**(-3.0/5.0)
+            
         vSpeed = eval(parser.get('atmosphere', 'oneWindSpeed'))
         if vr0:
             self.WindSpeed = vSpeed
