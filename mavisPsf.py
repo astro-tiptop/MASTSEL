@@ -323,7 +323,7 @@ def convolve(psf, kernel, xp=defaultArrayBackend):
     result = Field(psf.wvl, psf.N, psf.width, unit='m')
 
     if xp == cp:
-        result.sampling = xp.real( KernelConvolve(psf.sampling, kernel.sampling) )
+        result.sampling = xp.real( KernelConvolve(psf.sampling/psf.sampling.sum(), kernel.sampling) )
     else:
         result.sampling = scipy.signal.fftconvolve(
             psf.sampling, kernel.sampling)
@@ -399,9 +399,8 @@ def longExposurePsf(mask, psd):
     return result
 
 
-def residualToSpectrum(ellp, wvl, N, psf_FoV):
-    fov_mas = psf_FoV
-    convKernelFFT = Field(wvl, int(N), N/fov_mas, '')
-    #convKernelFFT.setAsGaussianKernel(convKernelFFT.pixel_size*fov_mas/(2*np.pi*ellp[1]), convKernelFFT.pixel_size*fov_mas/(2*np.pi*ellp[2]), -ellp[0])
-    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), -ellp[0] )
+def residualToSpectrum(ellp, wvl, N,  pixel_scale_otf):
+    convKernelFFT = Field(wvl, int(N), N*pixel_scale_otf, '')
+    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), -ellp[0])
+
     return convKernelFFT
