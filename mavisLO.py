@@ -194,19 +194,38 @@ class MavisLO(object):
     
     def buildReconstuctor2(self, aCartPointingCoordsV, aCartNGSCoords):
         npointings = aCartPointingCoordsV.shape[0]
-        P, P_func = self.specializedIM()
-        pp1 = P_func(aCartNGSCoords[0,0]*arcsecsToRadians, aCartNGSCoords[0,1]*arcsecsToRadians)
-        pp2 = P_func(aCartNGSCoords[1,0]*arcsecsToRadians, aCartNGSCoords[1,1]*arcsecsToRadians)
-        pp3 = P_func(aCartNGSCoords[2,0]*arcsecsToRadians, aCartNGSCoords[2,1]*arcsecsToRadians)
-        P_mat = np.vstack([pp1, pp2, pp3]) # aka Interaction Matrix, im
-        rec_tomo = scipy.linalg.pinv(P_mat) # aka W, 5x6
-        vx = np.asarray(aCartPointingCoordsV[:,0])
-        vy = np.asarray(aCartPointingCoordsV[:,1])
-        R_1 = np.zeros((2*npointings, 6))
-        for k in range(npointings):
-            P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
-            R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
-        return R_1, R_1.transpose()
+        nstars = aCartNGSCoords.shape[0]
+        if nstars==1:
+            R_1 = np.zeros((2*npointings, 2*nstars))
+            for k in range(npointings):
+                R_1[2*k:2*(k+1), :] = np.identity(2)
+            return R_1, R_1.transpose()
+        else:        
+            P, P_func = self.specializedIM()
+            p_mat_list = []
+            for ii in range(nstars):
+                p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
+            P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
+            
+    #        rec_tomo = scipy.linalg.pinv(P_mat) # aka W, 5x6    
+            u, s, vh = np.linalg.svd(P_mat)
+            sv_threshold = 0.05 * s[0]
+            s_inv = np.reciprocal(s)
+            sRes = np.where(s < sv_threshold, 0, s_inv)
+             
+            sRes = np.diag(sRes)
+            sRes = np.append(sRes, np.zeros((1,sRes.shape[1])), axis=0 )
+            if nstars==3:
+                sRes = sRes.transpose()
+
+            rec_tomo = vh.transpose() @  ( sRes  @ u.transpose() )
+            vx = np.asarray(aCartPointingCoordsV[:,0])
+            vy = np.asarray(aCartPointingCoordsV[:,1])
+            R_1 = np.zeros((2*npointings, 2*nstars))
+            for k in range(npointings):
+                P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
+                R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
+            return R_1, R_1.transpose()
 
     
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM):
@@ -363,16 +382,17 @@ class MavisLO(object):
         
     def computeCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
         points = aCartPointingCoords.shape[0]
+        nstars = aCartNGSCoords.shape[0]
         scaleF = (500.0/(2*np.pi))**2
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
-        matCasValue = xp.zeros((2*points,6), dtype=xp.float32)
-        matCssValue = xp.zeros((6,6), dtype=xp.float32)
+        matCasValue = xp.zeros((2*points,2*nstars), dtype=xp.float32)
+        matCssValue = xp.zeros((2*nstars,2*nstars), dtype=xp.float32)
         matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
         matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
-        inputsArray = np.zeros( 3*points + 9, dtype=complex)
+        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
         iidd = 0
-        for kk in [0,1,2]:
+        for kk in range(nstars):
             vv = np.ones((points,2))
             vv[:,0] *= aCartNGSCoords[kk,0]
             vv[:,1] *= aCartNGSCoords[kk,1]
@@ -384,24 +404,30 @@ class MavisLO(object):
             inputsArray[points*iidd:points*(iidd+1)] = pp
             iidd = iidd+1
         iidd=0
-        for kk1 in [0,1,2]:
-            for kk2 in [0,1,2]:
+        for kk1 in range(nstars):
+            for kk2 in range(nstars):
                 polarPointingCoordsD = cartesianToPolar(aCartNGSCoords[kk1,:]-aCartNGSCoords[kk2,:])
                 polarPointingCoordsD[1] *= degToRad
                 polarPointingCoordsD[0] *= arcsecsToRadians
                 polarPointingCoordsD[0] = max( polarPointingCoordsD[0], 1e-9)
                 pp = polarPointingCoordsD[0]*xp.exp(1j*polarPointingCoordsD[1])
-                inputsArray[3*points+iidd] = pp
+                inputsArray[nstars*points+iidd] = pp
                 iidd = iidd+1
-        _idx0 = {2:[0,2,4], 3:[1,3,5]}
+
+        _idx0 = {2:[0], 3:[1]}
+        if nstars==3:
+            _idx0 = {2:[0,2,4], 3:[1,3,5]}
+        elif nstars==2:
+            _idx0 = {2:[0,2], 3:[1,3]}
+
         for ii in [2,3]:
             for jj in [2,3]:
                 outputArray1 = self.covValue(ii, jj, inputsArray, hh)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:3*points:points, hidx]
+                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[3*points:,hidx], (3,3))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     
@@ -445,10 +471,12 @@ class MavisLO(object):
         
     def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
-        C1 = np.zeros((2,2))
-        Cnn = np.zeros((6,6))
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
-        for starIndex in [0,1,2]:
+        nNaturalGS = aCartNGSCoords.shape[0]
+        C1 = np.zeros((2,2))
+        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
+        
+        for starIndex in range(nNaturalGS):
             bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             var1x = avar[0] * self.pixel_scale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
