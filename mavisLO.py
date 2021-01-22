@@ -24,7 +24,6 @@ class MavisLO(object):
         self.L0                  = eval(parser.get('atmosphere', 'L0'))
         self.Cn2Weights          = eval(parser.get('atmosphere', 'Cn2Weights'))
         self.Cn2Heights          = eval(parser.get('atmosphere', 'Cn2Heights'))
-        self.Cn2RefHeight          = eval(parser.get('atmosphere', 'Cn2RefHeight'))        
         self.wSpeed              = eval(parser.get('atmosphere', 'wSpeed'))
 #        self.wDir                = wDir
 #        self.nLayersReconstructed= nLayersReconstructed
@@ -68,8 +67,7 @@ class MavisLO(object):
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
-        
-    
+
         #vr0 = eval(parser.get('atmosphere', 'r0_Value'))
         #if vr0:
         #    self.r0_Value = vr0
@@ -77,8 +75,7 @@ class MavisLO(object):
         self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
         airmass = 1/np.cos(self.zenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
-        
-    
+
         #vSpeed = eval(parser.get('atmosphere', 'oneWindSpeed'))
         #if vr0:
         #    self.WindSpeed = vSpeed
@@ -118,7 +115,9 @@ class MavisLO(object):
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
         apIM = mf['interactionMatrixNGS']
-        apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.technical_FoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
+        #  max(self.DmHeights) could be 0, in this case use 10000
+        vH_DM = max( max(self.DmHeights), 10000)
+        apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.technical_FoV*arcsecsToRadians/2.0, 'H_DM':vH_DM})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
         apIM_func = sp.lambdify((xx, yy), apIM, modules=alib)
@@ -199,6 +198,7 @@ class MavisLO(object):
             R_1 = np.zeros((2*npointings, 2*nstars))
             for k in range(npointings):
                 R_1[2*k:2*(k+1), :] = np.identity(2)
+                
             return R_1, R_1.transpose()
         else:        
             P, P_func = self.specializedIM()
@@ -219,12 +219,14 @@ class MavisLO(object):
                 sRes = sRes.transpose()
 
             rec_tomo = vh.transpose() @  ( sRes  @ u.transpose() )
+                        
             vx = np.asarray(aCartPointingCoordsV[:,0])
             vy = np.asarray(aCartPointingCoordsV[:,1])
             R_1 = np.zeros((2*npointings, 2*nstars))
             for k in range(npointings):
                 P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
                 R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
+                        
             return R_1, R_1.transpose()
 
     
@@ -387,8 +389,8 @@ class MavisLO(object):
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
         matCasValue = xp.zeros((2*points,2*nstars), dtype=xp.float32)
         matCssValue = xp.zeros((2*nstars,2*nstars), dtype=xp.float32)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]        
         hh = xp.asarray(self.Cn2Heights)
         inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
         iidd = 0
