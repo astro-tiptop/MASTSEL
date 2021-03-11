@@ -1,15 +1,16 @@
 from mavisUtilities import *
 from mavisFormulas import *
-# import multiprocessing as mp
 import functools
+import multiprocessing as mp
 from configparser import ConfigParser
+import os
 
 class MavisLO(object):
-    
+
     def __init__(self, path, parametersFile, windpsdfile):
-                
+
         parser = ConfigParser()
-        parser.read(path + parametersFile + '.ini')
+        parser.read( os.path.join(path, parametersFile + '.ini') )
 #
 # SETTING PARAMETERS READ FROM FILE       
 #
@@ -24,6 +25,7 @@ class MavisLO(object):
         self.L0                  = eval(parser.get('atmosphere', 'L0'))
         self.Cn2Weights          = eval(parser.get('atmosphere', 'Cn2Weights'))
         self.Cn2Heights          = eval(parser.get('atmosphere', 'Cn2Heights'))
+        self.Cn2RefHeight          = eval(parser.get('atmosphere', 'Cn2RefHeight'))        
         self.wSpeed              = eval(parser.get('atmosphere', 'wSpeed'))
 #        self.wDir                = wDir
 #        self.nLayersReconstructed= nLayersReconstructed
@@ -64,9 +66,18 @@ class MavisLO(object):
         self.skyBackground_LO       = eval(parser.get('SENSOR_LO', 'skyBackground_LO'))
         self.ThresholdWCoG_LO       = eval(parser.get('SENSOR_LO', 'ThresholdWCoG_LO'))
         self.NewValueThrPix_LO      = eval(parser.get('SENSOR_LO', 'NewValueThrPix_LO'))
+        
+        defaultCompute = 'GPU'
+        defaultIntegralDiscretization1 = 1000
+        defaultIntegralDiscretization2 = 4000
+        self.computationPlatform    = eval(parser.get('COMPUTATION', 'platform', fallback='defaultCompute'))
+        self.integralDiscretization1 = eval(parser.get('COMPUTATION', 'integralDiscretization1', fallback='defaultIntegralDiscretization1'))
+        self.integralDiscretization2 = eval(parser.get('COMPUTATION', 'integralDiscretization2', fallback='defaultIntegralDiscretization2'))
+
 #
 # END OF SETTING PARAMETERS READ FROM FILE       
 #
+
 
         #vr0 = eval(parser.get('atmosphere', 'r0_Value'))
         #if vr0:
@@ -75,7 +86,8 @@ class MavisLO(object):
         self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
         airmass = 1/np.cos(self.zenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
-
+        
+    
         #vSpeed = eval(parser.get('atmosphere', 'oneWindSpeed'))
         #if vr0:
         #    self.WindSpeed = vSpeed
@@ -88,8 +100,8 @@ class MavisLO(object):
         self.imax = 30
         self.zmin = 0.03
         self.zmax = 30
-        self.integrationPoints = 1000 # //2
-        self.psdIntegrationPoints = 4000 # //2
+        self.integrationPoints = self.integralDiscretization1
+        self.psdIntegrationPoints = self.integralDiscretization2
         self.largeGridSize = 200
         self.downsample_factor = 4
         self.smallGridSize = 2*self.WindowRadiusWCoG_LO
@@ -107,17 +119,21 @@ class MavisLO(object):
         self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
         self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
 
-        self.mItGPU = Integrator(cp, cp.float64, '')
-        self.mItGPUcomplex = Integrator(cp, cp.complex64, '')
-        self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windpsdfile)
+        if self.computationPlatform=='GPU':
+            self.mIt = Integrator(cp, cp.float64, '')
+            self.mItcomplex = Integrator(cp, cp.complex64, '')
+            self.platformlib = gpulib
+        else:
+            self.mIt = Integrator(np, np.float, '')
+            self.mItcomplex = Integrator(np, np.complex, '')
+            self.platformlib = cpulib
 
+        self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windpsdfile)
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
         apIM = mf['interactionMatrixNGS']
-        #  max(self.DmHeights) could be 0, in this case use 10000
-        vH_DM = max( max(self.DmHeights), 10000)
-        apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.technical_FoV*arcsecsToRadians/2.0, 'H_DM':vH_DM})
+        apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.technical_FoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
         apIM_func = sp.lambdify((xx, yy), apIM, modules=alib)
@@ -150,15 +166,19 @@ class MavisLO(object):
     
     def specializedNoiseFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS_LO1 = sp.simplify(subsParamsByName(mf['completeIntegralTipLO'], dict1 ).function)
-        self.fTiltS_LO1 = sp.simplify(subsParamsByName(mf['completeIntegralTiltLO'], dict1).function)
+        self.fTipS_LO1 = subsParamsByName(mf['completeIntegralTipLO'], dict1 ).function
+        self.fTiltS_LO1 = subsParamsByName(mf['completeIntegralTiltLO'], dict1).function
+#        self.fTipS_LO1 = sp.simplify(subsParamsByName(mf['completeIntegralTipLO'], dict1 ).function)
+#        self.fTiltS_LO1 = sp.simplify(subsParamsByName(mf['completeIntegralTiltLO'], dict1).function)
         return self.fTipS_LO1, self.fTiltS_LO1
 
     
     def specializedWindFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS1 = sp.simplify(subsParamsByName(mf['completeIntegralTip'], dict1).function)
-        self.fTiltS1 = sp.simplify(subsParamsByName(mf['completeIntegralTilt'], dict1).function)
+        self.fTipS1 = subsParamsByName(mf['completeIntegralTip'], dict1).function
+        self.fTiltS1 = subsParamsByName(mf['completeIntegralTilt'], dict1).function
+#        self.fTipS1 = sp.simplify(subsParamsByName(mf['completeIntegralTip'], dict1).function)
+#        self.fTiltS1 = sp.simplify(subsParamsByName(mf['completeIntegralTilt'], dict1).function)
         return self.fTipS1, self.fTiltS1
     
     
@@ -193,41 +213,19 @@ class MavisLO(object):
     
     def buildReconstuctor2(self, aCartPointingCoordsV, aCartNGSCoords):
         npointings = aCartPointingCoordsV.shape[0]
-        nstars = aCartNGSCoords.shape[0]
-        if nstars==1:
-            R_1 = np.zeros((2*npointings, 2*nstars))
-            for k in range(npointings):
-                R_1[2*k:2*(k+1), :] = np.identity(2)
-                
-            return R_1, R_1.transpose()
-        else:        
-            P, P_func = self.specializedIM()
-            p_mat_list = []
-            for ii in range(nstars):
-                p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
-            P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
-            
-    #        rec_tomo = scipy.linalg.pinv(P_mat) # aka W, 5x6    
-            u, s, vh = np.linalg.svd(P_mat)
-            sv_threshold = 0.05 * s[0]
-            s_inv = np.reciprocal(s)
-            sRes = np.where(s < sv_threshold, 0, s_inv)
-             
-            sRes = np.diag(sRes)
-            sRes = np.append(sRes, np.zeros((1,sRes.shape[1])), axis=0 )
-            if nstars==3:
-                sRes = sRes.transpose()
-
-            rec_tomo = vh.transpose() @  ( sRes  @ u.transpose() )
-                        
-            vx = np.asarray(aCartPointingCoordsV[:,0])
-            vy = np.asarray(aCartPointingCoordsV[:,1])
-            R_1 = np.zeros((2*npointings, 2*nstars))
-            for k in range(npointings):
-                P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
-                R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
-                        
-            return R_1, R_1.transpose()
+        P, P_func = self.specializedIM()
+        pp1 = P_func(aCartNGSCoords[0,0]*arcsecsToRadians, aCartNGSCoords[0,1]*arcsecsToRadians)
+        pp2 = P_func(aCartNGSCoords[1,0]*arcsecsToRadians, aCartNGSCoords[1,1]*arcsecsToRadians)
+        pp3 = P_func(aCartNGSCoords[2,0]*arcsecsToRadians, aCartNGSCoords[2,1]*arcsecsToRadians)
+        P_mat = np.vstack([pp1, pp2, pp3]) # aka Interaction Matrix, im
+        rec_tomo = scipy.linalg.pinv(P_mat) # aka W, 5x6
+        vx = np.asarray(aCartPointingCoordsV[:,0])
+        vy = np.asarray(aCartPointingCoordsV[:,1])
+        R_1 = np.zeros((2*npointings, 6))
+        for k in range(npointings):
+            P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
+            R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
+        return R_1, R_1.transpose()
 
     
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM):
@@ -235,8 +233,8 @@ class MavisLO(object):
         aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
         lh = sp.Function('B')(getSymbolByName(aFunction, 'f_k'))
-        xplot1, zplot1 = self.mItGPU.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints//2, 'linear'), (self.imax, 'linear')], 'raw')
-        ssx, s0 = self.mItGPU.functionEval(expr0, paramsAndRanges )
+        xplot1, zplot1 = self.mIt.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints//2, 'linear'), (self.imax, 'linear')], 'raw')
+        ssx, s0 = self.mIt.functionEval(expr0, paramsAndRanges )
         zplot1 = zplot1 + s0
         zplot1 = zplot1.reshape((self.smallGridSize,self.smallGridSize))
         return xplot1, zplot1
@@ -296,15 +294,30 @@ class MavisLO(object):
     def computeWindPSDs(self, fmin, fmax, freq_samples):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
         scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
-        xplot1, zplot1 = self.mItGPU.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+
+        if self.computationPlatform=='GPU':
+            xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        else:
+            pool_size = int( min( mp.cpu_count(), freq_samples) )
+            pool = mp.Pool(processes=pool_size)
+            fx = np.linspace(fmin, fmax, freq_samples)
+            paramsAndRangesG = [( 'f', fxx, 0.0, 0.0, 'provided' ) for fxx in fx]
+            pool_outputs = pool.map(functools.partial(self.mIt.IntegralEvalE, eq=self.sTurbPSDTip, integrationVarsSamplingSchemes=[(self.psdIntegrationPoints, 'linear')], method='rect') , [paramAndRangeG])
+            pool.close()
+            pool.join()
+            for rr in pool_outputs:
+                xplot1.append(rr[0])
+                zplot1.append(rr[1])
+
+        print('x,z:', len(xplot1), len(zplot1))
         psd_freq = xplot1[0]
         psd_tip_wind = zplot1*scaleFactor
-        xplot1, zplot1 = self.mItGPU.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_tilt_wind = zplot1*scaleFactor
         return psd_tip_wind, psd_tilt_wind
 
         
-    def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib=gpulib):
+    def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
         Cfloat = self.fCValue.evalf()
         psd_tip_wind, psd_tilt_wind = self.computeWindPSDs(fmin, fmax, freq_samples)
@@ -337,7 +350,7 @@ class MavisLO(object):
         return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
 
         
-    def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib=gpulib):
+    def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
         npoints = 99
         Cfloat = self.fCValue.evalf()
         df = psd_freq[1]-psd_freq[0]
@@ -374,7 +387,7 @@ class MavisLO(object):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
 #    with self.mutex:
-        xplot1, zplot1 = self.mItGPUcomplex.IntegralEval(sp.Function('C_v')(p, h), 
+        xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h),
                                                          self.specializedCovExprs[ii+10*jj], 
                                                          [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')], 
                                                          [(self.integrationPoints, 'linear')], 
@@ -384,17 +397,16 @@ class MavisLO(object):
         
     def computeCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
         points = aCartPointingCoords.shape[0]
-        nstars = aCartNGSCoords.shape[0]
         scaleF = (500.0/(2*np.pi))**2
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
-        matCasValue = xp.zeros((2*points,2*nstars), dtype=xp.float32)
-        matCssValue = xp.zeros((2*nstars,2*nstars), dtype=xp.float32)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]        
+        matCasValue = xp.zeros((2*points,6), dtype=xp.float32)
+        matCssValue = xp.zeros((6,6), dtype=xp.float32)
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([self.Cn2RefHeight]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
-        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
+        inputsArray = np.zeros( 3*points + 9, dtype=complex)
         iidd = 0
-        for kk in range(nstars):
+        for kk in [0,1,2]:
             vv = np.ones((points,2))
             vv[:,0] *= aCartNGSCoords[kk,0]
             vv[:,1] *= aCartNGSCoords[kk,1]
@@ -406,30 +418,24 @@ class MavisLO(object):
             inputsArray[points*iidd:points*(iidd+1)] = pp
             iidd = iidd+1
         iidd=0
-        for kk1 in range(nstars):
-            for kk2 in range(nstars):
+        for kk1 in [0,1,2]:
+            for kk2 in [0,1,2]:
                 polarPointingCoordsD = cartesianToPolar(aCartNGSCoords[kk1,:]-aCartNGSCoords[kk2,:])
                 polarPointingCoordsD[1] *= degToRad
                 polarPointingCoordsD[0] *= arcsecsToRadians
                 polarPointingCoordsD[0] = max( polarPointingCoordsD[0], 1e-9)
                 pp = polarPointingCoordsD[0]*xp.exp(1j*polarPointingCoordsD[1])
-                inputsArray[nstars*points+iidd] = pp
+                inputsArray[3*points+iidd] = pp
                 iidd = iidd+1
-
-        _idx0 = {2:[0], 3:[1]}
-        if nstars==3:
-            _idx0 = {2:[0,2,4], 3:[1,3,5]}
-        elif nstars==2:
-            _idx0 = {2:[0,2], 3:[1,3]}
-
+        _idx0 = {2:[0,2,4], 3:[1,3,5]}
         for ii in [2,3]:
             for jj in [2,3]:
                 outputArray1 = self.covValue(ii, jj, inputsArray, hh)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
+                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:3*points:points, hidx]
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[3*points:,hidx], (3,3))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     
@@ -473,21 +479,21 @@ class MavisLO(object):
         
     def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
-        maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
-        nNaturalGS = aCartNGSCoords.shape[0]
         C1 = np.zeros((2,2))
-        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
-        
-        for starIndex in range(nNaturalGS):
+        Cnn = np.zeros((6,6))
+        maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
+
+        for starIndex in [0,1,2]:
             bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             var1x = avar[0] * self.pixel_scale_LO**2
-            nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
-            wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, gpulib )
+            nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
+            wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
                 C1[0,0] = wr[0]
                 C1[1,1] = wr[1]
+
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
         return Ctot.reshape((nPointings,2,2))
