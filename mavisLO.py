@@ -330,7 +330,7 @@ class MavisLO(object):
                 xplot1.append(rr[0])
                 zplot1.append(rr[1])
 
-        print('x,z:', len(xplot1), len(zplot1))
+        #print('x,z:', len(xplot1), len(zplot1))
         psd_freq = xplot1[0]
         psd_tip_wind = zplot1*scaleFactor
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')

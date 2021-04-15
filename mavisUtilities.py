@@ -221,7 +221,7 @@ def plotEllipses(cartPointingCoords, cov_ellipses, ss):
     ax.set_ylim(-20, 20)
     plt.show()
 
-def tiledDispaly(results):    
+def tiledDisplay(results):    
     nn = len(results)
     ncols = int(np.sqrt(nn))
     nrows = ncols
