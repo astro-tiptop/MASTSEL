@@ -11,61 +11,37 @@ class MavisLO(object):
 
         parser = ConfigParser()
         parser.read( os.path.join(path, parametersFile + '.ini') )
-#
-# SETTING PARAMETERS READ FROM FILE       
-#
-# parameters which are not used in this class reported but commented
-        self.TelescopeDiameter   = eval(parser.get('telescope', 'TelescopeDiameter'))
-        self.zenithAngle         = eval(parser.get('telescope', 'zenithAngle'))
-#        self.obscurationRatio    = obscurationRatio
-#        self.resolution          = resolution
-#        self.path_pupil          = path_pupil
-        self.atmosphereWavelength= eval(parser.get('atmosphere', 'atmosphereWavelength'))
-        self.seeing              = eval(parser.get('atmosphere', 'seeing'))
-        self.L0                  = eval(parser.get('atmosphere', 'L0'))
-        self.Cn2Weights          = eval(parser.get('atmosphere', 'Cn2Weights'))
-        self.Cn2Heights          = eval(parser.get('atmosphere', 'Cn2Heights'))
-        self.Cn2RefHeight          = eval(parser.get('atmosphere', 'Cn2RefHeight'))        
-        self.wSpeed              = eval(parser.get('atmosphere', 'wSpeed'))
-#        self.wDir                = wDir
-#        self.nLayersReconstructed= nLayersReconstructed
-#        self.ScienceWavelength   = ScienceWavelength
-#        self.ScienceZenith       = ScienceZenith
-#        self.ScienceAzimuth      = ScienceAzimuth
-#        self.psInMas             = psInMas
-#        self.psf_FoV             = psf_FoV
-        self.technical_FoV       = eval(parser.get('PSF_DIRECTIONS', 'technical_FoV'))
-#        self.GuideStarZenith_HO  = GuideStarZenith_HO
-#        self.GuideStarAzimuth_HO = GuideStarAzimuth_HO
-#        self.GuideStarHeight_HO  = GuideStarHeight_HO
-#        self.DmPitchs            = DmPitchs
-        self.DmHeights           = eval(parser.get('DM', 'DmHeights'))
-#        self.OptimizationZenith  = OptimizationZenith
-#        self.OptimizationAzimuth = OptimizationAzimuth
-#        self.OptimizationWeight  = OptimizationWeight
-#        self.OptimizationConditioning = OptimizationConditioning
-#        self.nLenslet_HO            = nLenslet_HO
-#        self.SensingWavelength_HO   = SensingWavelength_HO
-#        self.loopGain_HO            = loopGain_HO
-#        self.SensorFrameRate_HO     = SensorFrameRate_HO
-#        self.loopDelaySteps_HO      = loopDelaySteps_HO
-#        self.nph_HO                 = nph_HO
-#        self.sigmaRON_HO            = sigmaRON_HO
-#        self.Npix_per_subap_HO      = Npix_per_subap_HO
-#        self.pixel_scale_HO         = pixel_scale_HO
-        self.N_sa_tot_LO            = eval(parser.get('SENSOR_LO', 'N_sa_tot_LO'))
-        self.SensingWavelength_LO   = eval(parser.get('SENSOR_LO', 'SensingWavelength_LO'))
-        self.SensorFrameRate_LO     = eval(parser.get('SENSOR_LO', 'SensorFrameRate_LO'))
-        self.loopDelaySteps_LO      = eval(parser.get('SENSOR_LO', 'loopDelaySteps_LO'))
-        self.pixel_scale_LO         = eval(parser.get('SENSOR_LO', 'pixel_scale_LO'))
-#        self.Npix_per_subap_LO      = Npix_per_subap_LO
-        self.WindowRadiusWCoG_LO    = eval(parser.get('SENSOR_LO', 'WindowRadiusWCoG_LO'))
-        self.sigmaRON_LO            = eval(parser.get('SENSOR_LO', 'sigmaRON_LO'))
-        self.ExcessNoiseFactor_LO   = eval(parser.get('SENSOR_LO', 'ExcessNoiseFactor_LO'))
-        self.Dark_LO                = eval(parser.get('SENSOR_LO', 'Dark_LO'))
-        self.skyBackground_LO       = eval(parser.get('SENSOR_LO', 'skyBackground_LO'))
-        self.ThresholdWCoG_LO       = eval(parser.get('SENSOR_LO', 'ThresholdWCoG_LO'))
-        self.NewValueThrPix_LO      = eval(parser.get('SENSOR_LO', 'NewValueThrPix_LO'))
+        #
+        # SETTING PARAMETERS READ FROM FILE       
+        #
+        self.TelescopeDiameter      = eval(parser.get('telescope', 'TelescopeDiameter'))
+        self.ZenithAngle            = eval(parser.get('telescope', 'ZenithAngle'))
+        self.TechnicalFoV           = eval(parser.get('telescope', 'TechnicalFoV'))
+        
+        self.AtmosphereWavelength   = eval(parser.get('atmosphere', 'Wavelength'))
+        self.Seeing                 = eval(parser.get('atmosphere', 'Seeing'))
+        self.L0                     = eval(parser.get('atmosphere', 'L0'))
+        self.Cn2Weights             = eval(parser.get('atmosphere', 'Cn2Weights'))
+        self.Cn2Heights             = eval(parser.get('atmosphere', 'Cn2Heights'))
+        self.wSpeed                 = eval(parser.get('atmosphere', 'WindSpeed'))
+        
+        self.SensingWavelength_LO   = eval(parser.get('sources_LO', 'Wavelength'))
+        
+        self.NumberLenslets         = eval(parser.get('sensor_LO', 'NumberLenslets'))
+        self.N_sa_tot_LO            = self.NumberLenslets[0]**2
+        self.PixelScale_LO          = eval(parser.get('sensor_LO', 'PixelScale'))
+        self.WindowRadiusWCoG_LO    = eval(parser.get('sensor_LO', 'WindowRadiusWCoG'))
+        self.sigmaRON_LO            = eval(parser.get('sensor_LO', 'SigmaRON'))
+        self.ExcessNoiseFactor_LO   = eval(parser.get('sensor_LO', 'ExcessNoiseFactor'))
+        self.Dark_LO                = eval(parser.get('sensor_LO', 'Dark'))
+        self.skyBackground_LO       = eval(parser.get('sensor_LO', 'SkyBackground'))
+        self.ThresholdWCoG_LO       = eval(parser.get('sensor_LO', 'ThresholdWCoG'))
+        self.NewValueThrPix_LO      = eval(parser.get('sensor_LO', 'NewValueThrPix'))
+        
+        self.DmHeights              = eval(parser.get('DM', 'DmHeights'))
+        
+        self.SensorFrameRate_LO     = eval(parser.get('RTC', 'SensorFrameRate_LO'))
+        self.loopDelaySteps_LO      = eval(parser.get('RTC', 'LoopDelaySteps_LO'))
         
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
@@ -73,28 +49,13 @@ class MavisLO(object):
         self.computationPlatform    = eval(parser.get('COMPUTATION', 'platform', fallback='defaultCompute'))
         self.integralDiscretization1 = eval(parser.get('COMPUTATION', 'integralDiscretization1', fallback='defaultIntegralDiscretization1'))
         self.integralDiscretization2 = eval(parser.get('COMPUTATION', 'integralDiscretization2', fallback='defaultIntegralDiscretization2'))
-
-#
-# END OF SETTING PARAMETERS READ FROM FILE       
-#
-
-
-        #vr0 = eval(parser.get('atmosphere', 'r0_Value'))
-        #if vr0:
-        #    self.r0_Value = vr0
-        #else:
-        self.r0_Value = 0.976*self.atmosphereWavelength/self.seeing*206264.8 # old: 0.15
-        airmass = 1/np.cos(self.zenithAngle*np.pi/180)
-        self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
-        
-    
-        #vSpeed = eval(parser.get('atmosphere', 'oneWindSpeed'))
-        #if vr0:
-        #    self.WindSpeed = vSpeed
-        #else:
+        #
+        # END OF SETTING PARAMETERS READ FROM FILE       
+        #
+        self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
+        airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
+        self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)       
         self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-    
-        # print('WindSpeed', self.WindSpeed) # result is 11.94
         
 #        self.mutex = None
         self.imax = 30
@@ -108,7 +69,7 @@ class MavisLO(object):
         self.p_offset = 1.0 # 1/4 pixel on medium grid
         self.mediumGridSize = int(self.largeGridSize/self.downsample_factor)
         self.mediumShape = (self.mediumGridSize,self.mediumGridSize)
-        self.mediumPixelScale = self.pixel_scale_LO/self.downsample_factor
+        self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
         self.zernikeCov_rh1 = MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_lh1 = MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
@@ -133,7 +94,7 @@ class MavisLO(object):
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
         apIM = mf['interactionMatrixNGS']
-        apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.technical_FoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
+        apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.TechnicalFoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
         apIM_func = sp.lambdify((xx, yy), apIM, modules=alib)
@@ -515,7 +476,7 @@ class MavisLO(object):
 
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
-            var1x = avar[0] * self.pixel_scale_LO**2
+            var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
             wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
             Cnn[2*starIndex,2*starIndex] = nr[0]
