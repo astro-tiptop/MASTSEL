@@ -1,11 +1,13 @@
-from mavis import *
-import unittest
+from mastsel.mavisFormulas import *
+from mastsel.mavisLO import *
+from mastsel.mavisPsf import *
 
+import unittest
 
 class TestMavisLO(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = "/home/frossi/dev/MASTSEL/"
+        path = "../data/ini/"
         parametersFile = 'mavisParamsTests'
         fullPathFilename = path + parametersFile + '.ini'
         windPsdFile = '../data/windpsd_mavis.fits'

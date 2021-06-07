@@ -1,5 +1,5 @@
-from mavisUtilities import *
-from mavisFormulas import *
+from mastsel.mavisUtilities import *
+from mastsel.mavisFormulas import *
 import functools
 import multiprocessing as mp
 from configparser import ConfigParser
