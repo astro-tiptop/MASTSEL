@@ -25,6 +25,9 @@ class MavisLO(object):
         self.Cn2Heights             = eval(parser.get('atmosphere', 'Cn2Heights'))
         self.wSpeed                 = eval(parser.get('atmosphere', 'WindSpeed'))
         
+        self.testr0                 = eval(parser.get('atmosphere', 'r0_Value'))
+        self.testWindspeed                 = eval(parser.get('atmosphere', 'testWindspeed'))
+        
         self.SensingWavelength_LO   = eval(parser.get('sources_LO', 'Wavelength'))
         
         self.NumberLenslets         = eval(parser.get('sensor_LO', 'NumberLenslets'))
@@ -52,11 +55,16 @@ class MavisLO(object):
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
         #
-        self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
-        airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
-        self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)       
-        self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-        
+        if self.testr0:
+            self.r0_Value = self.testr0
+        else:
+            self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
+            airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
+            self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
+        if self.testWindspeed:
+            self.WindSpeed = self.testWindspeed
+        else:
+            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)        
 #        self.mutex = None
         self.imax = 30
         self.zmin = 0.03
