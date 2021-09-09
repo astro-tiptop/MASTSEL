@@ -17,6 +17,7 @@ class MavisLO(object):
         self.TelescopeDiameter      = eval(parser.get('telescope', 'TelescopeDiameter'))
         self.ZenithAngle            = eval(parser.get('telescope', 'ZenithAngle'))
         self.TechnicalFoV           = eval(parser.get('telescope', 'TechnicalFoV'))
+        self.ObscurationRatio       = eval(parser.get('telescope', 'ObscurationRatio'))
         
         self.AtmosphereWavelength   = eval(parser.get('atmosphere', 'Wavelength'))
         self.Seeing                 = eval(parser.get('atmosphere', 'Seeing'))
@@ -31,7 +32,11 @@ class MavisLO(object):
         self.SensingWavelength_LO   = eval(parser.get('sources_LO', 'Wavelength'))
         
         self.NumberLenslets         = eval(parser.get('sensor_LO', 'NumberLenslets'))
+
         self.N_sa_tot_LO            = self.NumberLenslets[0]**2
+        if self.NumberLenslets[0] > 2:
+            self.N_sa_tot_LO        = int ( np.floor( self.N_sa_tot_LO * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
+            
         self.PixelScale_LO          = eval(parser.get('sensor_LO', 'PixelScale'))
         self.WindowRadiusWCoG_LO    = eval(parser.get('sensor_LO', 'WindowRadiusWCoG'))
         self.sigmaRON_LO            = eval(parser.get('sensor_LO', 'SigmaRON'))
@@ -241,13 +246,31 @@ class MavisLO(object):
     def computeBias(self, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
         gridSpanArcsec= self.mediumPixelScale*self.largeGridSize/1000
         gridSpanRad = gridSpanArcsec/radiansToArcsecs
-        peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_1650*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
-        peakValueNoFlux = aNGS_SR_1650*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
+        
+        diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
+        
+        peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_1650*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2) 
+        peakValueNoFlux = aNGS_SR_1650*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+
+#        peakValue = peakValue/(40**self.TelescopeDiameter/2)
+#        peakValueNoFlux = aNGS_SR_1650*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
+
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
-        asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
+        
+        FWHM_coeff = np.sqrt(aNGS_FWHM_mas**2 - diffNGS_FWHM_mas**2 )
+        
+        subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
+        
+        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + subapNGS_FWHM_mas**2 )
+        asigma = aNGS_FWHM_mas_mod/sigmaToFWHM/self.mediumPixelScale
         g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+
+#        asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
+#        asigma *= 40.0
+#        g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+
         g2d = intRebin(g2d, self.mediumShape) * self.downsample_factor**2
         I_k_data = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         I_k_prime_data = peakValue * simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma)
@@ -483,7 +506,7 @@ class MavisLO(object):
 
 
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            bias, amu, avar = self.computeBias(aNGS_flux[starIndex]/self.N_sa_tot_LO, aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
             wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
