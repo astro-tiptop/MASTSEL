@@ -1,5 +1,5 @@
-from turbolence import *
-from zernike import *
+from symao.turbolence import *
+from symao.zernike import *
 
 
 def createMavisFormulary():

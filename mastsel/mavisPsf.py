@@ -1,5 +1,5 @@
-from mavisUtilities import *
-from mavisFormulas import *
+from mastsel.mavisUtilities import *
+from mastsel.mavisFormulas import *
 
 fit_window_max_size = 512
 defaultArrayBackend = cp

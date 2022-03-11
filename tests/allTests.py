@@ -1,11 +1,13 @@
-from mavis import *
-import unittest
+from mastsel.mavisFormulas import *
+from mastsel.mavisLO import *
+from mastsel.mavisPsf import *
 
+import unittest
 
 class TestMavisLO(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = "/home/frossi/dev/MASTSEL/"
+        path = "../data/ini/"
         parametersFile = 'mavisParamsTests'
         fullPathFilename = path + parametersFile + '.ini'
         windPsdFile = '../data/windpsd_mavis.fits'
@@ -111,7 +113,7 @@ class TestNoiseResiduals(TestMavisLO):
         """
         print("Running Test: TestNoiseResiduals")
         psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('../data/windpsd_mavis.fits')
-        var1x = 0.05993281522281573 * TestMavisLO.mLO.pixel_scale_LO**2
+        var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO**2
         bias = 0.4300779971881394
         nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
         wr = TestMavisLO.mLO.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
