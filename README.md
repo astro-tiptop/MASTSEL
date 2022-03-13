@@ -1,6 +1,6 @@
 # MASTSEL
 
-This library was developed with 2 goals: support the Asterism Selection for MAVIS instrument (https://mavis-ao.org/) and managing the computation of the jitter (i.e. tip/tilt) error in Adaptive Optics simulations done in the Fourier domain and it is used by TIPTOP (https://github.com/FabioRossiArcetri/TIPTOP).
+This library was developed with 2 goals: support the Asterism Selection for MAVIS instrument (https://mavis-ao.org/) and managing the computation of the jitter (i.e. tip/tilt) error in Adaptive Optics simulations done in the Fourier domain. It is used by TIPTOP (https://github.com/FabioRossiArcetri/TIPTOP).
 
 The main features are located in:
 
