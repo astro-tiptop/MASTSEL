@@ -538,8 +538,8 @@ class MavisLO(object):
         def computeCovEllispse(CC):
             if np.abs(CC[1,0]) < 1e-20:
                 CC[1,0] = 1e-20
-	    if np.abs(CC[0,1]) < 1e-20:
-		CC[0,1] = 1e-20
+            if np.abs(CC[0,1]) < 1e-20:
+                CC[0,1] = 1e-20
             
             th = leq1(CC[0,0], CC[1,1], CC[1,0])        
             s1 = leq2(CC[0,0], CC[1,1], CC[1,0], th)
