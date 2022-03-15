@@ -29,8 +29,12 @@ class MavisLO(object):
         self.testr0                 = eval(parser.get('atmosphere', 'r0_Value'))
         self.testWindspeed                 = eval(parser.get('atmosphere', 'testWindspeed'))
         
-        self.SensingWavelength_LO   = eval(parser.get('sources_LO', 'Wavelength'))
-        
+        SensingWavelength_LO = eval(parser.get('sources_LO', 'Wavelength'))
+        if isinstance(SensingWavelength_LO, list):
+            self.SensingWavelength_LO = SensingWavelength_LO[0]
+        else:
+            self.SensingWavelength_LO = SensingWavelength_LO
+
         self.NumberLenslets         = eval(parser.get('sensor_LO', 'NumberLenslets'))
 
         self.N_sa_tot_LO            = self.NumberLenslets[0]**2
