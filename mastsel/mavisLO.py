@@ -7,7 +7,7 @@ import os
 
 class MavisLO(object):
 
-    def __init__(self, path, parametersFile, windpsdfile):
+    def __init__(self, path, parametersFile):
 
         parser = ConfigParser()
         parser.read( os.path.join(path, parametersFile + '.ini') )
@@ -18,7 +18,15 @@ class MavisLO(object):
         self.ZenithAngle            = eval(parser.get('telescope', 'ZenithAngle'))
         self.TechnicalFoV           = eval(parser.get('telescope', 'TechnicalFoV'))
         self.ObscurationRatio       = eval(parser.get('telescope', 'ObscurationRatio'))
-        
+        if parser.has_option('telescope', 'windPsdFile'):
+            windPsdFile = eval(parser.get('telescope', 'windPsdFile'))
+            self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
+        else:
+            print('No windPsdFile file is set.')
+            self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
+            self.psd_tip_wind = np.zeros((500))
+            self.psd_tilt_wind = np.zeros((500))
+            
         self.AtmosphereWavelength   = eval(parser.get('atmosphere', 'Wavelength'))
         self.Seeing                 = eval(parser.get('atmosphere', 'Seeing'))
         self.L0                     = eval(parser.get('atmosphere', 'L0'))
@@ -27,7 +35,7 @@ class MavisLO(object):
         self.wSpeed                 = eval(parser.get('atmosphere', 'WindSpeed'))
         
         self.testr0                 = eval(parser.get('atmosphere', 'r0_Value'))
-        self.testWindspeed                 = eval(parser.get('atmosphere', 'testWindspeed'))
+        self.testWindspeed          = eval(parser.get('atmosphere', 'testWindspeed'))
         
         SensingWavelength_LO = eval(parser.get('sources_LO', 'Wavelength'))
         if isinstance(SensingWavelength_LO, list):
@@ -106,7 +114,7 @@ class MavisLO(object):
             self.mItcomplex = Integrator(np, np.complex, '')
             self.platformlib = cpulib
 
-        self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windpsdfile)
+        
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
@@ -470,8 +478,8 @@ class MavisLO(object):
         psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
         psd_tip_wind = np.zeros((500))
         psd_tilt_wind = np.zeros((500))
-        psd_tip_wind[0:200] = psd_data[1,:]
-        psd_tilt_wind[0:200] = psd_data[2,:]
+        psd_tip_wind[0:200] = psd_data[1,:] #TODO here we must make an interpolation using the frequencies defined in the filename
+        psd_tilt_wind[0:200] = psd_data[2,:] #TODO same as above
         return psd_freq, psd_tip_wind, psd_tilt_wind
 
         
