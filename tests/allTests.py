@@ -80,7 +80,8 @@ class TestWindResiduals(TestMavisLO):
         print("Running Test: TestWindResiduals")
         NGS_flux = [10000, 30000, 5000]
         NGS_SR_1650 = [0.4, 0.2, 0.6]
-        NGS_FWHM_mas = [90, 110, 85]
+        NGS_FWHM_mas = [51.677, 81.673, 42.373]
+        
         mItGPU = Integrator(cp, cp.float64, '')
         r1 = TestMavisLO.mLO.computeBias(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
         r2 = TestMavisLO.mLO.computeBias(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
