@@ -536,7 +536,7 @@ class MavisLO(object):
         Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
 
 
-        if self.vebose:
+        if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
             print('             aNGS_flux',aNGS_flux)
             print('             self.N_sa_tot_LO',self.N_sa_tot_LO)
