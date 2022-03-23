@@ -7,7 +7,9 @@ import os
 
 class MavisLO(object):
 
-    def __init__(self, path, parametersFile):
+    def __init__(self, path, parametersFile, verbose=False):
+
+        self.verbose=verbose
 
         parser = ConfigParser()
         parser.read( os.path.join(path, parametersFile + '.ini') )
@@ -58,6 +60,11 @@ class MavisLO(object):
         self.ThresholdWCoG_LO       = eval(parser.get('sensor_LO', 'ThresholdWCoG'))
         self.NewValueThrPix_LO      = eval(parser.get('sensor_LO', 'NewValueThrPix'))
         
+        if parser.has_option('sensor_LO', 'noNoise'):
+            self.noNoise = eval(parser.get('sensor_LO', 'noNoise'))
+        else:
+            self.noNoise = False
+            
         self.DmHeights              = eval(parser.get('DM', 'DmHeights'))
         
         self.SensorFrameRate_LO     = eval(parser.get('RTC', 'SensorFrameRate_LO'))
@@ -255,17 +262,19 @@ class MavisLO(object):
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
         
-    def computeBias(self, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
+    def computeBias(self, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
         gridSpanArcsec= self.mediumPixelScale*self.largeGridSize/1000
         gridSpanRad = gridSpanArcsec/radiansToArcsecs
         
         diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
         
-        peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_1650*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2) 
-        peakValueNoFlux = aNGS_SR_1650*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+        peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+        if self.verbose:
+            print('mavisLO.computeBias, peakValue',peakValue)
+        peakValueNoFlux = aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
 
 #        peakValue = peakValue/(40**self.TelescopeDiameter/2)
-#        peakValueNoFlux = aNGS_SR_1650*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
+#        peakValueNoFlux = aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
 
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
@@ -495,7 +504,12 @@ class MavisLO(object):
             Casi = Cas[2*i:2*(i+1),:]
             C2b = xp.dot(Ri, xp.dot(Css, RTi)) - xp.dot(Casi, RTi) - xp.dot(Ri, Casi.transpose())
             C3 = xp.dot(Ri, xp.dot(xp.asarray(aCnn), RTi))
-            ss = xp.asarray(aC1) + Caa + C2b + C3
+            # sum tomography (Caa + C2b), noise (C3), wind (aC1) errors
+            if self.noNoise:
+                ss = xp.asarray(aC1) + Caa + C2b 
+                print('WARNING: LO noise is not active!')
+            else:
+                ss = xp.asarray(aC1) + Caa + C2b + C3
             Ctot[2*i:2*(i+1),:] = ss
         return Ctot
 
@@ -505,11 +519,16 @@ class MavisLO(object):
         Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aaCartNGSCoords)        
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(aCnn, RT))
-        Ctot = aC1 + C2 + C3
+        # sum tomography (C2), noise (C3), wind (aC1) errors
+        if self.noNoise:
+            ss = aC1 + C2
+            print('WARNING: LO noise is not active!')
+        else:
+            Ctot = aC1 + C2 + C3
         return Ctot
 
         
-    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_1650, aNGS_FWHM_mas):
+    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
@@ -517,8 +536,17 @@ class MavisLO(object):
         Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
 
 
+        if self.vebose:
+            print('mavisLO.computeTotalResidualMatrix')
+            print('             aNGS_flux',aNGS_flux)
+            print('             self.N_sa_tot_LO',self.N_sa_tot_LO)
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.computeBias(aNGS_flux[starIndex]/self.N_sa_tot_LO, aNGS_SR_1650[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            bias, amu, avar = self.computeBias(aNGS_flux[starIndex]/self.N_sa_tot_LO, aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            if self.verbose:
+                print('             bias',bias)
+                print('             amu',amu)
+                print('             avar',avar)
+
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
             wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
