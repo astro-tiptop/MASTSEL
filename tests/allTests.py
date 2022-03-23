@@ -11,7 +11,7 @@ class TestMavisLO(unittest.TestCase):
         parametersFile = 'mavisParamsTests'
         fullPathFilename = path + parametersFile + '.ini'
         windPsdFile = '../data/windpsd_mavis.fits'
-        TestMavisLO.mLO = MavisLO(path, parametersFile, windPsdFile)
+        TestMavisLO.mLO = MavisLO(path, parametersFile)
 
 class TestReconstructor(TestMavisLO):
                     
