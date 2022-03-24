@@ -111,6 +111,8 @@ class MavisLO(object):
         self.specializedCovExprs = self.buildSpecializedCovFunctions()
         self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
         self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
+        self.aFunctionMGauss = self.specializedGMeanVarFormulas('GaussianMean')
+        self.aFunctionVGauss = self.specializedGMeanVarFormulas('GaussianVariance')
 
         if self.computationPlatform=='GPU':
             self.mIt = Integrator(cp, cp.float64, '')
@@ -143,8 +145,15 @@ class MavisLO(object):
         integral = subsParamsByName( integral,  {**dd0, **dd1, **dd2} )
         aFunction = exprK * integral.function
         return aFunction, expr0
-    
-    
+
+    def specializedGMeanVarFormulas(self, kind):
+        dd0 = {'t':self.ThresholdWCoG_LO, 'nu':self.NewValueThrPix_LO, 'sigma_RON':self.sigmaRON_LO}
+        dd1 = {'b':self.Dark_LO/self.SensorFrameRate_LO}
+        dd2 = {'F':self.ExcessNoiseFactor_LO}
+        expr0 = mf[kind]
+        expr0 = subsParamsByName( expr0, {**dd0, **dd1, **dd2} )
+        return expr0
+
     def specializedTurbFuncs(self):
         aTurbPSDTip = subsParamsByName(mf['turbPSDTip'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
         aTurbPSDTilt = subsParamsByName(mf['turbPSDTilt'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
@@ -242,7 +251,7 @@ class MavisLO(object):
 
             return R_1, R_1.transpose()
     
-    def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM):
+    def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, expr1):
         gaussianPoints = gaussianPointsM.reshape(self.smallGridSize*self.smallGridSize)
         aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
@@ -250,13 +259,16 @@ class MavisLO(object):
         xplot1, zplot1 = self.mIt.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints//2, 'linear'), (self.imax, 'linear')], 'raw')
         ssx, s0 = self.mIt.functionEval(expr0, paramsAndRanges )
         zplot1 = zplot1 + s0
-        zplot1 = zplot1.reshape((self.smallGridSize,self.smallGridSize))
-        return xplot1, zplot1
+        lh = sp.Function('B')(getSymbolByName(expr1, 'f_k'))
+        ssx, zplot2 = self.mIt.functionEval(expr1, paramsAndRanges )
+        rr = np.where(gaussianPoints + self.Dark_LO/self.SensorFrameRate_LO < 10.0, zplot1, zplot2)
+        rr = rr.reshape((self.smallGridSize,self.smallGridSize))
+        return ssx, rr
 
     
     def meanVarSigma(self, gaussianPoints):
-        xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints)
-        xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints)
+        xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints, self.aFunctionMGauss)
+        xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints, self.aFunctionVGauss)
         var_ktr_array = var_ktr_array - mu_ktr_array**2
         sigma_ktr_array = np.sqrt(var_ktr_array.astype(np.float32))
         return mu_ktr_array, var_ktr_array, sigma_ktr_array

@@ -211,6 +211,29 @@ def createMavisFormulary():
         F, z = sp.symbols('F z', real=True)
         return z ** (i/(F-1) -1 )  * sp.exp(-z/(F-1)) / ( sp.exp(sp.log(F-1)*(i/(F-1))) *  sp.gamma(i/(F-1)) )
 
+    def gaussianMean():
+        f_k = sp.symbols('f_k', real=True)
+        sigma_ron, b, t, nu, F = sp.symbols('sigma_RON b t nu F', real=True)
+        sigma_e = sp.sqrt(F*(f_k+b)+sigma_ron*sigma_ron)
+        f1 = subsParamsByName( expr_phi(), {'x': (t-f_k)/sigma_e})
+        f2 = subsParamsByName( expr_Phi(), {'x': (f_k-t)/sigma_e})
+        f3 = subsParamsByName( expr_Phi(), {'x': (t-f_k)/sigma_e})
+        _rhs = sigma_e * f1  + f_k * f2 + nu * f3
+        _lhs = sp.symbols('mu_k_thr')
+        return _rhs
+
+    def gaussianVariance():
+        mu_k = sp.symbols('mu_k_thr')
+        f_k = sp.symbols('f_k', real=True)
+        sigma_ron, b, t, nu, F = sp.symbols('sigma_RON b t nu F', real=True)
+        sigma_e = sp.sqrt(F*(f_k+b)+sigma_ron*sigma_ron)
+        f1 = subsParamsByName( expr_phi(), {'x': (t-f_k)/sigma_e})
+        f2 = subsParamsByName( expr_Phi(), {'x': (f_k-t)/sigma_e})
+        f3 = subsParamsByName( expr_Phi(), {'x': (t-f_k)/sigma_e})
+        _rhs = sigma_e*(t+f_k) * f1  + (f_k*f_k + sigma_e*sigma_e) * f2 + nu**2 * f3
+        _lhs = sp.symbols('sigma^2_k_thr')
+        return _rhs
+
     def truncatedMeanBasic():
         i, i_max = sp.symbols('i i_max', integer=True)
         # f_k = I_k + back, vedi appedice D : back: 0.0
@@ -354,6 +377,8 @@ def createMavisFormulary():
                              'completeIntegralTilt',                            
                              'ZernikeCovarianceD', 
                              'ZernikeCovarianceI', 
+                             'GaussianMean',
+                             'GaussianVariance',
                              'TruncatedMeanBasic', 
                              'TruncatedVarianceBasic',
                              'TruncatedMean', 
@@ -396,7 +421,9 @@ def createMavisFormulary():
                              completeIntegralTip(),
                              completeIntegralTilt(),                            
                              zernikeCovarianceD(),
-                             zernikeCovarianceI(), 
+                             zernikeCovarianceI(),
+                             gaussianMean(),
+                             gaussianVariance(),
                              truncatedMeanBasic(), 
                              truncatedVarianceBasic(),
                              truncatedMean(), 
