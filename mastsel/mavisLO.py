@@ -54,6 +54,8 @@ class MavisLO(object):
         self.PixelScale_LO          = eval(parser.get('sensor_LO', 'PixelScale'))
         self.WindowRadiusWCoG_LO    = eval(parser.get('sensor_LO', 'WindowRadiusWCoG'))
         self.sigmaRON_LO            = eval(parser.get('sensor_LO', 'SigmaRON'))
+        if self.sigmaRON_LO == 0:
+            self.sigmaRON_LO = 1e-6
         self.ExcessNoiseFactor_LO   = eval(parser.get('sensor_LO', 'ExcessNoiseFactor'))
         self.Dark_LO                = eval(parser.get('sensor_LO', 'Dark'))
         self.skyBackground_LO       = eval(parser.get('sensor_LO', 'SkyBackground'))
