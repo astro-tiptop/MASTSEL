@@ -576,7 +576,7 @@ class MavisLO(object):
             print('             aNGS_flux',aNGS_flux)
             print('             self.N_sa_tot_LO',self.N_sa_tot_LO)
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.computeBias(aNGS_flux[starIndex]/self.N_sa_tot_LO, aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             if self.verbose:
                 print('             bias',bias)
                 print('             amu',amu)
