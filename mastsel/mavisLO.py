@@ -30,13 +30,10 @@ class MavisLO(object):
             self.psd_tilt_wind = np.zeros((500))
             
         self.AtmosphereWavelength   = eval(parser.get('atmosphere', 'Wavelength'))
-        self.Seeing                 = eval(parser.get('atmosphere', 'Seeing'))
         self.L0                     = eval(parser.get('atmosphere', 'L0'))
         self.Cn2Weights             = eval(parser.get('atmosphere', 'Cn2Weights'))
         self.Cn2Heights             = eval(parser.get('atmosphere', 'Cn2Heights'))
         self.wSpeed                 = eval(parser.get('atmosphere', 'WindSpeed'))
-        
-        self.testr0                 = eval(parser.get('atmosphere', 'r0_Value'))
         self.testWindspeed          = eval(parser.get('atmosphere', 'testWindspeed'))
         
         SensingWavelength_LO = eval(parser.get('sources_LO', 'Wavelength'))
@@ -78,15 +75,24 @@ class MavisLO(object):
         self.computationPlatform    = eval(parser.get('COMPUTATION', 'platform', fallback='defaultCompute'))
         self.integralDiscretization1 = eval(parser.get('COMPUTATION', 'integralDiscretization1', fallback='defaultIntegralDiscretization1'))
         self.integralDiscretization2 = eval(parser.get('COMPUTATION', 'integralDiscretization2', fallback='defaultIntegralDiscretization2'))
+        
+        if parser.has_option('atmosphere', 'r0_Value') and parser.has_option('atmosphere', 'Seeing'):
+            print('%%%%%%%% ATTENTION %%%%%%%%')
+            print('You must provide r0_Value or Seeing value, not both, ')
+            print('Seeing parameter will be used, r0_Value will be discarded!\n')
+        
+        if parser.has_option('atmosphere', 'Seeing'):
+            self.Seeing = eval(parser.get('atmosphere', 'Seeing'))
+            self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
+        else:
+            self.r0_Value = eval(parser.get('atmosphere', 'r0_Value'))
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
         #
-        if self.testr0:
-            self.r0_Value = self.testr0
-        else:
-            self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
-            airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
-            self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
+        
+        airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
+        self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
+
         if self.testWindspeed:
             self.WindSpeed = self.testWindspeed
         else:
