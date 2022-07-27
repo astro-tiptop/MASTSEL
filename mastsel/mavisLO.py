@@ -33,8 +33,6 @@ class MavisLO(object):
         self.L0                     = eval(parser.get('atmosphere', 'L0'))
         self.Cn2Weights             = eval(parser.get('atmosphere', 'Cn2Weights'))
         self.Cn2Heights             = eval(parser.get('atmosphere', 'Cn2Heights'))
-        self.wSpeed                 = eval(parser.get('atmosphere', 'WindSpeed'))
-        self.testWindspeed          = eval(parser.get('atmosphere', 'testWindspeed'))
         
         SensingWavelength_LO = eval(parser.get('sources_LO', 'Wavelength'))
         if isinstance(SensingWavelength_LO, list):
@@ -86,17 +84,34 @@ class MavisLO(object):
             self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
         else:
             self.r0_Value = eval(parser.get('atmosphere', 'r0_Value'))
+            
+        testWindspeedIsValid = False
+        if parser.has_option('atmosphere', 'testWindspeed'):
+            testWindspeed = parser.get('atmosphere', 'testWindspeed')
+            try:
+                testWindspeed = float(testWindspeed)
+                testWindspeedIsValid = True
+            except:
+                testWindspeedIsValid = False
+            
+        if parser.has_option('atmosphere', 'WindSpeed') and parser.has_option('atmosphere', 'testWindspeed'):
+            if testWindspeedIsValid:
+                print('%%%%%%%% ATTENTION %%%%%%%%')
+                print('You must provide WindSpeed or testWindspeed value, not both, ')
+                print('testWindspeed parameter will be used, WindSpeed will be discarded!\n')
+            
+        if testWindspeedIsValid:
+            self.WindSpeed = eval(parser.get('atmosphere', 'testWindspeed'))
+        else:
+            self.wSpeed = eval(parser.get('atmosphere', 'WindSpeed'))
+            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)   
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
         #
         
         airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
-
-        if self.testWindspeed:
-            self.WindSpeed = self.testWindspeed
-        else:
-            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)        
+                 
 #        self.mutex = None
         self.imax = 30
         self.zmin = 0.03
