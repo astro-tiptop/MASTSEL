@@ -90,7 +90,10 @@ class MavisLO(object):
             testWindspeed = parser.get('atmosphere', 'testWindspeed')
             try:
                 testWindspeed = float(testWindspeed)
-                testWindspeedIsValid = True
+                if testWindspeed > 0:
+                    testWindspeedIsValid = True
+                else:
+                    testWindspeedIsValid = False
             except:
                 testWindspeedIsValid = False
             
