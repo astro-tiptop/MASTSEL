@@ -40,14 +40,9 @@ class MavisLO(object):
             self.psd_tilt_wind = np.zeros((500))
             
         self.AtmosphereWavelength   = eval(parser.get('atmosphere', 'Wavelength'))
-        self.Seeing                 = eval(parser.get('atmosphere', 'Seeing'))
         self.L0                     = eval(parser.get('atmosphere', 'L0'))
         self.Cn2Weights             = eval(parser.get('atmosphere', 'Cn2Weights'))
         self.Cn2Heights             = eval(parser.get('atmosphere', 'Cn2Heights'))
-        self.wSpeed                 = eval(parser.get('atmosphere', 'WindSpeed'))
-        
-        self.testr0                 = eval(parser.get('atmosphere', 'r0_Value'))
-        self.testWindspeed          = eval(parser.get('atmosphere', 'testWindspeed'))
         
         SensingWavelength_LO = eval(parser.get('sources_LO', 'Wavelength'))
         if isinstance(SensingWavelength_LO, list):
@@ -64,6 +59,8 @@ class MavisLO(object):
         self.PixelScale_LO          = eval(parser.get('sensor_LO', 'PixelScale'))
         self.WindowRadiusWCoG_LO    = eval(parser.get('sensor_LO', 'WindowRadiusWCoG'))
         self.sigmaRON_LO            = eval(parser.get('sensor_LO', 'SigmaRON'))
+        if self.sigmaRON_LO == 0:
+            self.sigmaRON_LO = 1e-6
         self.ExcessNoiseFactor_LO   = eval(parser.get('sensor_LO', 'ExcessNoiseFactor'))
         self.Dark_LO                = eval(parser.get('sensor_LO', 'Dark'))
         self.skyBackground_LO       = eval(parser.get('sensor_LO', 'SkyBackground'))
@@ -86,19 +83,48 @@ class MavisLO(object):
         self.computationPlatform    = eval(parser.get('COMPUTATION', 'platform', fallback='defaultCompute'))
         self.integralDiscretization1 = eval(parser.get('COMPUTATION', 'integralDiscretization1', fallback='defaultIntegralDiscretization1'))
         self.integralDiscretization2 = eval(parser.get('COMPUTATION', 'integralDiscretization2', fallback='defaultIntegralDiscretization2'))
+        
+        if parser.has_option('atmosphere', 'r0_Value') and parser.has_option('atmosphere', 'Seeing'):
+            print('%%%%%%%% ATTENTION %%%%%%%%')
+            print('You must provide r0_Value or Seeing value, not both, ')
+            print('Seeing parameter will be used, r0_Value will be discarded!\n')
+        
+        if parser.has_option('atmosphere', 'Seeing'):
+            self.Seeing = eval(parser.get('atmosphere', 'Seeing'))
+            self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
+        else:
+            self.r0_Value = eval(parser.get('atmosphere', 'r0_Value'))
+            
+        testWindspeedIsValid = False
+        if parser.has_option('atmosphere', 'testWindspeed'):
+            testWindspeed = parser.get('atmosphere', 'testWindspeed')
+            try:
+                testWindspeed = float(testWindspeed)
+                if testWindspeed > 0:
+                    testWindspeedIsValid = True
+                else:
+                    testWindspeedIsValid = False
+            except:
+                testWindspeedIsValid = False
+            
+        if parser.has_option('atmosphere', 'WindSpeed') and parser.has_option('atmosphere', 'testWindspeed'):
+            if testWindspeedIsValid:
+                print('%%%%%%%% ATTENTION %%%%%%%%')
+                print('You must provide WindSpeed or testWindspeed value, not both, ')
+                print('testWindspeed parameter will be used, WindSpeed will be discarded!\n')
+            
+        if testWindspeedIsValid:
+            self.WindSpeed = eval(parser.get('atmosphere', 'testWindspeed'))
+        else:
+            self.wSpeed = eval(parser.get('atmosphere', 'WindSpeed'))
+            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)   
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
         #
-        if self.testr0:
-            self.r0_Value = self.testr0
-        else:
-            self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
-            airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
-            self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
-        if self.testWindspeed:
-            self.WindSpeed = self.testWindspeed
-        else:
-            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)        
+        
+        airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
+        self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
+                 
 #        self.mutex = None
         self.imax = 30
         self.zmin = 0.03
@@ -568,7 +594,7 @@ class MavisLO(object):
             print('             aNGS_flux',aNGS_flux)
             print('             self.N_sa_tot_LO',self.N_sa_tot_LO)
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.computeBias(aNGS_flux[starIndex]/self.N_sa_tot_LO, aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             if self.verbose:
                 print('             bias',bias)
                 print('             amu',amu)
