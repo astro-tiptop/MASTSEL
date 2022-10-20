@@ -1,9 +1,19 @@
+import numpy as np
+
+from . import gpuEnabled
+
+if not gpuEnabled:
+    cp = np
+else:
+    import cupy as cp
+
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 import functools
 import multiprocessing as mp
 from configparser import ConfigParser
 import os
+
 
 class MavisLO(object):
 
@@ -114,7 +124,7 @@ class MavisLO(object):
         self.aFunctionMGauss = self.specializedGMeanVarFormulas('GaussianMean')
         self.aFunctionVGauss = self.specializedGMeanVarFormulas('GaussianVariance')
 
-        if self.computationPlatform=='GPU':
+        if self.computationPlatform=='GPU' and gpuEnabled:
             self.mIt = Integrator(cp, cp.float64, '')
             self.mItcomplex = Integrator(cp, cp.complex64, '')
             self.platformlib = gpulib
@@ -123,7 +133,6 @@ class MavisLO(object):
             self.mItcomplex = Integrator(np, np.complex, '')
             self.platformlib = cpulib
 
-        
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
@@ -376,7 +385,7 @@ class MavisLO(object):
         self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})    
         self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
         self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], alib)
-        if alib==gpulib:
+        if alib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
             psd_tip_wind = cp.asarray(psd_tip_wind)
@@ -393,7 +402,10 @@ class MavisLO(object):
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
         minTipIdx = xp.where(resultTip == xp.amin(resultTip)) #    print(minTipIdx[0], resultTip[minTipIdx[0][0]])
         minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt)) #    print(minTiltIdx[0], resultTilt[minTiltIdx[0][0]])
-        return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
+        if alib==gpulib and gpuEnabled:
+            return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
+        else:
+            return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
         
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
@@ -408,7 +420,7 @@ class MavisLO(object):
         self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
         self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], alib)
         self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'g^Tilt_1', 'f', 'phi^wind_Tilt'], alib)
-        if alib==gpulib:
+        if alib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
             psd_tip_wind = cp.asarray(psd_tip_wind)
@@ -426,7 +438,10 @@ class MavisLO(object):
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(2)) ) )
         minTipIdx = xp.where(resultTip == xp.amin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
-        return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
+        if alib==gpulib and gpuEnabled:
+            return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
+        else:
+            return (resultTip[minTipIdx[0][0], minTipIdx[1][0]], resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
 
         
     def covValue(self, ii,jj, pp, hh):

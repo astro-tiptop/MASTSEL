@@ -1,3 +1,12 @@
+import numpy as np
+
+from . import gpuEnabled
+
+if not gpuEnabled:
+    cp = np
+else:
+    import cupy as cp
+
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 
@@ -5,7 +14,7 @@ fit_window_max_size = 512
 defaultArrayBackend = cp
 
 def hostData(_data):
-    if defaultArrayBackend == cp:
+    if defaultArrayBackend == cp and gpuEnabled:
         return cp.asnumpy(_data)
     else:
         return _data
@@ -122,7 +131,7 @@ class Field(object):
         return self.__half_pixel_size
 
     def hostData(self, _data):
-        if self.xp == cp:
+        if self.xp == cp and gpuEnabled:
             return cp.asnumpy(_data)
         else:
             return _data
@@ -322,7 +331,7 @@ def convolve(psf, kernel, xp=defaultArrayBackend):
 #        return
     result = Field(psf.wvl, psf.N, psf.width, unit='m')
 
-    if xp == cp:
+    if xp == cp and gpuEnabled:
         result.sampling = xp.real( KernelConvolve(psf.sampling/psf.sampling.sum(), kernel.sampling) )
     else:
         result.sampling = scipy.signal.fftconvolve(
@@ -388,8 +397,10 @@ def longExposurePsf(mask, psd):
     # step 3 : compute turbolence otf
     otf_turb = xp.exp(-0.5 * (D_phi))    
     # p_otft_turb = pitch
-    otf_turb = cp.asarray(congrid(cp.asnumpy(otf_turb), [otf_turb.shape[0]//2, otf_turb.shape[0]//2]))
-
+    if gpuEnabled:
+        otf_turb = cp.asarray(congrid(cp.asnumpy(otf_turb), [otf_turb.shape[0]//2, otf_turb.shape[0]//2]))
+    else:
+        otf_turb = np.asarray(congrid(otf_turb, [otf_turb.shape[0]//2, otf_turb.shape[0]//2]))
     # step 4 : combine telescope and turbolence otfs
     otf_system = otf_turb * otf_tel
 

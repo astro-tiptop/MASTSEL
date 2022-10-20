@@ -1,6 +1,6 @@
 from copy import deepcopy
 import numpy as np
-import cupy as cp
+
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -228,7 +228,7 @@ def tiledDisplay(results):
     fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=[10,10])
     for i in range(nrows):
         for j in range(ncols):
-            img = np.log(np.abs(cp.asnumpy(results[i*ncols+j].sampling)) + 1e-20)
+            img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
             ax[nrows-i-1,j].imshow(img, cmap='hot')
             #ax[nrows-i-1,j].axis('off')
     fig.tight_layout()
