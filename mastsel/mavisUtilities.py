@@ -226,10 +226,22 @@ def tiledDisplay(results):
     ncols = int(np.sqrt(nn))
     nrows = ncols
     fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=[10,10])
-    for i in range(nrows):
-        for j in range(ncols):
-            img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
-            ax[nrows-i-1,j].imshow(img, cmap='hot')
-            #ax[nrows-i-1,j].axis('off')
+    
+    if nrows>1 or ncols>1:
+        for i in range(nrows):
+            for j in range(ncols):
+                img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
+                ax[nrows-i-1,j].imshow(img, cmap='hot')
+                #ax[nrows-i-1,j].axis('off')
+    else:
+        img = np.log(np.abs(results[0].sampling) + 1e-20)
+        ax.imshow(img, cmap='hot')
+        
+    
+#    for i in range(nrows):
+#        for j in range(ncols):
+#            img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
+#            ax[nrows-i-1,j].imshow(img, cmap='hot')
+#            #ax[nrows-i-1,j].axis('off')
     fig.tight_layout()
     plt.show()

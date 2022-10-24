@@ -286,7 +286,7 @@ class Field(object):
     def standardPlot(self, log=False, zoom=1):
         img1 = self.xp.copy(self.sampling)
         if log:
-            img1 = self.xp.log(self.xp.absolute(self.sampling))
+            img1 = np.log(np.absolute(self.sampling))
         if zoom > 1:
             img1 = centralSquare(img1, int(self.N / zoom / 2), self.xp)
 
@@ -338,6 +338,8 @@ def convolve(psf, kernel, xp=defaultArrayBackend):
             psf.sampling, kernel.sampling)
 
     result.sampling = centralSquare(result.sampling, int(psf.N), xp)
+    if xp.__name__=='cupy':
+        result.sampling = xp.asnumpy(result.sampling)
     return result
 
 
@@ -406,6 +408,8 @@ def longExposurePsf(mask, psd):
 
     # step 5 : system otf to system psf
     result.sampling = xp.real(ft_ft2(otf_system))
+    if xp.__name__=='cupy':
+        result.sampling =  xp.asnumpy(result.sampling)
         
     return result
 
