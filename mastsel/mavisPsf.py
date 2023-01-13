@@ -331,11 +331,7 @@ def convolve(psf, kernel, xp=defaultArrayBackend):
 #        return
     result = Field(psf.wvl, psf.N, psf.width, unit='m')
 
-    if xp == cp and gpuEnabled:
-        result.sampling = xp.real( KernelConvolve(psf.sampling/psf.sampling.sum(), kernel.sampling) )
-    else:
-        result.sampling = scipy.signal.fftconvolve(
-            psf.sampling, kernel.sampling)
+    result.sampling = xp.real( KernelConvolve(psf.sampling/psf.sampling.sum(), kernel.sampling) )
 
     result.sampling = centralSquare(result.sampling, int(psf.N), xp)
     if xp.__name__=='cupy':
