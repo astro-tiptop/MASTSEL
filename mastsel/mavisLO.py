@@ -266,8 +266,8 @@ class MavisLO(object):
             self.mItcomplex = Integrator(cp, cp.complex64, '')
             self.platformlib = gpulib
         else:
-            self.mIt = Integrator(np, np.float, '')
-            self.mItcomplex = Integrator(np, np.complex, '')
+            self.mIt = Integrator(np, float, '')
+            self.mItcomplex = Integrator(np, complex, '')
             self.platformlib = cpulib
 
 
