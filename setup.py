@@ -21,7 +21,9 @@ setup(name='mastsel',
           "scipy",
           "astropy",
           "matplotlib",
-          "cupy",
-          "symao",
-      ]
+          # "symao",
+      ],
+      extras_require={
+          "gpu": ["cupy"],
+      },
       )
