@@ -7,7 +7,7 @@ name = "mastsel"
 authors = [
     {name = "Fabio Rossi", email = "fabio.rossi@inaf.it"},
 ]
-description = ""
+description = "Asterism Selection for MAVIS instrument"
 readme = "README.md"
 urls = {repository = "https://github.com/astro-tiptop/MASTSEL"}
 requires-python = ">=3.7"
