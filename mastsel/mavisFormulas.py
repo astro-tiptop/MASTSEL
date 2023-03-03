@@ -439,6 +439,3 @@ def createMavisFormulary():
                            ] )
 
     return _MavisFormulas
-
-MavisFormulas = createMavisFormulary()
-mf = MavisFormulas
