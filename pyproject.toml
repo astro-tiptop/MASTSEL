@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "setuptools_scm[toml]>=3.4"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mastsel"
+authors = [
+    {name = "Fabio Rossi", email = "fabio.rossi@inaf.it"},
+]
+description = "Asterism Selection for MAVIS instrument"
+readme = "README.md"
+urls = {repository = "https://github.com/astro-tiptop/MASTSEL"}
+requires-python = ">=3.7"
+license = {text = "MIT License"}
+dependencies = [
+    "astropy",
+    "matplotlib",
+    "numpy",
+    "scipy",
+    "symao",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+gpu = ["cupy"]
+
+[tool.setuptools.packages]
+find = {namespaces = false}
+
+[tool.setuptools_scm]
+write_to = "mastsel/_version.py"
