@@ -249,8 +249,9 @@ class MavisLO(object):
         self.mediumGridSize = int(self.largeGridSize/self.downsample_factor)
         self.mediumShape = (self.mediumGridSize,self.mediumGridSize)
         self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
-        self.zernikeCov_rh1 = MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
-        self.zernikeCov_lh1 = MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
+        self.MavisFormulas = createMavisFormulary()
+        self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
+        self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.fCValue = self.specializedC_coefficient()
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
@@ -273,7 +274,7 @@ class MavisLO(object):
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self, alib=cpulib):
-        apIM = mf['interactionMatrixNGS']
+        apIM = self.MavisFormulas['interactionMatrixNGS']
         apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.TechnicalFoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
@@ -285,7 +286,7 @@ class MavisLO(object):
         dd0 = {'t':self.ThresholdWCoG_LO, 'nu':self.NewValueThrPix_LO, 'sigma_RON':self.sigmaRON_LO}
         dd1 = {'b':self.Dark_LO/self.SensorFrameRate_LO}
         dd2 = {'F':self.ExcessNoiseFactor_LO}
-        expr0, exprK, integral = mf[kind+"0"], mf[kind+"1"], mf[kind+"2"]
+        expr0, exprK, integral = self.MavisFormulas[kind+"0"], self.MavisFormulas[kind+"1"], self.MavisFormulas[kind+"2"]
         expr0 = subsParamsByName( expr0, {**dd0, **dd1} )
         exprK = subsParamsByName( exprK, {**dd1} )
         integral = subsParamsByName( integral,  {**dd0, **dd1, **dd2} )
@@ -296,37 +297,37 @@ class MavisLO(object):
         dd0 = {'t':self.ThresholdWCoG_LO, 'nu':self.NewValueThrPix_LO, 'sigma_RON':self.sigmaRON_LO}
         dd1 = {'b':self.Dark_LO/self.SensorFrameRate_LO}
         dd2 = {'F':self.ExcessNoiseFactor_LO}
-        expr0 = mf[kind]
+        expr0 = self.MavisFormulas[kind]
         expr0 = subsParamsByName( expr0, {**dd0, **dd1, **dd2} )
         return expr0
 
     def specializedTurbFuncs(self):
-        aTurbPSDTip = subsParamsByName(mf['turbPSDTip'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
-        aTurbPSDTilt = subsParamsByName(mf['turbPSDTilt'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        aTurbPSDTip = subsParamsByName(self.MavisFormulas['turbPSDTip'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        aTurbPSDTilt = subsParamsByName(self.MavisFormulas['turbPSDTilt'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
         return aTurbPSDTip, aTurbPSDTilt
 
     
     def specializedC_coefficient(self):
-        ffC = mf['noisePropagationCoefficient'].rhs
+        ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
         self.fCValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_LO })
         return self.fCValue1
 
     
     def specializedNoiseFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS_LO1 = subsParamsByName(mf['completeIntegralTipLO'], dict1 ).function
-        self.fTiltS_LO1 = subsParamsByName(mf['completeIntegralTiltLO'], dict1).function
-#        self.fTipS_LO1 = sp.simplify(subsParamsByName(mf['completeIntegralTipLO'], dict1 ).function)
-#        self.fTiltS_LO1 = sp.simplify(subsParamsByName(mf['completeIntegralTiltLO'], dict1).function)
+        self.fTipS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function
+        self.fTiltS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function
+#        self.fTipS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function)
+#        self.fTiltS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function)
         return self.fTipS_LO1, self.fTiltS_LO1
 
     
     def specializedWindFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS1 = subsParamsByName(mf['completeIntegralTip'], dict1).function
-        self.fTiltS1 = subsParamsByName(mf['completeIntegralTilt'], dict1).function
-#        self.fTipS1 = sp.simplify(subsParamsByName(mf['completeIntegralTip'], dict1).function)
-#        self.fTiltS1 = sp.simplify(subsParamsByName(mf['completeIntegralTilt'], dict1).function)
+        self.fTipS1 = subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function
+        self.fTiltS1 = subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function
+#        self.fTipS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function)
+#        self.fTiltS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function)
         return self.fTipS1, self.fTiltS1
     
     
