@@ -520,13 +520,13 @@ class MavisLO(object):
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
-        
-        if aNGS_SR_LO < np.exp(-((self.SensingWavelength_LO/1650e-9*1.5)**2)):
+       
+        if aNGS_SR_LO < np.exp(-(( 2600e-9/self.SensingWavelength_LO )**2)):
             # if SR is low we consider that there is a seeing limited like PSF
             g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d)
             peakValue = np.max(g2d)
-        elif aNGS_SR_LO >= np.exp(-((self.SensingWavelength_LO/1650e-9*1.5)**2)) and aNGS_SR_LO < np.exp(-((self.SensingWavelength_LO/1650e-9*1.0)**2)):
+        elif aNGS_SR_LO >= np.exp(-(( 2600e-9/self.SensingWavelength_LO )**2)) and aNGS_SR_LO < np.exp(-(( 1800e-9/self.SensingWavelength_LO )**2)):
             # if SR is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
             r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
             seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
