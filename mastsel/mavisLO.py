@@ -20,7 +20,9 @@ class MavisLO(object):
 
     def __init__(self, path, parametersFile, verbose=False):
 
-        self.verbose=verbose
+        self.verbose = verbose
+        self.plot4debug = False
+        self.displayEquation = False
 
         filename_ini = os.path.join(path, parametersFile + '.ini')
         filename_yml = os.path.join(path, parametersFile + '.yml')
@@ -186,6 +188,7 @@ class MavisLO(object):
 
             self.SensorFrameRate_LO     = eval(parser.get('RTC', 'SensorFrameRate_LO'))
             self.loopDelaySteps_LO      = eval(parser.get('RTC', 'LoopDelaySteps_LO'))
+            self.LoopGain_LO            = eval(parser.get('RTC', 'LoopGain_LO'))
 
             defaultCompute = 'GPU'
             defaultIntegralDiscretization1 = 1000
@@ -279,6 +282,18 @@ class MavisLO(object):
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
         apIM_func = sp.lambdify((xx, yy), apIM, modules=alib)
+        if self.displayEquation:
+            print('mavisLO.specializedIM')
+            print('    apIM')
+            try:
+                display(apIM)
+            except:
+                print('    no apIM')
+            print('    apIM_func')
+            try:
+                display(apIM_func)
+            except:
+                print('    no apIM_func')
         return apIM, apIM_func
 
     
@@ -290,6 +305,23 @@ class MavisLO(object):
         expr0 = subsParamsByName( expr0, {**dd0, **dd1} )
         exprK = subsParamsByName( exprK, {**dd1} )
         integral = subsParamsByName( integral,  {**dd0, **dd1, **dd2} )
+        if self.displayEquation:
+            print('mavisLO.specializedMeanVarFormulas')
+            print('    expr0')
+            try:
+                display(expr0)
+            except:
+                print('    no expr0')
+            print('    exprK')
+            try:
+                display(exprK)
+            except:
+                print('    no exprK')
+            print('    integral')
+            try:
+                display(integral)
+            except:
+                print('    no integral')
         aFunction = exprK * integral.function
         return aFunction, expr0
 
@@ -299,17 +331,43 @@ class MavisLO(object):
         dd2 = {'F':self.ExcessNoiseFactor_LO}
         expr0 = self.MavisFormulas[kind]
         expr0 = subsParamsByName( expr0, {**dd0, **dd1, **dd2} )
+        if self.displayEquation:
+            print('mavisLO.specializedGMeanVarFormulas')
+            print('    expr0')
+            try:
+                display(expr0)
+            except:
+                print('    no expr0')
         return expr0
 
     def specializedTurbFuncs(self):
         aTurbPSDTip = subsParamsByName(self.MavisFormulas['turbPSDTip'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
         aTurbPSDTilt = subsParamsByName(self.MavisFormulas['turbPSDTilt'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        if self.displayEquation:
+            print('mavisLO.specializedTurbFuncs')
+            print('    aTurbPSDTip')
+            try:
+                display(aTurbPSDTip)
+            except:
+                print('    no aTurbPSDTip')
+            print('    aTurbPSDTilt')
+            try:
+                display(aTurbPSDTilt)
+            except:
+                print('    no aTurbPSDTilt')
         return aTurbPSDTip, aTurbPSDTilt
 
     
     def specializedC_coefficient(self):
         ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
         self.fCValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_LO })
+        if self.displayEquation:
+            print('mavisLO.specializedC_coefficient')
+            print('    self.fCValue1')
+            try:
+                display(self.fCValue1)
+            except:
+                print('    no self.fCValue1')
         return self.fCValue1
 
     
@@ -319,6 +377,18 @@ class MavisLO(object):
         self.fTiltS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function
 #        self.fTipS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function)
 #        self.fTiltS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function)
+        if self.displayEquation:
+            print('mavisLO.specializedNoiseFuncs')
+            print('    self.fTipS_LO1')
+            try:
+                display(self.fTipS_LO1)
+            except:
+                print('    no self.fTipS_LO1')
+            print('    self.fTiltS_LO1')
+            try:
+                display(self.fTiltS_LO1)
+            except:
+                print('    no self.fTiltS_LO1')
         return self.fTipS_LO1, self.fTiltS_LO1
 
     
@@ -328,6 +398,18 @@ class MavisLO(object):
         self.fTiltS1 = subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function
 #        self.fTipS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function)
 #        self.fTiltS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function)
+        if self.displayEquation:
+            print('mavisLO.specializedWindFuncs')
+            print('    self.fTipS1')
+            try:
+                display(self.fTipS1)
+            except:
+                print('    no self.fTipS1')
+            print('    self.fTiltS1')
+            try:
+                display(self.fTiltS1)
+            except:
+                print('    no self.fTiltS1')
         return self.fTipS1, self.fTiltS1
     
     
@@ -425,31 +507,45 @@ class MavisLO(object):
         gridSpanArcsec= self.mediumPixelScale*self.largeGridSize/1000
         gridSpanRad = gridSpanArcsec/radiansToArcsecs
         
+        # diffraction limited FWHM - full aperture
         diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
-        
-        peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
-        if self.verbose:
-            print('mavisLO.computeBias, peakValue',peakValue)
-        peakValueNoFlux = aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
-
-#        peakValue = peakValue/(40**self.TelescopeDiameter/2)
-#        peakValueNoFlux = aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.SensingWavelength_LO/(self.TelescopeDiameter/2)*radiansToArcsecs*1000/self.mediumPixelScale)**2)
-
+        # diffraction limited FWHM - one sub-aperture
+        subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
+        # increment of FWHM given by the partial correction
+        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - diffNGS_FWHM_mas**2 ))
+        # estimated FWHM on a sub-aperture 
+        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + subapNGS_FWHM_mas**2 )
+        asigma = aNGS_FWHM_mas_mod/sigmaToFWHM/self.mediumPixelScale
+            
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
         
-        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - diffNGS_FWHM_mas**2 ))
-        
-        subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
-        
-        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + subapNGS_FWHM_mas**2 )
-        asigma = aNGS_FWHM_mas_mod/sigmaToFWHM/self.mediumPixelScale
-        g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
-
-#        asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
-#        asigma *= 40.0
-#        g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+        if aNGS_SR_LO < np.exp(-((1650e-9/self.SensingWavelength_LO*1.5)**2)):
+            # if SR is low we consider that there is a seeing limited like PSF
+            g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+            g2d = g2d * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d)
+            peakValue = np.max(g2d)
+        elif aNGS_SR_LO >= np.exp(-((1650e-9/self.SensingWavelength_LO*1.5)**2)) and aNGS_SR_LO < np.exp(-((1650e-9/self.SensingWavelength_LO*1.0)**2)):
+            # if SR is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
+            r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
+            seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
+            seeing = np.sqrt( seeing**2 + subapNGS_FWHM_mas**2 )
+            asigma_seeing = seeing/sigmaToFWHM/self.mediumPixelScale
+            g2d_seeing = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+            g2d_seeing = g2d_seeing * (1-aNGS_SR_LO) * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d_seeing)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+            g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+            g2d = g2d + g2d_seeing
+            peakValue = np.max(g2d)
+        else:
+            # if SR is high we consider that there is a diffraction limited core
+            # in the center of the PSF and wings given by the fitting error
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+            g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+            
+        if self.verbose:
+            print('mavisLO.computeBias, peakValue',peakValue)
 
         g2d = intRebin(g2d, self.mediumShape) * self.downsample_factor**2
         I_k_data = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
@@ -515,6 +611,17 @@ class MavisLO(object):
         Cfloat = self.fCValue.evalf()
         psd_tip_wind, psd_tilt_wind = self.computeWindPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
+        
+        if self.plot4debug:
+            fig, ax1 = plt.subplots(1,1)
+            im = ax1.plot(psd_freq,psd_tip_wind) 
+            im = ax1.plot(psd_freq,psd_tilt_wind) 
+            ax1.set_xscale('log')
+            ax1.set_yscale('log')
+            ax1.set_title('Turbulence PSD', color='black')
+            ax1.set_xlabel('frequency [Hz]')
+            ax1.set_ylabel('Power')
+        
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
         sigma2Noise =  varX / bias**2 * Cfloat / (Df / df)
@@ -523,6 +630,16 @@ class MavisLO(object):
         self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})    
         self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
         self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], alib)
+        if self.displayEquation:
+            print('computeNoiseResidual')
+            try:
+                display(self.fTipS1)
+            except:
+                print('    no self.fTipS1')
+            try:
+                display(self.fTiltS1)
+            except:
+                print('    no self.fTiltS1')
         if alib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
@@ -530,16 +647,39 @@ class MavisLO(object):
             psd_tilt_wind = cp.asarray(psd_tilt_wind)        
         else:
             xp = np
-        g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+        if self.LoopGain_LO == 'optimize':
+            # add small values of gain to have a good optimization
+            # when the noise level is high.
+            g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+        else:
+            # if gain is set no optimization is done and bias is not compensated
+            g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
+            g0g = xp.asarray(g0)
+            
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
         e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
         e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
         e4 = g0g.reshape((g0g.shape[0], 1))
         psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+               
+        if self.plot4debug:
+            fig, ax2 = plt.subplots(1,1)
+            for x in range(g0g.shape[0]):
+                im = ax2.plot(psd_freq.get(),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+            ax2.set_xscale('log')
+            ax2.set_yscale('log')
+            ax2.set_title('residual PSD', color='black')
+            ax2.set_xlabel('frequency [Hz]')
+            ax2.set_ylabel('Power')
+        
         resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
         minTipIdx = xp.where(resultTip == xp.amin(resultTip)) #    print(minTipIdx[0], resultTip[minTipIdx[0][0]])
         minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt)) #    print(minTiltIdx[0], resultTilt[minTiltIdx[0][0]])
+        if self.verbose:
+            print('         best tip gain (noise)',g0g[minTipIdx[0][0]])
+            print('         best tilt gain (noise)',g0g[minTiltIdx[0][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
@@ -553,6 +693,17 @@ class MavisLO(object):
         Df = psd_freq[-1]-psd_freq[0]
         psd_tip_wind = psd_tip_wind0 * df
         psd_tilt_wind = psd_tilt_wind0 * df
+        
+        if self.plot4debug:
+            fig, ax1 = plt.subplots(1,1)
+            im = ax1.plot(psd_freq,psd_tip_wind) 
+            im = ax1.plot(psd_freq,psd_tilt_wind) 
+            ax1.set_xscale('log')
+            ax1.set_yscale('log')
+            ax1.set_title('wind shake PSD', color='black')
+            ax1.set_xlabel('frequency [Hz]')
+            ax1.set_ylabel('Power')
+               
         sigma2Noise = var1x / bias**2 * Cfloat / (Df / df)
         self.fTipS1 = subsParamsByName(self.fTipS, {'phi^noise_Tip': sigma2Noise})
         self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
@@ -565,7 +716,18 @@ class MavisLO(object):
             psd_tilt_wind = cp.asarray(psd_tilt_wind)        
         else:
             xp = np
-        g0g, g1g = xp.meshgrid(xp.linspace(0.01,0.99,npoints), xp.linspace(0.01,0.99,npoints)) 
+        
+        if self.LoopGain_LO == 'optimize':
+            # add small values of gain to have a good optimization
+            # when the noise level is high.
+            g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
+            g0g = xp.asarray( g0,xp.linspace(0.01, 0.99, npoints) )
+        else:
+            # if gain is set no optimization is done and bias is not compensated
+            g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
+            g0g = xp.asarray(g0)
+        g0g, g1g = xp.meshgrid( g0g,g0g )
+        
         e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
         e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))
         e3 = psd_tilt_wind.reshape((1,1,psd_tilt_wind.shape[0]))
@@ -576,6 +738,9 @@ class MavisLO(object):
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(2)) ) )
         minTipIdx = xp.where(resultTip == xp.amin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
+        if self.verbose:
+            print('         best tip gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]])
+            print('         best tilt gain (wind)',g0g[minTiltIdx[0][0],minTiltIdx[1][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
         else:
@@ -700,21 +865,25 @@ class MavisLO(object):
         C1 = np.zeros((2,2))
         Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
 
-
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
-            print('             aNGS_flux',aNGS_flux)
-            print('             self.N_sa_tot_LO',self.N_sa_tot_LO)
+            print('         aNGS_flux',aNGS_flux)
+            print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
+            
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             if self.verbose:
-                print('             bias',bias)
-                print('             amu',amu)
-                print('             avar',avar)
+                print('         bias',bias)
+                print('         amu',amu)
+                print('         avar',avar)
 
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
+            # TODO: this second computation must be embedded in the previous one.
             wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
+            if self.verbose:
+                print('         noise residual:     ',nr)
+                print('         wind-shake residual:',wr)
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
@@ -723,6 +892,9 @@ class MavisLO(object):
 
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
+        if self.verbose:
+            print('         Ctot:')
+            print(Ctot)
         return Ctot.reshape((nPointings,2,2))
 
 
