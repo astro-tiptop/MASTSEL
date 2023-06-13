@@ -520,28 +520,36 @@ class MavisLO(object):
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
+        
+        loD = self.SensingWavelength_LO/self.TelescopeDiameter*radiansToArcsecs*1000
        
-        if aNGS_SR_LO < np.exp(-(( 2600e-9/self.SensingWavelength_LO )**2)):
-            # if SR is low we consider that there is a seeing limited like PSF
+        if aNGS_FWHM_mas >= 2*diffNGS_FWHM_mas:
+            if self.verbose:
+                print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is larger than 2 times the diffraction.')
+            # if correction is low we consider that there is a seeing limited like PSF
             g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d)
             peakValue = np.max(g2d)
-        elif aNGS_SR_LO >= np.exp(-(( 2600e-9/self.SensingWavelength_LO )**2)) and aNGS_SR_LO < np.exp(-(( 1800e-9/self.SensingWavelength_LO )**2)):
-            # if SR is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
+        elif aNGS_FWHM_mas >= 1.25*diffNGS_FWHM_mas and aNGS_FWHM_mas < 2*diffNGS_FWHM_mas:
+            if self.verbose:
+                print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is less than 2 times the diffraction, but more than 1.25 times diffraction.')
+            # if correction is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
             r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
             seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
             seeing = np.sqrt( seeing**2 + subapNGS_FWHM_mas**2 )
             asigma_seeing = seeing/sigmaToFWHM/self.mediumPixelScale
             g2d_seeing = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d_seeing = g2d_seeing * (1-aNGS_SR_LO) * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d_seeing)
-            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas/self.mediumPixelScale)**2)
             g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d + g2d_seeing
             peakValue = np.max(g2d)
         else:
-            # if SR is high we consider that there is a diffraction limited core
+            if self.verbose:
+                print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is less than 1.25 times the diffraction.')
+            # if correction is high we consider that there is a diffraction limited core
             # in the center of the PSF and wings given by the fitting error
-            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas*2.0/self.mediumPixelScale)**2)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas/self.mediumPixelScale)**2)
             g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             
         if self.verbose:
