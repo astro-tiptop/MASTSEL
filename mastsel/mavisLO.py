@@ -17,6 +17,27 @@ import os
 
 
 class MavisLO(object):
+    
+    def check_section_key(self, primary):
+        if self.configType == 'ini':
+            return self.config.has_section(primary)
+        elif self.configType == 'yml':
+            return primary in self.my_yaml_dict.keys()
+    
+    def check_config_key(self, primary, secondary):
+        if self.configType == 'ini':
+            return self.config.has_option(primary, secondary)
+        elif self.configType == 'yml':
+            if primary in self.my_yaml_dict.keys():
+                return secondary in self.my_yaml_dict[primary].keys()
+            else:
+                return False
+
+    def get_config_value(self, primary, secondary):
+        if self.configType == 'ini':
+            return eval(self.config[primary][secondary])
+        elif self.configType == 'yml':
+            return self.my_yaml_dict[primary][secondary]
 
     def __init__(self, path, parametersFile, verbose=False):
 
@@ -27,210 +48,128 @@ class MavisLO(object):
         filename_ini = os.path.join(path, parametersFile + '.ini')
         filename_yml = os.path.join(path, parametersFile + '.yml')
 
+        self.error = False
         if os.path.exists(filename_yml):
+            self.configType = 'yml'
             with open(filename_yml) as f:
                 self.my_yaml_dict = yaml.safe_load(f)
-                
-            self.TelescopeDiameter      = self.my_yaml_dict['telescope']['TelescopeDiameter']
-            self.ZenithAngle            = self.my_yaml_dict['telescope']['ZenithAngle']
-            self.TechnicalFoV           = self.my_yaml_dict['telescope']['TechnicalFoV']
-            self.ObscurationRatio       = self.my_yaml_dict['telescope']['ObscurationRatio']
-            if 'windPsdFile' in self.my_yaml_dict['telescope'].keys():
-                windPsdFile = self.my_yaml_dict['telescope']['windPsdFile']
-                self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
-            else:
-                print('No windPsdFile file is set.')
-                self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
-                self.psd_tip_wind = np.zeros((500))
-                self.psd_tilt_wind = np.zeros((500))
-
-            self.AtmosphereWavelength   = self.my_yaml_dict['atmosphere']['Wavelength']
-            self.L0                     = self.my_yaml_dict['atmosphere']['L0']
-            self.Cn2Weights             = self.my_yaml_dict['atmosphere']['Cn2Weights']
-            self.Cn2Heights             = self.my_yaml_dict['atmosphere']['Cn2Heights']
-
-            SensingWavelength_LO = self.my_yaml_dict['sources_LO']['Wavelength']
-            if isinstance(SensingWavelength_LO, list):
-                self.SensingWavelength_LO = SensingWavelength_LO[0]
-            else:
-                self.SensingWavelength_LO = SensingWavelength_LO
-
-            self.NumberLenslets         = self.my_yaml_dict['sensor_LO']['NumberLenslets']
-
-            self.N_sa_tot_LO            = self.NumberLenslets[0]**2
-            if self.NumberLenslets[0] > 2:
-                self.N_sa_tot_LO        = int ( np.floor( self.N_sa_tot_LO * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
-
-            self.PixelScale_LO          = self.my_yaml_dict['sensor_LO']['PixelScale']
-            self.WindowRadiusWCoG_LO    = self.my_yaml_dict['sensor_LO']['WindowRadiusWCoG']
-            self.sigmaRON_LO            = self.my_yaml_dict['sensor_LO']['SigmaRON']
-            if self.sigmaRON_LO == 0:
-                self.sigmaRON_LO = 1e-6
-            self.ExcessNoiseFactor_LO   = self.my_yaml_dict['sensor_LO']['ExcessNoiseFactor']
-            self.Dark_LO                = self.my_yaml_dict['sensor_LO']['Dark']
-            self.skyBackground_LO       = self.my_yaml_dict['sensor_LO']['SkyBackground']
-            self.ThresholdWCoG_LO       = self.my_yaml_dict['sensor_LO']['ThresholdWCoG']
-            self.NewValueThrPix_LO      = self.my_yaml_dict['sensor_LO']['NewValueThrPix']
-
-            if 'noNoise' in self.my_yaml_dict['sensor_LO'].keys():
-                self.noNoise = self.my_yaml_dict['sensor_LO']['noNoise']
-            else:
-                self.noNoise = False
-
-            self.DmHeights              = self.my_yaml_dict['DM']['DmHeights']
-
-            self.SensorFrameRate_LO     = self.my_yaml_dict['RTC']['SensorFrameRate_LO']
-            self.loopDelaySteps_LO      = self.my_yaml_dict['RTC']['LoopDelaySteps_LO']
-
-            defaultCompute = 'GPU'
-            defaultIntegralDiscretization1 = 1000
-            defaultIntegralDiscretization2 = 4000
-            self.computationPlatform =defaultCompute
-            self.integralDiscretization1 = defaultIntegralDiscretization1
-            self.integralDiscretization2 = defaultIntegralDiscretization2
-
-            if 'COMPUTATION' in self.my_yaml_dict.keys():
-                if self.my_yaml_dict['COMPUTATION']['platform']:
-                    self.computationPlatform    = self.my_yaml_dict['COMPUTATION']['platform']
-                if self.my_yaml_dict['COMPUTATION']['integralDiscretization1']:
-                    self.integralDiscretization1 = self.my_yaml_dict['COMPUTATION']['integralDiscretization1']
-                if self.my_yaml_dict['COMPUTATION']['integralDiscretization2']:
-                    self.integralDiscretization2 = self.my_yaml_dict['COMPUTATION']['integralDiscretization2']
-
-            if 'r0_Value' in self.my_yaml_dict['atmosphere'].keys() and 'Seeing' in self.my_yaml_dict['atmosphere'].keys():
-                print('%%%%%%%% ATTENTION %%%%%%%%')
-                print('You must provide r0_Value or Seeing value, not both, ')
-                print('Seeing parameter will be used, r0_Value will be discarded!\n')
-
-            if 'Seeing' in self.my_yaml_dict['atmosphere'].keys():
-                self.Seeing = self.my_yaml_dict['atmosphere']['Seeing']
-                self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
-            else:
-                self.r0_Value = self.my_yaml_dict['atmosphere']['r0_Value']
-
-            testWindspeedIsValid = False
-            if 'testWindspeed' in self.my_yaml_dict['atmosphere'].keys():
-                testWindspeed = self.my_yaml_dict['atmosphere']['testWindspeed']
-                try:
-                    testWindspeed = float(testWindspeed)
-                    if testWindspeed > 0:
-                        testWindspeedIsValid = True
-                    else:
-                        testWindspeedIsValid = False
-                except:
-                    testWindspeedIsValid = False
-
-            if 'WindSpeed' in self.my_yaml_dict['atmosphere'].keys() and 'testWindspeed' in self.my_yaml_dict['atmosphere'].keys():
-                if testWindspeedIsValid:
-                    print('%%%%%%%% ATTENTION %%%%%%%%')
-                    print('You must provide WindSpeed or testWindspeed value, not both, ')
-                    print('testWindspeed parameter will be used, WindSpeed will be discarded!\n')
-
-            if testWindspeedIsValid:
-                self.WindSpeed = self.my_yaml_dict['atmosphere']['testWindspeed']
-            else:
-                self.wSpeed = self.my_yaml_dict['atmosphere']['WindSpeed']
-                self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-
+        elif os.path.exists(filename_ini):
+            self.configType = 'ini'
+            self.config = ConfigParser()
+            self.config.optionxform = str
+            self.config.read(filename_ini)
         else:
-            parser = ConfigParser()
-            parser.read( os.path.join(path, parametersFile + '.ini') )
-            #
-            # SETTING PARAMETERS READ FROM FILE       
-            #
-            self.TelescopeDiameter      = eval(parser.get('telescope', 'TelescopeDiameter'))
-            self.ZenithAngle            = eval(parser.get('telescope', 'ZenithAngle'))
-            self.TechnicalFoV           = eval(parser.get('telescope', 'TechnicalFoV'))
-            self.ObscurationRatio       = eval(parser.get('telescope', 'ObscurationRatio'))
-            if parser.has_option('telescope', 'windPsdFile'):
-                windPsdFile = eval(parser.get('telescope', 'windPsdFile'))
-                self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
-            else:
-                print('No windPsdFile file is set.')
-                self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
-                self.psd_tip_wind = np.zeros((500))
-                self.psd_tilt_wind = np.zeros((500))
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The .ini or .yml file does not exist\n')
+            self.error = True
+            return
+        
+        self.TelescopeDiameter      = self.get_config_value('telescope','TelescopeDiameter')  
+        self.ZenithAngle            = self.get_config_value('telescope','ZenithAngle')  
+        self.TechnicalFoV           = self.get_config_value('telescope','TechnicalFoV')  
+        self.ObscurationRatio       = self.get_config_value('telescope','ObscurationRatio')   
+        
+        if self.check_config_key('telescope','windPsdFile'):        
+            windPsdFile = self.get_config_value('telescope','windPsdFile')
+            self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
+        else:
+            print('No windPsdFile file is set.')
+            self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
+            self.psd_tip_wind = np.zeros((500))
+            self.psd_tilt_wind = np.zeros((500))
 
-            self.AtmosphereWavelength   = eval(parser.get('atmosphere', 'Wavelength'))
-            self.L0                     = eval(parser.get('atmosphere', 'L0'))
-            self.Cn2Weights             = eval(parser.get('atmosphere', 'Cn2Weights'))
-            self.Cn2Heights             = eval(parser.get('atmosphere', 'Cn2Heights'))
+        self.AtmosphereWavelength   = self.get_config_value('atmosphere','Wavelength')
+        self.L0                     = self.get_config_value('atmosphere','L0')
+        self.Cn2Weights             = self.get_config_value('atmosphere','Cn2Weights')
+        self.Cn2Heights             = self.get_config_value('atmosphere','Cn2Heights')
+       
+        if np.min(self.Cn2Heights) == 0:
+            self.Cn2Heights[np.argmin(self.Cn2Heights)] = 1e-6
 
-            SensingWavelength_LO = eval(parser.get('sources_LO', 'Wavelength'))
-            if isinstance(SensingWavelength_LO, list):
-                self.SensingWavelength_LO = SensingWavelength_LO[0]
-            else:
-                self.SensingWavelength_LO = SensingWavelength_LO
+        SensingWavelength_LO = self.get_config_value('sources_LO','Wavelength')
+        if isinstance(SensingWavelength_LO, list):
+            self.SensingWavelength_LO = SensingWavelength_LO[0]
+        else:
+            self.SensingWavelength_LO = SensingWavelength_LO
 
-            self.NumberLenslets         = eval(parser.get('sensor_LO', 'NumberLenslets'))
+        self.NumberLenslets         = self.get_config_value('sensor_LO','NumberLenslets')
 
-            self.N_sa_tot_LO            = self.NumberLenslets[0]**2
-            if self.NumberLenslets[0] > 2:
-                self.N_sa_tot_LO        = int ( np.floor( self.N_sa_tot_LO * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
+        self.N_sa_tot_LO            = self.NumberLenslets[0]**2
+        if self.NumberLenslets[0] > 2:
+            self.N_sa_tot_LO        = int ( np.floor( self.N_sa_tot_LO * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
 
-            self.PixelScale_LO          = eval(parser.get('sensor_LO', 'PixelScale'))
-            self.WindowRadiusWCoG_LO    = eval(parser.get('sensor_LO', 'WindowRadiusWCoG'))
-            self.sigmaRON_LO            = eval(parser.get('sensor_LO', 'SigmaRON'))
-            if self.sigmaRON_LO == 0:
-                self.sigmaRON_LO = 1e-6
-            self.ExcessNoiseFactor_LO   = eval(parser.get('sensor_LO', 'ExcessNoiseFactor'))
-            self.Dark_LO                = eval(parser.get('sensor_LO', 'Dark'))
-            self.skyBackground_LO       = eval(parser.get('sensor_LO', 'SkyBackground'))
-            self.ThresholdWCoG_LO       = eval(parser.get('sensor_LO', 'ThresholdWCoG'))
-            self.NewValueThrPix_LO      = eval(parser.get('sensor_LO', 'NewValueThrPix'))
+        self.PixelScale_LO          = self.get_config_value('sensor_LO','PixelScale')
+        self.WindowRadiusWCoG_LO    = self.get_config_value('sensor_LO','WindowRadiusWCoG')
+        self.sigmaRON_LO            = self.get_config_value('sensor_LO','SigmaRON')
+        if self.sigmaRON_LO == 0:
+            self.sigmaRON_LO = 1e-6
+        self.ExcessNoiseFactor_LO   = self.get_config_value('sensor_LO','ExcessNoiseFactor')
+        self.Dark_LO                = self.get_config_value('sensor_LO','Dark')
+        self.skyBackground_LO       = self.get_config_value('sensor_LO','SkyBackground')
+        self.ThresholdWCoG_LO       = self.get_config_value('sensor_LO','ThresholdWCoG')
+        self.NewValueThrPix_LO      = self.get_config_value('sensor_LO','NewValueThrPix')
 
-            if parser.has_option('sensor_LO', 'noNoise'):
-                self.noNoise = eval(parser.get('sensor_LO', 'noNoise'))
-            else:
-                self.noNoise = False
+        
+        if self.check_config_key('sensor_LO','noNoise'):
+            self.noNoise = self.get_config_value('sensor_LO','noNoise')
+        else:
+            self.noNoise = False
 
-            self.DmHeights              = eval(parser.get('DM', 'DmHeights'))
+        self.DmHeights              = self.get_config_value('DM','DmHeights')
 
-            self.SensorFrameRate_LO     = eval(parser.get('RTC', 'SensorFrameRate_LO'))
-            self.loopDelaySteps_LO      = eval(parser.get('RTC', 'LoopDelaySteps_LO'))
-            self.LoopGain_LO            = eval(parser.get('RTC', 'LoopGain_LO'))
+        self.SensorFrameRate_LO     = self.get_config_value('RTC','SensorFrameRate_LO')
+        self.loopDelaySteps_LO      = self.get_config_value('RTC','LoopDelaySteps_LO')
+        self.LoopGain_LO            = self.get_config_value('RTC','LoopGain_LO')
 
-            defaultCompute = 'GPU'
-            defaultIntegralDiscretization1 = 1000
-            defaultIntegralDiscretization2 = 4000
-            self.computationPlatform    = eval(parser.get('COMPUTATION', 'platform', fallback='defaultCompute'))
-            self.integralDiscretization1 = eval(parser.get('COMPUTATION', 'integralDiscretization1', fallback='defaultIntegralDiscretization1'))
-            self.integralDiscretization2 = eval(parser.get('COMPUTATION', 'integralDiscretization2', fallback='defaultIntegralDiscretization2'))
+        defaultCompute = 'GPU'
+        defaultIntegralDiscretization1 = 1000
+        defaultIntegralDiscretization2 = 4000
+        self.computationPlatform =defaultCompute
+        self.integralDiscretization1 = defaultIntegralDiscretization1
+        self.integralDiscretization2 = defaultIntegralDiscretization2
+        
+        if self.check_section_key('COMPUTATION'):
+            if self.check_config_key('COMPUTATION','platform'):
+                self.computationPlatform    = self.get_config_value('COMPUTATION','platform')
+            if self.check_config_key('COMPUTATION','integralDiscretization1'):
+                self.integralDiscretization1 = self.get_config_value('COMPUTATION','integralDiscretization1')
+            if self.check_config_key('COMPUTATION','integralDiscretization2'):
+                self.integralDiscretization2 = self.get_config_value('COMPUTATION','integralDiscretization2')
 
-            if parser.has_option('atmosphere', 'r0_Value') and parser.has_option('atmosphere', 'Seeing'):
-                print('%%%%%%%% ATTENTION %%%%%%%%')
-                print('You must provide r0_Value or Seeing value, not both, ')
-                print('Seeing parameter will be used, r0_Value will be discarded!\n')
+        if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
+            print('%%%%%%%% ATTENTION %%%%%%%%')
+            print('You must provide r0_Value or Seeing value, not both, ')
+            print('Seeing parameter will be used, r0_Value will be discarded!\n')
 
-            if parser.has_option('atmosphere', 'Seeing'):
-                self.Seeing = eval(parser.get('atmosphere', 'Seeing'))
-                self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
-            else:
-                self.r0_Value = eval(parser.get('atmosphere', 'r0_Value'))
+        if self.check_config_key('atmosphere','Seeing'):
+            self.Seeing = self.get_config_value('atmosphere','Seeing')
+            self.r0_Value = 0.976*self.AtmosphereWavelength/self.Seeing*206264.8 # old: 0.15
+        else:
+            self.r0_Value = self.get_config_value('atmosphere','r0_Value')
 
-            testWindspeedIsValid = False
-            if parser.has_option('atmosphere', 'testWindspeed'):
-                testWindspeed = parser.get('atmosphere', 'testWindspeed')
-                try:
-                    testWindspeed = float(testWindspeed)
-                    if testWindspeed > 0:
-                        testWindspeedIsValid = True
-                    else:
-                        testWindspeedIsValid = False
-                except:
+        testWindspeedIsValid = False
+        if self.check_config_key('atmosphere','testWindspeed'):
+            testWindspeed = self.get_config_value('atmosphere','testWindspeed')
+            try:
+                testWindspeed = float(testWindspeed)
+                if testWindspeed > 0:
+                    testWindspeedIsValid = True
+                else:
                     testWindspeedIsValid = False
+            except:
+                testWindspeedIsValid = False
 
-            if parser.has_option('atmosphere', 'WindSpeed') and parser.has_option('atmosphere', 'testWindspeed'):
-                if testWindspeedIsValid:
-                    print('%%%%%%%% ATTENTION %%%%%%%%')
-                    print('You must provide WindSpeed or testWindspeed value, not both, ')
-                    print('testWindspeed parameter will be used, WindSpeed will be discarded!\n')
-
+        if self.check_config_key('atmosphere','WindSpeed') and self.check_config_key('atmosphere','testWindspeed'):
             if testWindspeedIsValid:
-                self.WindSpeed = eval(parser.get('atmosphere', 'testWindspeed'))
-            else:
-                self.wSpeed = eval(parser.get('atmosphere', 'WindSpeed'))
-                self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)   
+                print('%%%%%%%% ATTENTION %%%%%%%%')
+                print('You must provide WindSpeed or testWindspeed value, not both, ')
+                print('testWindspeed parameter will be used, WindSpeed will be discarded!\n')
+
+        if testWindspeedIsValid:
+            self.WindSpeed = self.get_config_value('atmosphere','testWindspeed')
+        else:
+            self.wSpeed = self.get_config_value('atmosphere','WindSpeed')
+            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
 
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
