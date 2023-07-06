@@ -668,7 +668,7 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            g0g = xp.asarray( g0,xp.linspace(0.01, 0.99, npoints) )
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
         else:
             # if gain is set no optimization is done and bias is not compensated
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
