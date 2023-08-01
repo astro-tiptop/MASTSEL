@@ -136,6 +136,18 @@ class Field(object):
         else:
             return _data
 
+    def gModel1(self, x, y, sigma_X, sigma_Y, angle):
+        A = 1.0
+        x0 = self.N / 2
+        y0 = self.N / 2
+        x_stddev= sigma_X / self.pixel_size
+        y_stddev= sigma_Y / self.pixel_size
+        theta = angle
+        a = self.xp.cos(theta)*self.xp.cos(theta)/(2*x_stddev*x_stddev) + self.xp.sin(theta)*self.xp.sin(theta)/(2*y_stddev*y_stddev)
+        b = self.xp.sin(2*theta)/(2*x_stddev*x_stddev) - self.xp.sin(2*theta)/(2*y_stddev*y_stddev)
+        c = self.xp.sin(theta)*self.xp.sin(theta)/(2*x_stddev*x_stddev) + self.xp.cos(theta)*self.xp.cos(theta)/(2*y_stddev*y_stddev)
+        return A * self.xp.exp( -a*(x-x0)*(x-x0)-b*(x-x0)*(y-y0)-c*(y-y0)*(y-y0) )
+
     def loadSamplingFromFile(self, filename):
         hdul = fits.open(filename)
         self.sampling = self.xp.asarray(hdul[0].data, self.sampling.dtype)
@@ -144,17 +156,10 @@ class Field(object):
     # angle in rad
     # sigma_X, sigma_Y in the same unit as the Field
     def setAsGaussianKernel(self, sigma_X, sigma_Y, angle):
-        gModel = models.Gaussian2D(
-            amplitude=1,
-            x_mean=self.N / 2,
-            y_mean=self.N / 2,
-            x_stddev=sigma_X / self.pixel_size,
-            y_stddev=sigma_Y / self.pixel_size,
-            theta=angle,
-            cov_matrix=None)
-        y, x = np.mgrid[:self.N, :self.N]
-        hostSampling = gModel(x, y)
-        self.sampling = self.xp.asarray(hostSampling)
+        yg, xg = self.xp.mgrid[:self.N, :self.N]
+        hostSampling1 = self.gModel1(xg, yg, sigma_X, sigma_Y, angle)
+        self.sampling = hostSampling1
+
 
     def setAsTelescopeMask(self, telescope_radius, occlusion_radius=0):
         fx = (self.xp.arange(-self.N / 2., self.N / 2., 1.0) + 0.5) * \
@@ -395,10 +400,8 @@ def longExposurePsf(mask, psd):
     # step 3 : compute turbolence otf
     otf_turb = xp.exp(-0.5 * (D_phi))    
     # p_otft_turb = pitch
-    if gpuEnabled:
-        otf_turb = cp.asarray(congrid(cp.asnumpy(otf_turb), [otf_turb.shape[0]//2, otf_turb.shape[0]//2]))
-    else:
-        otf_turb = np.asarray(congrid(otf_turb, [otf_turb.shape[0]//2, otf_turb.shape[0]//2]))
+    otf_turb = congrid(otf_turb, [otf_turb.shape[0]//2, otf_turb.shape[0]//2])
+
     # step 4 : combine telescope and turbolence otfs
     otf_system = otf_turb * otf_tel
 

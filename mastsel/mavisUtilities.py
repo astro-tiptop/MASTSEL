@@ -1,4 +1,5 @@
 from copy import deepcopy
+
 import numpy as np
 
 from astropy.io import fits
@@ -8,7 +9,135 @@ from astropy.modeling import models, fitting
 
 import scipy.signal
 import scipy.ndimage
-import scipy.interpolate
+
+from . import gpuEnabled
+
+if not gpuEnabled:
+    cp = np
+    import scipy.interpolate    
+    from scipy.interpolate import RegularGridInterpolator
+
+    def congrid(a, newdims, method='linear', centre=False, minusone=False):
+        '''Arbitrary resampling of source array to new dimension sizes.
+        Currently only supports maintaining the same number of dimensions.
+        To use 1-D arrays, first promote them to shape (x,1).
+
+        Uses the same parameters and creates the same co-ordinate lookup points
+        as IDL''s congrid routine, which apparently originally came from a VAX/VMS
+        routine of the same name.
+
+        method:
+        neighbour - closest value from original data
+        nearest and linear - uses n x 1-D interpolations using
+                             scipy.interpolate.interp1d
+        (see Numerical Recipes for validity of use of n 1-D interpolations)
+        spline - uses ndimage.map_coordinates
+
+        centre:
+        True - interpolation points are at the centres of the bins
+        False - points are at the front edge of the bin
+
+        minusone:
+        For example- inarray.shape = (i,j) & new dimensions = (x,y)
+        False - inarray is resampled by factors of (i/x) * (j/y)
+        True - inarray is resampled by(i-1)/(x-1) * (j-1)/(y-1)
+        This prevents extrapolation one element beyond bounds of input array.
+        '''
+        if a.dtype not in [np.float64, np.float32]:
+            a = np.cast[float](a)
+
+        m1 = np.cast[int](minusone)
+        ofs = np.cast[int](centre) * 0.5
+        old = np.array(a.shape)
+        ndims = len(a.shape)
+        if len(newdims) != ndims:
+            print("[congrid] dimensions error. "
+                  "This routine currently only support "
+                  "rebinning to the same number of dimensions.")
+            return None
+        newdims = np.asarray(newdims, dtype=float)
+        dimlist = []
+
+        if method == 'neighbour':
+            for i in range(ndims):
+                base = np.indices(newdims)[i]
+                dimlist.append((old[i] - m1) / (newdims[i] - m1)
+                               * (base + ofs) - ofs)
+            cd = np.array(dimlist).round().astype(int)
+            newa = a[list(cd)]
+            return newa
+
+        elif method in ['nearest', 'linear']:
+            # calculate new dims
+            for i in range(ndims):
+                base = np.arange(newdims[i])
+                dimlist.append((old[i] - m1) / (newdims[i] - m1)
+                               * (base + ofs) - ofs)
+            # specify old dims
+            olddims = [np.arange(i, dtype=float) for i in list(a.shape)]
+
+            # first interpolation - for ndims = any
+            mint = scipy.interpolate.interp1d(
+                olddims[-1], a, kind=method, fill_value="extrapolate")
+            newa = mint(dimlist[-1])
+
+            trorder = [ndims - 1] + list(range(ndims - 1))
+            for i in range(ndims - 2, -1, -1):
+                newa = newa.transpose(trorder)
+
+                mint = scipy.interpolate.interp1d(
+                    olddims[i], newa, kind=method, fill_value="extrapolate")
+                newa = mint(dimlist[i])
+
+            if ndims > 1:
+                # need one more transpose to return to original dimensions
+                newa = newa.transpose(trorder)
+
+            return newa
+        elif method in ['spline']:
+            oslices = [slice(0, j) for j in old]
+            oldcoords = np.ogrid[oslices]
+            nslices = [slice(0, j) for j in list(newdims)]
+            newcoords = np.mgrid[nslices]
+
+            newcoords_dims = range(np.rank(newcoords))
+            # make first index last
+            newcoords_dims.append(newcoords_dims.pop(0))
+            newcoords_tr = newcoords.transpose(newcoords_dims)
+            # makes a view that affects newcoords
+
+            newcoords_tr += ofs
+
+            deltas = (np.asarray(old) - m1) / (newdims - m1)
+            newcoords_tr *= deltas
+
+            newcoords_tr -= ofs
+
+            newa = scipy.ndimage.map_coordinates(a, newcoords)
+            return newa
+        else:
+            print("Congrid error: Unrecognized interpolation type.\n",
+                  "Currently only \'neighbour\', \'nearest\',\'linear\',",
+                  "and \'spline\' are supported.")
+        return None
+else:
+    import cupy as cp
+    from cupyx.scipy.interpolate import RegularGridInterpolator
+    # works for now, to be checked in different cases
+    def congrid(a, newdims):
+
+        newdims = np.asarray(newdims, dtype=int)
+        r1 = a.shape[0]/newdims[0]
+        r2 = a.shape[1]/newdims[1]
+
+        interp = RegularGridInterpolator((cp.linspace(0.5, a.shape[0]-0.5, a.shape[0]), cp.linspace(0.5, a.shape[1]-0.5, a.shape[1])), 
+                                         a, bounds_error=False, fill_value=None)
+
+        xx = cp.linspace(0.5, a.shape[0] - (r1 - 0.5), newdims[0])
+        yy = cp.linspace(0.5, a.shape[1] - (r2 - 0.5), newdims[1])
+
+        X, Y = cp.meshgrid(xx, yy, indexing='ij')
+        return interp((X, Y))
 
 degToRad = np.pi/180.0
 radToDeg = 1.0/degToRad
@@ -58,112 +187,6 @@ def polar_to_cart(polar_data, theta_step, range_step, x, y, order=3):
         cval=np.nan)
     return(cart_data.reshape(len(y), len(x)).T)
 
-
-def congrid(a, newdims, method='linear', centre=False, minusone=False):
-    '''Arbitrary resampling of source array to new dimension sizes.
-    Currently only supports maintaining the same number of dimensions.
-    To use 1-D arrays, first promote them to shape (x,1).
-
-    Uses the same parameters and creates the same co-ordinate lookup points
-    as IDL''s congrid routine, which apparently originally came from a VAX/VMS
-    routine of the same name.
-
-    method:
-    neighbour - closest value from original data
-    nearest and linear - uses n x 1-D interpolations using
-                         scipy.interpolate.interp1d
-    (see Numerical Recipes for validity of use of n 1-D interpolations)
-    spline - uses ndimage.map_coordinates
-
-    centre:
-    True - interpolation points are at the centres of the bins
-    False - points are at the front edge of the bin
-
-    minusone:
-    For example- inarray.shape = (i,j) & new dimensions = (x,y)
-    False - inarray is resampled by factors of (i/x) * (j/y)
-    True - inarray is resampled by(i-1)/(x-1) * (j-1)/(y-1)
-    This prevents extrapolation one element beyond bounds of input array.
-    '''
-    if a.dtype not in [np.float64, np.float32]:
-        a = np.cast[float](a)
-
-    m1 = np.cast[int](minusone)
-    ofs = np.cast[int](centre) * 0.5
-    old = np.array(a.shape)
-    ndims = len(a.shape)
-    if len(newdims) != ndims:
-        print("[congrid] dimensions error. "
-              "This routine currently only support "
-              "rebinning to the same number of dimensions.")
-        return None
-    newdims = np.asarray(newdims, dtype=float)
-    dimlist = []
-
-    if method == 'neighbour':
-        for i in range(ndims):
-            base = np.indices(newdims)[i]
-            dimlist.append((old[i] - m1) / (newdims[i] - m1)
-                           * (base + ofs) - ofs)
-        cd = np.array(dimlist).round().astype(int)
-        newa = a[list(cd)]
-        return newa
-
-    elif method in ['nearest', 'linear']:
-        # calculate new dims
-        for i in range(ndims):
-            base = np.arange(newdims[i])
-            dimlist.append((old[i] - m1) / (newdims[i] - m1)
-                           * (base + ofs) - ofs)
-        # specify old dims
-        olddims = [np.arange(i, dtype=float) for i in list(a.shape)]
-
-        # first interpolation - for ndims = any
-        mint = scipy.interpolate.interp1d(
-            olddims[-1], a, kind=method, fill_value="extrapolate")
-        newa = mint(dimlist[-1])
-
-        trorder = [ndims - 1] + list(range(ndims - 1))
-        for i in range(ndims - 2, -1, -1):
-            newa = newa.transpose(trorder)
-
-            mint = scipy.interpolate.interp1d(
-                olddims[i], newa, kind=method, fill_value="extrapolate")
-            newa = mint(dimlist[i])
-
-        if ndims > 1:
-            # need one more transpose to return to original dimensions
-            newa = newa.transpose(trorder)
-
-        return newa
-    elif method in ['spline']:
-        oslices = [slice(0, j) for j in old]
-        oldcoords = np.ogrid[oslices]
-        nslices = [slice(0, j) for j in list(newdims)]
-        newcoords = np.mgrid[nslices]
-
-        newcoords_dims = range(np.rank(newcoords))
-        # make first index last
-        newcoords_dims.append(newcoords_dims.pop(0))
-        newcoords_tr = newcoords.transpose(newcoords_dims)
-        # makes a view that affects newcoords
-
-        newcoords_tr += ofs
-
-        deltas = (np.asarray(old) - m1) / (newdims - m1)
-        newcoords_tr *= deltas
-
-        newcoords_tr -= ofs
-
-        newa = scipy.ndimage.map_coordinates(a, newcoords)
-        return newa
-    else:
-        print("Congrid error: Unrecognized interpolation type.\n",
-              "Currently only \'neighbour\', \'nearest\',\'linear\',",
-              "and \'spline\' are supported.")
-        return None
-
-
 def fitGaussian(image):
     N = image.shape[0]
     p_init = models.Gaussian2D(
@@ -198,8 +221,8 @@ def twoPsfsPlot(result, myResult):
     plt.show()
 
 
-def simple2Dgaussian(x, y, x0=0.0, y0=0.0, sg=1.0):
-    return np.exp(-((x-x0)**2)/(2*sg**2)-((y-y0)**2)/(2*sg**2) )
+def simple2Dgaussian(x, y, x0=0.0, y0=0.0, sg=1.0, xp=np):
+    return xp.exp(-((x-x0)**2)/(2*sg**2)-((y-y0)**2)/(2*sg**2) )
 
 def intRebin(arr, new_shape):
     shape = (new_shape[0], arr.shape[0] // new_shape[0],
