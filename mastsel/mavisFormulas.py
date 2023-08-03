@@ -439,3 +439,5 @@ def createMavisFormulary():
                            ] )
 
     return _MavisFormulas
+
+_mavisFormulas = createMavisFormulary()

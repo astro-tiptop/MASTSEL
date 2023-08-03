@@ -83,19 +83,10 @@ class TestWindResiduals(TestMavisLO):
         NGS_FWHM_mas = [51.677, 81.673, 42.373]
         
         mItGPU = Integrator(cp, cp.float64, '')
-        r1 = TestMavisLO.mLO.computeBias(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
-        r2 = TestMavisLO.mLO.computeBias(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
-        r3 = TestMavisLO.mLO.computeBias(NGS_flux[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
+        r1 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
+        r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
+        r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
 
-        '''
-        self.assertTrue( np.testing.assert_allclose( np.asarray(r1), np.asarray((0.4592354532951008, (0.1148088633237752, 3.348938898539153e-17), (0.08617446983322877, 0.08617446983322877))), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose( np.asarray(r2), np.asarray( (0.43007711055063774, (0.10751927763765944, 2.0234128532071065e-17), (0.059932427347737786, 0.059932427347737786))), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose( np.asarray(r3), np.asarray((0.42097905807645625, (0.10524476451911406, 0.0), (0.10381564644797976, 0.10381564644797978))), rtol=1e-03, atol=1e-5)==None)
-        
-        self.assertTrue( np.testing.assert_allclose( np.asarray(r1), np.asarray((0.4592354532951008, (0.1148088633237752, 3.348938898539153e-17), (0.08617446983322877, 0.08617446983322877))), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose( np.asarray(r2), np.asarray( (0.43007711055063774, (0.10751927763765944, 2.0234128532071065e-17), (0.059932427347737786, 0.059932427347737786))), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose( np.asarray(r3), np.asarray((0.42097905807645625, (0.10524476451911406, 0.0), (0.10381564644797976, 0.10381564644797978))), rtol=1e-03, atol=1e-5)==None)
-        '''
         self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.4592354532951008)), rtol=1e-03, atol=1e-5)==None)
         self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.1148088633237752, 3.348938898539153e-17)), rtol=1e-03, atol=1e-5)==None)
         self.assertTrue( np.testing.assert_allclose(np.array(r1[2]), np.array((0.08617446983322877, 0.08617446983322877)), rtol=1e-03, atol=1e-5)==None)
