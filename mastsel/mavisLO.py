@@ -462,14 +462,14 @@ class MavisLO(object):
         
         loD = self.SensingWavelength_LO/self.TelescopeDiameter*radiansToArcsecs*1000
        
-        if aNGS_FWHM_mas >= 2*diffNGS_FWHM_mas:
+        if aNGS_FWHM_mas >= 2*diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
             if self.verbose:
                 print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is larger than 2 times the diffraction.')
             # if correction is low we consider that there is a seeing limited like PSF
             g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d)
             peakValue = np.max(g2d)
-        elif aNGS_FWHM_mas >= 1.25*diffNGS_FWHM_mas and aNGS_FWHM_mas < 2*diffNGS_FWHM_mas:
+        elif aNGS_FWHM_mas >= 1.25*diffNGS_FWHM_mas and aNGS_FWHM_mas < 2*diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
             if self.verbose:
                 print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is less than 2 times the diffraction, but more than 1.25 times diffraction.')
             # if correction is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
@@ -599,6 +599,8 @@ class MavisLO(object):
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+        elif self.LoopGain_LO == 'test':
+            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
             # if gain is set no optimization is done and bias is not compensated
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
@@ -669,6 +671,8 @@ class MavisLO(object):
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+        elif self.LoopGain_LO == 'test':
+            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
             # if gain is set no optimization is done and bias is not compensated
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
