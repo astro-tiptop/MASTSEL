@@ -11,7 +11,7 @@ class TestMavisLO(unittest.TestCase):
         parametersFile = 'mavisParamsTests'
         fullPathFilename = path + parametersFile + '.ini'
         windPsdFile = '../data/windpsd_mavis.fits'
-        TestMavisLO.mLO = MavisLO(path, parametersFile)
+        TestMavisLO.mLO = MavisLO(path, parametersFile, verbose=True)
 
 class TestReconstructor(TestMavisLO):
                     
@@ -78,7 +78,7 @@ class TestWindResiduals(TestMavisLO):
         Test 
         """ 
         print("Running Test: TestWindResiduals")
-        NGS_flux = [10000, 30000, 5000]
+        NGS_flux = [2500, 7500 , 1250]
         NGS_SR_1650 = [0.4, 0.2, 0.6]
         NGS_FWHM_mas = [51.677, 81.673, 42.373]
         
