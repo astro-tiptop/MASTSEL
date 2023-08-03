@@ -9,12 +9,13 @@ else:
 
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
+from mastsel.mavisFormulas import _mavisFormulas
+
 import functools
 import multiprocessing as mp
 from configparser import ConfigParser
 import yaml
 import os
-
 
 class MavisLO(object):
     
@@ -106,7 +107,9 @@ class MavisLO(object):
         self.ExcessNoiseFactor_LO   = self.get_config_value('sensor_LO','ExcessNoiseFactor')
         self.Dark_LO                = self.get_config_value('sensor_LO','Dark')
         self.skyBackground_LO       = self.get_config_value('sensor_LO','SkyBackground')
+        # this is called t in MAVIS AOM formulas
         self.ThresholdWCoG_LO       = self.get_config_value('sensor_LO','ThresholdWCoG')
+        # this is called v (nu greek letter) in MAVIS AOM formulas
         self.NewValueThrPix_LO      = self.get_config_value('sensor_LO','NewValueThrPix')
 
         
@@ -124,10 +127,12 @@ class MavisLO(object):
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
         defaultIntegralDiscretization2 = 4000
+        defaultSimpleVarianceComputation = True
         self.computationPlatform =defaultCompute
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
-        
+        self.simpleVarianceComputation = defaultSimpleVarianceComputation
+
         if self.check_section_key('COMPUTATION'):
             if self.check_config_key('COMPUTATION','platform'):
                 self.computationPlatform    = self.get_config_value('COMPUTATION','platform')
@@ -135,6 +140,8 @@ class MavisLO(object):
                 self.integralDiscretization1 = self.get_config_value('COMPUTATION','integralDiscretization1')
             if self.check_config_key('COMPUTATION','integralDiscretization2'):
                 self.integralDiscretization2 = self.get_config_value('COMPUTATION','integralDiscretization2')
+            if self.check_config_key('COMPUTATION','simpleVarianceComputation'):
+                self.simpleVarianceComputation = self.get_config_value('COMPUTATION','simpleVarianceComputation')
 
         if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
             print('%%%%%%%% ATTENTION %%%%%%%%')
@@ -174,7 +181,7 @@ class MavisLO(object):
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
         #
-        
+       
         airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
                  
@@ -186,12 +193,19 @@ class MavisLO(object):
         self.psdIntegrationPoints = self.integralDiscretization2
         self.largeGridSize = 200
         self.downsample_factor = 4
+        # this is N_W in the simplified variance formulas
         self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         self.p_offset = 1.0 # 1/4 pixel on medium grid
         self.mediumGridSize = int(self.largeGridSize/self.downsample_factor)
         self.mediumShape = (self.mediumGridSize,self.mediumGridSize)
         self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
-        self.MavisFormulas = createMavisFormulary()
+
+        # diffraction limited FWHM - full aperture
+        self.diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
+        # diffraction limited FWHM - one aperture
+        self.subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
+
+        self.MavisFormulas = _mavisFormulas
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
@@ -429,6 +443,7 @@ class MavisLO(object):
         zplot1 = zplot1 + s0
         lh = sp.Function('B')(getSymbolByName(expr1, 'f_k'))
         ssx, zplot2 = self.mIt.functionEval(expr1, paramsAndRanges )
+        # magic number 10 here is due to the fact that more than 10 photons flux can be approximated witha gaussian distribution
         rr = np.where(gaussianPoints + self.Dark_LO/self.SensorFrameRate_LO < 10.0, zplot1, zplot2)
         rr = rr.reshape((self.smallGridSize,self.smallGridSize))
         return ssx, rr
@@ -441,19 +456,46 @@ class MavisLO(object):
         sigma_ktr_array = np.sqrt(var_ktr_array.astype(np.float32))
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
-        
-    def computeBias(self, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
-        gridSpanArcsec= self.mediumPixelScale*self.largeGridSize/1000
-        gridSpanRad = gridSpanArcsec/radiansToArcsecs
-        
-        # diffraction limited FWHM - full aperture
-        diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
-        # diffraction limited FWHM - one sub-aperture
-        subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
+    def sigmaTotXX(self, sigma_ph_xx, sigma_ron_xx):
+        return (1.0/self.N_sa_tot_LO) * ( sigma_ph_xx + sigma_ron_xx)
+        # * self.PixelScale_LO**2
+
+
+    def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
+        # aNGS_flux is provided in photons/s
+        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - self.diffNGS_FWHM_mas**2 ))
+        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + self.subapNGS_FWHM_mas**2 )
+        # print('             aNGS_FWHM_mas_mod',aNGS_FWHM_mas_mod)
+        back = self.skyBackground_LO/self.SensorFrameRate_LO
+        N_T = aNGS_FWHM_mas_mod/self.PixelScale_LO
+        # print('             N_T',N_T)
+        N_W = self.smallGridSize
+        # print('             N_W',N_W)
+        N_D = self.subapNGS_FWHM_mas/self.PixelScale_LO
+        sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * (self.Dark_LO / self.SensorFrameRate_LO + back) + self.sigmaRON_LO**2 )
+        # print('             sigma_e',sigma_e)
+        sigma_ph_fwhm = 0.25*self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_flux/self.SensorFrameRate_LO)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
+        # print('             sigma_ph_fwhm',sigma_ph_fwhm)
+        sigma_ron_fwhm = 0.25*(np.pi/(32.0*(np.log(2.0)**2))) * ( (sigma_e/(aNGS_flux/self.SensorFrameRate_LO)) * (N_T**2+N_W**2) ) ** 2
+        # print('             sigma_ron_fwhm',sigma_ron_fwhm)
+        sigma_ph_sr = (1.0/aNGS_SR_LO) * sigma_ph_fwhm
+        sigma_ron_sr = (1.0/aNGS_SR_LO)**2 * sigma_ron_fwhm
+        sigma_tot_fwhm = self.sigmaTotXX(sigma_ph_fwhm, sigma_ron_fwhm)
+        sigma_tot_sr = self.sigmaTotXX(sigma_ph_sr, sigma_ron_sr)
+        sigma_tot = (N_D/N_T)**2 * sigma_tot_sr + ( 1.0 - (N_D/N_T)**2 ) * sigma_tot_fwhm
+        varx = vary = sigma_tot
+        mux = muy = 0
+        bias = N_W**2/(N_W**2+N_T**2)
+        return (bias,(mux,muy),(varx,vary))
+
+
+    def computeBiasAndVariance(self, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
+        # aNGS_flux is provided in photons/s
+
         # increment of FWHM given by the partial correction
-        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - diffNGS_FWHM_mas**2 ))
+        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - self.diffNGS_FWHM_mas**2 ))
         # estimated FWHM on a sub-aperture 
-        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + subapNGS_FWHM_mas**2 )
+        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + self.subapNGS_FWHM_mas**2 )
         asigma = aNGS_FWHM_mas_mod/sigmaToFWHM/self.mediumPixelScale
             
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
@@ -462,33 +504,33 @@ class MavisLO(object):
         
         loD = self.SensingWavelength_LO/self.TelescopeDiameter*radiansToArcsecs*1000
        
-        if aNGS_FWHM_mas >= 2*diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
+        if aNGS_FWHM_mas >= 2*self.diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
             if self.verbose:
-                print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is larger than 2 times the diffraction.')
+                print('mavisLO.computeBiasVariance, FWHM (',aNGS_FWHM_mas,') is larger than 2 times the diffraction.')
             # if correction is low we consider that there is a seeing limited like PSF
             g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d)
             peakValue = np.max(g2d)
-        elif aNGS_FWHM_mas >= 1.25*diffNGS_FWHM_mas and aNGS_FWHM_mas < 2*diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
+        elif aNGS_FWHM_mas >= 1.25*self.diffNGS_FWHM_mas and aNGS_FWHM_mas < 2*self.diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
             if self.verbose:
-                print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is less than 2 times the diffraction, but more than 1.25 times diffraction.')
+                print('mavisLO.computeBiasVariance, FWHM (',aNGS_FWHM_mas,') is less than 2 times the diffraction, but more than 1.25 times diffraction.')
             # if correction is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
             r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
             seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
-            seeing = np.sqrt( seeing**2 + subapNGS_FWHM_mas**2 )
+            seeing = np.sqrt( seeing**2 + self.subapNGS_FWHM_mas**2 )
             asigma_seeing = seeing/sigmaToFWHM/self.mediumPixelScale
             g2d_seeing = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d_seeing = g2d_seeing * (1-aNGS_SR_LO) * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d_seeing)
-            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas/self.mediumPixelScale)**2)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.diffNGS_FWHM_mas/self.mediumPixelScale)**2)
             g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d + g2d_seeing
             peakValue = np.max(g2d)
         else:
             if self.verbose:
-                print('mavisLO.computeBias, FWHM (',aNGS_FWHM_mas,') is less than 1.25 times the diffraction.')
+                print('mavisLO.computeBiasVariance, FWHM (',aNGS_FWHM_mas,') is less than 1.25 times the diffraction.')
             # if correction is high we consider that there is a diffraction limited core
             # in the center of the PSF and wings given by the fitting error
-            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(diffNGS_FWHM_mas/self.mediumPixelScale)**2)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.diffNGS_FWHM_mas/self.mediumPixelScale)**2)
             g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             
         if self.verbose:
@@ -512,8 +554,6 @@ class MavisLO(object):
         W_Mask = W_Mask[ii1:ii2,ii1:ii2]
         fx = fx[ii1:ii2,ii1:ii2]
         fy = fy[ii1:ii2,ii1:ii2]
-        gridSpanArcsec= self.mediumPixelScale*self.smallGridSize/1000
-        gridSpanRad = gridSpanArcsec/radiansToArcsecs
         mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(f_k_data)
         mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(f_k_prime_data)
         masked_mu0 = W_Mask*mu_ktr_array
@@ -822,11 +862,16 @@ class MavisLO(object):
             print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
             
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.computeBias(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            if self.simpleVarianceComputation:
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+            else:
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+
             if self.verbose:
                 print('         bias',bias)
                 print('         amu',amu)
                 print('         avar',avar)
+                print('             ratio',avar/(bias**2))
 
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
