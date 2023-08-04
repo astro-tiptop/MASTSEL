@@ -10,7 +10,7 @@ authors = [
 description = "Asterism Selection for MAVIS instrument"
 readme = "README.md"
 urls = {repository = "https://github.com/astro-tiptop/MASTSEL"}
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 license = {text = "MIT License"}
 dependencies = [
     "astropy",
@@ -19,6 +19,7 @@ dependencies = [
     "PyYAML",
     "scipy",
     "symao",
+    "seeing>=1.1",
 ]
 dynamic = ["version"]
 
