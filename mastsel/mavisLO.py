@@ -17,6 +17,12 @@ from configparser import ConfigParser
 import yaml
 import os
 
+def cpuArray(v):
+    if isinstance(v,np.ndarray) or isinstance(v,np.float64):
+        return v
+    else:
+        return v.get()
+
 class MavisLO(object):
     
     def check_section_key(self, primary):
@@ -611,7 +617,7 @@ class MavisLO(object):
         
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
-        sigma2Noise =  varX / bias**2 * Cfloat / (Df / df)
+        sigma2Noise =  cpuArray(varX) / bias**2 * Cfloat / (Df / df)
         # must wait till this moment to substitute the noise level
         self.fTipS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
         self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})    
@@ -655,7 +661,7 @@ class MavisLO(object):
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
             for x in range(g0g.shape[0]):
-                im = ax2.plot(psd_freq.get(),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
             ax2.set_xscale('log')
             ax2.set_yscale('log')
             ax2.set_title('residual PSD', color='black')
@@ -664,8 +670,8 @@ class MavisLO(object):
         
         resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
-        minTipIdx = xp.where(resultTip == xp.amin(resultTip)) #    print(minTipIdx[0], resultTip[minTipIdx[0][0]])
-        minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt)) #    print(minTiltIdx[0], resultTilt[minTiltIdx[0][0]])
+        minTipIdx = xp.where(resultTip == xp.amin(resultTip))
+        minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
         if self.verbose:
             print('         best tip gain (noise)',g0g[minTipIdx[0][0]])
             print('         best tilt gain (noise)',g0g[minTiltIdx[0][0]])
@@ -693,7 +699,7 @@ class MavisLO(object):
             ax1.set_xlabel('frequency [Hz]')
             ax1.set_ylabel('Power')
                
-        sigma2Noise = var1x / bias**2 * Cfloat / (Df / df)
+        sigma2Noise = cpuArray(var1x) / bias**2 * Cfloat / (Df / df)
         self.fTipS1 = subsParamsByName(self.fTipS, {'phi^noise_Tip': sigma2Noise})
         self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
         self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], alib)
@@ -871,7 +877,7 @@ class MavisLO(object):
                 print('         bias',bias)
                 print('         amu',amu)
                 print('         avar',avar)
-                print('             ratio',avar/(bias**2))
+                print('             ratio',cpuArray(cp.asarray(avar))/bias**2)
 
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
