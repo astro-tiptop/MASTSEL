@@ -22,8 +22,10 @@ def process_ini(inifile,ymlfile):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert a basic ini file to yml")
-    parser.add_argument('--in',action="store",dest="ini",required=True,help="Input ini file")
-    parser.add_argument('--out',action="store",dest="yml",required=True,help="Output yml file")
+    parser.add_argument('--in',action="store",dest="ini",required=True,
+                        help="Input ini file")
+    parser.add_argument('--out',action="store",dest="yml",required=True,
+                        help="Output yml file")
     args = vars(parser.parse_args())
     inifile = args['ini']
     ymlfile = args['yml']
