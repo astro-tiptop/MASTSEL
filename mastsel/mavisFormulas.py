@@ -89,7 +89,7 @@ def createMavisFormulary():
     def turbPSDTilt():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
         with sp.evaluate(False):
-            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * 
+            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * \
                     (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
         exprW = _rhs
         expr_k = sp.sqrt((f/V)**2 + k_y**2)
