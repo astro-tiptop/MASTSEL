@@ -26,7 +26,8 @@ jobs:
 #        continue-on-error: true  
       - name: Test with pytest  
         run: |  
-          pip install pytest coverage mastsel
+          python -m pip install .
+          pip install pytest coverage
           coverage run tests/allTests.py -v -s
 #          coverage run -m pytest  -v -s  
       - name: Generate Coverage Report  
