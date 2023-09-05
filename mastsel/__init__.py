@@ -17,7 +17,7 @@ else:
     print("env variable MASTSEL_DISABLE_GPU prevents using the GPU.")
     cp = np
     
-from mastsel.mavisPsf import *
-from mastsel.mavisLO import *
-from mastsel.mavisFormulas import *
-from mastsel._version import __version__
+from mastsel.mavisPsf import *  # noqa
+from mastsel.mavisLO import *  # noqa
+from mastsel.mavisFormulas import *  # noqa
+from mastsel._version import __version__  # noqa
