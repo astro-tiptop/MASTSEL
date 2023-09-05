@@ -7,10 +7,10 @@ import unittest
 class TestMavisLO(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = "../data/ini/"
+        path = "data/ini/"
         parametersFile = 'mavisParamsTests'
         fullPathFilename = path + parametersFile + '.ini'
-        windPsdFile = '../data/windpsd_mavis.fits'
+        windPsdFile = 'data/windpsd_mavis.fits'
         TestMavisLO.mLO = MavisLO(path, parametersFile, verbose=True)
 
 class TestReconstructor(TestMavisLO):
@@ -58,13 +58,13 @@ class TestCovMatrices(TestMavisLO):
         cartNGSCoords = np.asarray([polarToCartesian(polarNGSCoords[0]), polarToCartesian(polarNGSCoords[1]), polarToCartesian(polarNGSCoords[2])])
         print("Running Test: TestCovMatrices")
         matCaaValue, matCasValue, matCssValue = TestMavisLO.mLO.computeCovMatrices(cartPointingCoords, cartNGSCoords)        
-        hdul = fits.open('../data/Caa.fits')
+        hdul = fits.open('data/Caa.fits')
         Caa_data = np.asarray(hdul[0].data, np.float64)
         hdul.close()
-        hdul = fits.open('../data/Cas.fits')
+        hdul = fits.open('data/Cas.fits')
         Cas_data = np.asarray(hdul[0].data, np.float64)
         hdul.close()
-        hdul = fits.open('../data/Css.fits')
+        hdul = fits.open('data/Css.fits')
         Css_data = np.asarray(hdul[0].data, np.float64)
         hdul.close()
         self.assertTrue( np.testing.assert_allclose(Caa_data,matCaaValue[:2,:], rtol=1e-03, atol=1e-5)==None)
@@ -104,7 +104,7 @@ class TestNoiseResiduals(TestMavisLO):
         Test 
         """
         print("Running Test: TestNoiseResiduals")
-        psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('../data/windpsd_mavis.fits')
+        psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('data/windpsd_mavis.fits')
         var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO**2
         bias = 0.4300779971881394
         nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
