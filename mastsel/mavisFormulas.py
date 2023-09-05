@@ -17,7 +17,7 @@ def createMavisFormulary():
     df, DF = sp.symbols('df Delta_F')
     
     
-    N_NGS = sp.symbols('N_NGS', integer=True, positive=True)
+    # N_NGS = sp.symbols('N_NGS', integer=True, positive=True)
     H_DM, DP, r_FoV = sp.symbols('H_DM D\' r_FoV', real=True)
     x_NGS, y_NGS = sp.symbols('x_NGS y_NGS', real=True)
 
@@ -26,7 +26,8 @@ def createMavisFormulary():
     phi_turb_tip_f = sp.Function( 'phi^turb_Tip^f')(f)    
     phi_turb_tilt_f = sp.Function( 'phi^turb_Tilt^f')(f)    
 
-    res, e_tip, e_tilt = sp.symbols('res epsilon_Tip epsilon_Tilt', real=True, positive=True)
+    res, e_tip, e_tilt = sp.symbols('res epsilon_Tip epsilon_Tilt', 
+                                    real=True, positive=True)
     phi_res_tip = sp.symbols( 'phi^res_Tip')
     phi_res_tilt = sp.symbols( 'phi^res_Tilt')
     phi_wind_tip = sp.symbols( 'phi^wind_Tip')
@@ -53,7 +54,8 @@ def createMavisFormulary():
     W_phi = sp.Function('W_phi')(rho)
 
 
-    g_0_tip, g_1_tip, g_0_tilt, g_1_tilt = sp.symbols('g^Tip_0 g^Tip_1 g^Tilt_0 g^Tilt_1', real=True)
+    g_0_tip, g_1_tip, g_0_tilt, g_1_tilt = sp.symbols('g^Tip_0 g^Tip_1 g^Tilt_0 g^Tilt_1',
+                                                      real=True)
     
     hh, z1, z2 = sp.symbols('h z_1 z_2', positive=True)
     jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
@@ -76,20 +78,25 @@ def createMavisFormulary():
     def turbPSDTip():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
         with sp.evaluate(False):
-            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
+            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * 
+                    (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
         exprW = _rhs
         expr_k = sp.sqrt((f/V)**2 + k_y**2)
-        expr2 = sp.Integral( 16/(V*sp.pi**2*R**2*k**2)*exprW * (f/(k*V))**2 * sp.besselj(2, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
+        expr2 = sp.Integral( 16/(V*sp.pi**2*R**2*k**2)*exprW * (f/(k*V))**2 * 
+                            sp.besselj(2, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
         return sp.Eq(phi_turb_tip_f, expr2)
 
     def turbPSDTilt():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
         with sp.evaluate(False):
-            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
+            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * 
+                    (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
         exprW = _rhs
         expr_k = sp.sqrt((f/V)**2 + k_y**2)
-        expr2 = sp.Integral( 16.0/(V*sp.pi**2*R**2*k**2) * exprW * (1.0 - (f/(k*V))**2) * sp.besselj(2, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
+        expr2 = sp.Integral( 16.0/(V*sp.pi**2*R**2*k**2) * exprW * 
+                            (1.0 - (f/(k*V))**2) * sp.besselj(2, 2*sp.pi*R*k )**2, 
+                            (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
         return sp.Eq(phi_turb_tilt_f, expr2)
 
@@ -103,10 +110,12 @@ def createMavisFormulary():
         return sp.Eq(e_tilt, sp.Integral(phi_res_tilt, (f, f_min, f_max)) )
 
     def residualTipPSD():
-        return sp.Eq(phi_res_tip, sp.Abs(H_R_tip)**2 * phi_wind_tip + sp.Abs(H_N_tip)**2 * phi_noise_tip)
+        return sp.Eq(phi_res_tip, sp.Abs(H_R_tip)**2 * phi_wind_tip + 
+                     sp.Abs(H_N_tip)**2 * phi_noise_tip)
 
     def residualTiltPSD():
-        return sp.Eq(phi_res_tilt, sp.Abs(H_R_tilt)**2 * phi_wind_tilt + sp.Abs(H_N_tilt)**2 * phi_noise_tilt)
+        return sp.Eq(phi_res_tilt, sp.Abs(H_R_tilt)**2 * phi_wind_tilt + 
+                     sp.Abs(H_N_tilt)**2 * phi_noise_tilt)
 
     # 4 tf in z with 1 gain each to tune
     def ztfTipWindMono():
