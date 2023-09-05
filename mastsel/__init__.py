@@ -10,7 +10,7 @@ if systemDisable=='FALSE':
         import cupy as cp
         print("Cupy import successfull. Installed version is:", cp.__version__)
         gpuEnabled = True
-    except:
+    except Exception:
         print("Cupy import failed. MASTSEL will fall back to CPU use.")
         cp = np
 else:
