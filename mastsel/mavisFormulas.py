@@ -53,9 +53,8 @@ def createMavisFormulary():
     dW_phi = sp.Function('dW_phi')(rho)
     W_phi = sp.Function('W_phi')(rho)
 
-
-    g_0_tip, g_1_tip, g_0_tilt, g_1_tilt = sp.symbols('g^Tip_0 g^Tip_1 g^Tilt_0 g^Tilt_1',
-                                                      real=True)
+    g_0_tip, g_1_tip = sp.symbols('g^Tip_0 g^Tip_1', real=True)
+    g_0_tilt, g_1_tilt = sp.symbols('g^Tilt_0 g^Tilt_1', real=True)
     
     hh, z1, z2 = sp.symbols('h z_1 z_2', positive=True)
     jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
@@ -78,7 +77,7 @@ def createMavisFormulary():
     def turbPSDTip():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
         with sp.evaluate(False):
-            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * 
+            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * \
                     (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
         exprW = _rhs
         expr_k = sp.sqrt((f/V)**2 + k_y**2)
@@ -136,27 +135,34 @@ def createMavisFormulary():
         return sp.Eq(H_R_tipz, (1-z**-1)**2/((1-z**-1+g_0_tip*z**-d)*(1-z**-1+g_1_tip)))
 
     def ztfTiltWind():
-        return sp.Eq(H_R_tiltz, (1-z**-1)**2/((1-z**-1+g_0_tilt*z**-d)*(1-z**-1+g_1_tilt)))
+        return sp.Eq(H_R_tiltz, (1-z**-1)**2/ \
+                     ((1-z**-1+g_0_tilt*z**-d)*(1-z**-1+g_1_tilt)))
 
     def ztfTipNoise():
-        return sp.Eq(H_N_tipz, g_0_tip*g_1_tip*z**-d/((1-z**-1+g_0_tip*z**-d)*(1-z**-1+g_1_tip)))
+        return sp.Eq(H_N_tipz, g_0_tip*g_1_tip*z**-d/ \
+                     ((1-z**-1+g_0_tip*z**-d)*(1-z**-1+g_1_tip)))
 
     def ztfTiltNoise():
-        return sp.Eq(H_N_tiltz, g_0_tilt*g_1_tilt*z**-d/((1-z**-1+g_0_tilt*z**-d)*(1-z**-1+g_1_tilt))  )
+        return sp.Eq(H_N_tiltz, g_0_tilt*g_1_tilt*z**-d/ \
+                     ((1-z**-1+g_0_tilt*z**-d)*(1-z**-1+g_1_tilt))  )
     # end
 
     # 4 tf in f obtained from corresponding tf in z
     def tfTipWind(ztf = ztfTipWind()):
-        return sp.Eq(H_R_tipf, subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+        return sp.Eq(H_R_tipf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
     
     def tfTiltWind(ztf = ztfTiltWind()):
-        return sp.Eq(H_R_tiltf, subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+        return sp.Eq(H_R_tiltf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTipNoise(ztf = ztfTipNoise()):
-        return sp.Eq(H_N_tipf, subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+        return sp.Eq(H_N_tipf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTiltNoise(ztf = ztfTiltNoise()):
-        return sp.Eq(H_N_tiltf, subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+        return sp.Eq(H_N_tiltf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
     # end
 
     def interactionMatrixNGS():
