@@ -18,7 +18,7 @@ import yaml
 import os
 
 def cpuArray(v):
-    if isinstance(v,np.ndarray) or isinstance(v,np.float64):
+    if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v, float):
         return v
     else:
         return v.get()
