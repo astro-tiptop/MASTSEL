@@ -1,3 +1,5 @@
+import sympy as sp
+
 def createMavisFormulary():
 
     # define a set of symbols and functions with unique representations
