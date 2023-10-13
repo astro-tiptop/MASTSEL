@@ -326,8 +326,9 @@ def StrehlFromMask(psf, mask):
 def convolve(psf, kernel, xp=defaultArrayBackend):
     xp = psf.xp
     if (psf.N != kernel.N):
-        print(
-            'psf and kernel sampling not compatible (grids sizes in pixels are different!)')
+        print('psf and kernel sampling not compatible (grids sizes in pixels are different!)')
+        print('psf.N:', psf.N) 
+        print('kernel.N:', kernel.N) 
         return
 #    if xp.abs((psf.pixel_size - kernel.pixel_size)) > 0.001:
 #        print('These values should be the same!!!')

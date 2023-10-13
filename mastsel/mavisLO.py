@@ -854,35 +854,27 @@ class MavisLO(object):
             Ctot = aC1 + C2 + C3
         return Ctot
 
-        
-    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
+    
+    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
-        nNaturalGS = aCartNGSCoords.shape[0]
+        nNaturalGS = len(indices)
         C1 = np.zeros((2,2))
         Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
-
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
             print('         aNGS_flux',aNGS_flux)
             print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
-            
         for starIndex in range(nNaturalGS):
-            if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
-            else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
-
+            bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
             if self.verbose:
                 print('         bias',bias)
-                print('         amu',amu)
-                print('         avar',avar)
-                print('             ratio',cpuArray(cp.asarray(avar))/bias**2)
-
-            var1x = avar[0] * self.PixelScale_LO**2
-            nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
+                print('         amu', amu)
+                print('         avar', avar)
+                print('         ratio', cpuArray(cp.asarray(avar))/bias**2)
+            nr = self.nr[indices[starIndex]] 
             # TODO: this second computation must be embedded in the previous one.
-            wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
+            wr = self.wr[indices[starIndex]] 
             if self.verbose:
                 print('         noise residual:     ',nr)
                 print('         wind-shake residual:',wr)
@@ -899,6 +891,65 @@ class MavisLO(object):
             print(Ctot)
         return Ctot.reshape((nPointings,2,2))
 
+
+    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas, doAll=True):
+        self.bias = []
+        self.amu = []
+        self.avar = []
+        self.wr = []
+        self.nr = []
+        nPointings = aCartPointingCoords.shape[0]
+        maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
+        nNaturalGS = aCartNGSCoords.shape[0]
+        C1 = np.zeros((2,2))
+        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
+
+        if self.verbose:
+            print('mavisLO.computeTotalResidualMatrix')
+            print('         aNGS_flux',aNGS_flux)
+            print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
+            
+        for starIndex in range(nNaturalGS):
+            if self.simpleVarianceComputation:
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+            else:
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            if self.verbose:
+                print('         bias',bias)
+                print('         amu',amu)
+                print('         avar',avar)
+                print('         ratio',cpuArray(cp.asarray(avar))/bias**2)
+
+            self.bias.append(bias)
+            self.amu.append(amu)
+            self.avar.append(avar)
+
+            var1x = avar[0] * self.PixelScale_LO**2
+            nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
+            # TODO: this second computation must be embedded in the previous one.
+            wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
+
+            self.nr.append(nr)
+            self.wr.append(wr)
+
+            if self.verbose:
+                print('         noise residual:     ',nr)
+                print('         wind-shake residual:',wr)
+            Cnn[2*starIndex,2*starIndex] = nr[0]
+            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
+            if starIndex == maxFluxIndex[0][0]:
+                C1[0,0] = wr[0]
+                C1[1,1] = wr[1]
+
+        if doAll:
+            # C1 and Cnn do not depend on aCartPointingCoords[i]
+            Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
+            if self.verbose:
+                print('         Ctot:')
+                print(Ctot)
+            return Ctot.reshape((nPointings,2,2))
+        else:
+            return None
 
     def ellipsesFromCovMats(self, Ctot):
         theta = sp.symbols('theta')
