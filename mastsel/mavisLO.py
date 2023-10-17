@@ -80,7 +80,8 @@ class MavisLO(object):
             windPsdFile = self.get_config_value('telescope','windPsdFile')
             self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
         else:
-            print('No windPsdFile file is set.')
+            if self.verbose:
+                print('No windPsdFile file is set.')
             self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
             self.psd_tip_wind = np.zeros((500))
             self.psd_tilt_wind = np.zeros((500))
@@ -128,7 +129,11 @@ class MavisLO(object):
 
         self.SensorFrameRate_LO     = self.get_config_value('RTC','SensorFrameRate_LO')
         self.loopDelaySteps_LO      = self.get_config_value('RTC','LoopDelaySteps_LO')
-        self.LoopGain_LO            = self.get_config_value('RTC','LoopGain_LO')
+
+        if self.check_config_key('RTC','LoopGain_LO'):
+            self.LoopGain_LO            = self.get_config_value('RTC','LoopGain_LO')
+        else:
+            self.LoopGain_LO            = 'optimize'
 
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
