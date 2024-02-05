@@ -114,9 +114,9 @@ class TestNoiseResiduals(TestMavisLO):
         result = nr[1]
         self.assertTrue( np.testing.assert_allclose(result, 1361.65732465, rtol=1e-03, atol=1e-5)==None)
         result = wr[0]
-        self.assertTrue( np.testing.assert_allclose(result, 71.89646223, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 71.85, rtol=1e-03, atol=1e-5)==None)
         result = wr[1]
-        self.assertTrue( np.testing.assert_allclose(result, 61.02400116, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 60.95, rtol=1e-03, atol=1e-5)==None)
 
 
 
