@@ -816,11 +816,17 @@ class MavisLO(object):
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
         hdul.close()
-        psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
-        psd_tip_wind = np.zeros((500))
-        psd_tilt_wind = np.zeros((500))
-        psd_tip_wind[0:200] = psd_data[1,:] #TODO here we must make an interpolation using the frequencies defined in the filename
-        psd_tilt_wind[0:200] = psd_data[2,:] #TODO same as above
+        if psd_data.shape[1] == 200:
+            psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
+            psd_tip_wind = np.zeros((500))
+            psd_tilt_wind = np.zeros((500))
+            psd_freq[0:200] = psd_data[0,:] # this must be avoided to keep compatibility with old version
+            psd_tip_wind[0:200] = psd_data[1,:]
+            psd_tilt_wind[0:200] = psd_data[2,:]
+        else:
+            psd_freq = psd_data[0,:]
+            psd_tip_wind = psd_data[1,:]
+            psd_tilt_wind = psd_data[2,:]
         return psd_freq, psd_tip_wind, psd_tilt_wind
 
         
