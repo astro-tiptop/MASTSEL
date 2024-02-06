@@ -75,16 +75,6 @@ class MavisLO(object):
         self.ZenithAngle            = self.get_config_value('telescope','ZenithAngle')  
         self.TechnicalFoV           = self.get_config_value('telescope','TechnicalFoV')  
         self.ObscurationRatio       = self.get_config_value('telescope','ObscurationRatio')   
-        
-        if self.check_config_key('telescope','windPsdFile'):        
-            windPsdFile = self.get_config_value('telescope','windPsdFile')
-            self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
-        else:
-            if self.verbose:
-                print('No windPsdFile file is set.')
-            self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
-            self.psd_tip_wind = np.zeros((500))
-            self.psd_tilt_wind = np.zeros((500))
 
         self.AtmosphereWavelength   = self.get_config_value('atmosphere','Wavelength')
         self.L0                     = self.get_config_value('atmosphere','L0')
@@ -134,6 +124,16 @@ class MavisLO(object):
             self.LoopGain_LO            = self.get_config_value('RTC','LoopGain_LO')
         else:
             self.LoopGain_LO            = 'optimize'
+
+        if self.check_config_key('telescope','windPsdFile'):        
+            windPsdFile = self.get_config_value('telescope','windPsdFile')
+            self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
+        else:
+            if self.verbose:
+                print('No windPsdFile file is set.')
+            self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
+            self.psd_tip_wind = np.zeros((500))
+            self.psd_tilt_wind = np.zeros((500))
 
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
@@ -816,11 +816,10 @@ class MavisLO(object):
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
         hdul.close()
-        psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
-        psd_tip_wind = np.zeros((500))
-        psd_tilt_wind = np.zeros((500))
-        psd_tip_wind[0:200] = psd_data[1,:] #TODO here we must make an interpolation using the frequencies defined in the filename
-        psd_tilt_wind[0:200] = psd_data[2,:] #TODO same as above
+        maxFreq = 0.5*self.SensorFrameRate_LO
+        psd_freq = np.asarray(np.linspace(0.5, maxFreq, np.int32(2*maxFreq)))
+        psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
+        psd_tilt_wind = np.interp(psd_freq, psd_data[0,:], psd_data[2,:],left=0,right=0)
         return psd_freq, psd_tip_wind, psd_tilt_wind
 
         
