@@ -722,13 +722,16 @@ class MavisLO(object):
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+            g0g, g1g = xp.meshgrid( g0g,g0g )
         elif self.LoopGain_LO == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+            g0g, g1g = xp.meshgrid( g0g,g0g )
         else:
             # if gain is set no optimization is done and bias is not compensated
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
             g0g = xp.asarray(g0)
-        g0g, g1g = xp.meshgrid( g0g,g0g )
+            g0g, g1g = xp.meshgrid( g0g,g0g )
+            g1g *= 0
         
         e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
         e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))
