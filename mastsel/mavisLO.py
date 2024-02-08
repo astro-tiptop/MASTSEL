@@ -358,8 +358,18 @@ class MavisLO(object):
     
     def specializedWindFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS1 = subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function
-        self.fTiltS1 = subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function
+        
+        completeIntegralTipAndTf = self.MavisFormulas['completeIntegralTipAndTf']
+        self.fTipS1 = subsParamsByName(completeIntegralTipAndTf[0], dict1).function
+        self.fTipS1tfW = completeIntegralTipAndTf[1]
+        self.fTipS1tfN = completeIntegralTipAndTf[2]
+        completeIntegralTiltAndTf = self.MavisFormulas['completeIntegralTiltAndTf']
+        self.fTiltS1 = subsParamsByName(completeIntegralTiltAndTf[0], dict1).function
+        self.fTiltS1tfW = completeIntegralTiltAndTf[1]
+        self.fTiltS1tfN = completeIntegralTiltAndTf[2]
+        
+        #self.fTipS1 = subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function
+        #self.fTiltS1 = subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function
 #        self.fTipS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function)
 #        self.fTiltS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function)
         if self.displayEquation:
