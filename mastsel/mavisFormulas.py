@@ -216,32 +216,40 @@ def createMavisFormulary():
         return completeIntegralTiltV
 
     def completeIntegralTipLOandTf():
-        tfW = tfTipWind(ztfTipWindMono()).rhs
-        tfN = tfTipNoise(ztfTipNoiseMono()).rhs
+        ztfW = ztfTipWindMono()
+        ztfN = ztfTipNoiseMono()
+        tfW = tfTipWind(ztfW).rhs
+        tfN = tfTipNoise(ztfN).rhs
         completeIntegralTipV = subsParamsByName( residualTip().rhs, {'phi^res_Tip':residualTipPSD().rhs} )
         completeIntegralTipV = subsParamsByName( completeIntegralTipV, {'H^R_Tip':tfW, 'H^N_Tip':tfN} )
-        return completeIntegralTipV, tfW, tfN
+        return completeIntegralTipV, tfW, tfN, ztfW.rhs, ztfN.rhs
 
     def completeIntegralTiltLOandTf():
-        tfW = tfTiltWind(ztfTiltWindMono()).rhs
-        tfN = tfTiltNoise(ztfTiltNoiseMono()).rhs
+        ztfW = ztfTipWindMono()
+        ztfN = ztfTipNoiseMono()
+        tfW = tfTiltWind(ztfW).rhs
+        tfN = tfTiltNoise(ztfN).rhs
         completeIntegralTiltV = subsParamsByName( residualTilt().rhs, {'phi^res_Tilt':residualTiltPSD().rhs} )
         completeIntegralTiltV = subsParamsByName( completeIntegralTiltV, {'H^R_Tilt':tfW, 'H^N_Tilt':tfN} )
-        return completeIntegralTiltV, tfW, tfN
+        return completeIntegralTiltV, tfW, tfN, ztfW.rhs, ztfN.rhs
     
     def completeIntegralTipAndTf():
-        tfW = tfTipWind().rhs
-        tfN = tfTipNoise().rhs
+        ztfW = ztfTipWind()
+        ztfN = ztfTipNoise()
+        tfW = tfTipWind(ztfW).rhs
+        tfN = tfTipNoise(ztfN).rhs
         completeIntegralTipV = subsParamsByName( residualTip().rhs, {'phi^res_Tip':residualTipPSD().rhs} )
         completeIntegralTipV = subsParamsByName( completeIntegralTipV, {'H^R_Tip':tfW, 'H^N_Tip':tfN} )
-        return completeIntegralTipV, tfW, tfN
+        return completeIntegralTipV, tfW, tfN, ztfW.rhs, ztfN.rhs
     
     def completeIntegralTiltAndTf():
-        tfW = tfTiltWind().rhs
-        tfN = tfTiltNoise().rhs
+        ztfW = ztfTiltWind()
+        ztfN = ztfTiltNoise()
+        tfW = tfTiltWind(ztfW).rhs
+        tfN = tfTiltNoise(ztfN).rhs
         completeIntegralTiltV = subsParamsByName( residualTilt().rhs, {'phi^res_Tilt':residualTiltPSD().rhs} )
         completeIntegralTiltV = subsParamsByName( completeIntegralTiltV, {'H^R_Tilt':tfW, 'H^N_Tilt':tfN} )
-        return completeIntegralTiltV, tfW, tfN
+        return completeIntegralTiltV, tfW, tfN, ztfW.rhs, ztfN.rhs
     
     def zernikeCovarianceI():
         _integrand = zernikeCovarianceD().rhs
