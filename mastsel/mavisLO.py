@@ -613,6 +613,22 @@ class MavisLO(object):
         psd_tilt_wind = zplot1*scaleFactor
         return psd_tip_wind, psd_tilt_wind
 
+    def check_stability(self,keys,values,TFeq):
+        # substitute values in sympy expression
+        dictTf = {'d':self.loopDelaySteps_LO}
+        for key, value in zip(keys,values):
+            dictTf[key] = value
+        zTFeq = subsParamsByName(TFeq, dictTf)
+        # compute numerator and denominator of the polynomials
+        n,d = sp.fraction(sp.simplify(zTFeq))
+        # create a transfer function
+        z = sp.symbols('z', real=False)
+        zTF = sp.physics.control.lti.TransferFunction(n,d,z)
+        # check stability thanks to the values of the poles
+        if np.max(np.abs(zTF.poles())) > 0.99:
+            return 0
+        else:
+            return 1
         
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
