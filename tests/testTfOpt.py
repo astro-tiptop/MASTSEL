@@ -9,9 +9,15 @@ parametersFile = 'mavisParamsTests'
 mLO = MavisLO(path, parametersFile)
 mLO.LoopGain_LO = 0.3
 
+# WIND SHAKE PSD
 #psd_freq, psd_tip_wind0, psd_tilt_wind0 = mLO.loadWindPsd('data/windpsd_mavis.fits')
 psd_freq, psd_tip_wind0, psd_tilt_wind0 = mLO.loadWindPsd('data/morfeo_windshake8ms_psd_1k.fits')
 
+# TIP and TILT PSDs
+psd_tip_wind1, psd_tilt_wind1 = mLO.computeWindPSDs(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0])
+psd_freq1 = np.asarray(np.linspace(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0]))
+# FOCUS PSDs        
+psd_focus_wind, psd_focus_sodium = mLO.computeFocusPSDs(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0], cpulib)
 
 aNGS_flux = 50.*mLO.SensorFrameRate_LO # flux per second per sub-aperture
 aNGS_SR_LO = 0.5
@@ -66,6 +72,26 @@ plt.plot(psd_freq,abs(RTFwindL1))
 plt.plot(psd_freq,abs(NTFwindL1))
 plt.xlabel('frequency [Hz]')
 plt.ylabel('Amplitude')
+plt.show(block=False)
+
+plt.figure(figsize=(12,9))
+plt.xscale('log')
+plt.yscale('log')
+plt.plot(psd_freq,psd_tip_wind0)
+plt.plot(psd_freq1,psd_tip_wind1)
+plt.plot(psd_freq1,psd_tilt_wind1)
+plt.plot(psd_freq1,psd_focus_wind)
+plt.xlabel('frequency [Hz]')
+plt.ylabel('power [nm2/Hz]')
+plt.show(block=False)
+
+plt.figure(figsize=(12,9))
+plt.xscale('log')
+plt.yscale('log')
+plt.plot(psd_freq1,psd_focus_wind)
+plt.plot(psd_freq1,psd_focus_sodium)
+plt.xlabel('frequency [Hz]')
+plt.ylabel('power [nm2/Hz]')
 plt.show(block=False)
 
 plt.figure(figsize=(12,9))
