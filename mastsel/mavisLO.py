@@ -221,6 +221,7 @@ class MavisLO(object):
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
+        self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
         self.fCValue = self.specializedC_coefficient()
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
@@ -639,6 +640,32 @@ class MavisLO(object):
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_tilt_wind = zplot1*scaleFactor
         return psd_tip_wind, psd_tilt_wind
+
+    def computeFocusPSDs(self, fmin, fmax, freq_samples, alib):    
+        paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
+        scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
+
+        if self.computationPlatform=='GPU':
+            xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        else:
+            pool_size = int( min( mp.cpu_count(), freq_samples) )
+            pool = mp.Pool(processes=pool_size)
+            fx = np.linspace(fmin, fmax, freq_samples)
+            paramsAndRangesG = [( 'f', fxx, 0.0, 0.0, 'provided' ) for fxx in fx]
+            pool_outputs = pool.map(functools.partial(self.mIt.IntegralEvalE, eq=self.sTurbPSDFocus, integrationVarsSamplingSchemes=[(self.psdIntegrationPoints, 'linear')], method='rect') , [paramAndRange])
+            pool.close()
+            pool.join()
+            for rr in pool_outputs:
+                xplot1.append(rr[0])
+                zplot1.append(rr[1])
+
+        #print('x,z:', len(xplot1), len(zplot1))
+        psd_freq = xplot1[0]
+        psd_focus_wind = zplot1*scaleFactor
+        
+        psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], alib)
+        psd_focus_sodium = psd_focus_sodium_lambda1( psd_freq) 
+        return psd_focus_wind, psd_focus_sodium
 
     def checkStability(self,keys,values,TFeq):
         # substitute values in sympy expression
