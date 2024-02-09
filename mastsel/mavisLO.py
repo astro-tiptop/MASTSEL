@@ -11,6 +11,7 @@ from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 from mastsel.mavisFormulas import _mavisFormulas
 
+from sympy.physics.control.lti import TransferFunction
 import functools
 import multiprocessing as mp
 from configparser import ConfigParser
@@ -633,7 +634,7 @@ class MavisLO(object):
         n,d = sp.fraction(sp.simplify(zTFeq))
         # create a transfer function
         z = sp.symbols('z', real=False)
-        zTF = sp.physics.control.lti.TransferFunction(n,d,z)
+        zTF = TransferFunction(n,d,z)
         # check stability thanks to the values of the poles
         if np.max(np.abs(zTF.poles())) > 0.99:
             return 0
