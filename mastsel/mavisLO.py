@@ -337,8 +337,18 @@ class MavisLO(object):
     
     def specializedNoiseFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function
-        self.fTiltS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function
+        completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
+        self.fTipS_LO1 = subsParamsByName(completeIntegralTipLOandTf[0], dict1).function
+        self.fTipS_LO1tfW = completeIntegralTipLOandTf[1]
+        self.fTipS_LO1tfN = completeIntegralTipLOandTf[2]
+        self.fTipS_LO1ztfW = completeIntegralTipLOandTf[3]
+        self.fTipS_LO1ztfN = completeIntegralTipLOandTf[4]
+        completeIntegralTiltLOandTf = self.MavisFormulas['completeIntegralTiltLOandTf']
+        self.fTiltS_LO1 = subsParamsByName(completeIntegralTiltLOandTf[0], dict1).function
+        self.fTiltS_LO1tfW = completeIntegralTiltLOandTf[1]
+        self.fTiltS_LO1tfN = completeIntegralTiltLOandTf[2]
+        self.fTiltS_LO1ztfW = completeIntegralTiltLOandTf[3]
+        self.fTiltS_LO1ztfN = completeIntegralTiltLOandTf[4]
 #        self.fTipS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function)
 #        self.fTiltS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function)
         if self.displayEquation:
@@ -358,18 +368,18 @@ class MavisLO(object):
     
     def specializedWindFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        
         completeIntegralTipAndTf = self.MavisFormulas['completeIntegralTipAndTf']
         self.fTipS1 = subsParamsByName(completeIntegralTipAndTf[0], dict1).function
         self.fTipS1tfW = completeIntegralTipAndTf[1]
         self.fTipS1tfN = completeIntegralTipAndTf[2]
+        self.fTipS1ztfW = completeIntegralTipAndTf[3]
+        self.fTipS1ztfN = completeIntegralTipAndTf[4]
         completeIntegralTiltAndTf = self.MavisFormulas['completeIntegralTiltAndTf']
         self.fTiltS1 = subsParamsByName(completeIntegralTiltAndTf[0], dict1).function
         self.fTiltS1tfW = completeIntegralTiltAndTf[1]
         self.fTiltS1tfN = completeIntegralTiltAndTf[2]
-        
-        #self.fTipS1 = subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function
-        #self.fTiltS1 = subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function
+        self.fTiltS1ztfW = completeIntegralTiltAndTf[3]
+        self.fTiltS1ztfN = completeIntegralTiltAndTf[4]
 #        self.fTipS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function)
 #        self.fTiltS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function)
         if self.displayEquation:
@@ -613,7 +623,7 @@ class MavisLO(object):
         psd_tilt_wind = zplot1*scaleFactor
         return psd_tip_wind, psd_tilt_wind
 
-    def check_stability(self,keys,values,TFeq):
+    def checkStability(self,keys,values,TFeq):
         # substitute values in sympy expression
         dictTf = {'d':self.loopDelaySteps_LO}
         for key, value in zip(keys,values):
