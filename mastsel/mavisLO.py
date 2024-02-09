@@ -322,7 +322,23 @@ class MavisLO(object):
                 print('    no aTurbPSDTilt')
         return aTurbPSDTip, aTurbPSDTilt
 
-    
+    def specializedFocusFuncs(self):
+        aTurbPSDFocus = subsParamsByName(self.MavisFormulas['turbPSDFocus'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        aSodiumPSDFocus = subsParamsByName(self.MavisFormulas['sodiumPSDFocus'], {'R':self.TelescopeDiameter/2.0, 'ZenithAngle':self.ZenithAngle})
+        if self.displayEquation:
+            print('mavisLO.specializedFocusFuncs')
+            print('    aTurbPSDFocus')
+            try:
+                display(aTurbPSDFocus)
+            except:
+                print('    no aTurbPSDFocus')
+            print('    aSodiumPSDFocus')
+            try:
+                display(aSodiumPSDFocus)
+            except:
+                print('    no aSodiumPSDFocus')
+        return aTurbPSDFocus, aSodiumPSDFocus
+        
     def specializedC_coefficient(self):
         ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
         self.fCValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_LO })
