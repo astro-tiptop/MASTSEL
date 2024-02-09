@@ -134,12 +134,12 @@ def createMavisFormulary():
     def sodiumPSDFocus():       
         alphaCoeff = 31.
         betaCoeff = -1.95
-        wavelengthInNm = 500.
+        wavelengthInNm = 500
         NaHeight = 90000.
         expr = alphaCoeff * f**betaCoeff
         # focus = delta_height / ( focus_P2V_RMS_ratio * 8. * focal_ratio^2. ) * (2*!pi)/lambda
         airmass = 1/sp.cos(zA/180*sp.pi)
-        focal_ratio = NaHeight*airmass/2*R
+        focal_ratio = NaHeight*airmass/(2*R)
         expr2 = expr * ( 1/ (2.*sp.sqrt(3.)*8.*focal_ratio**2.) * (2.*sp.pi/(wavelengthInNm*1e-9)) )**2.
         
         return sp.Eq(phi_sodium_focus_f, expr2)
