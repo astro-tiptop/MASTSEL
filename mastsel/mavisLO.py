@@ -618,7 +618,7 @@ class MavisLO(object):
     
     def computeWindPSDs(self, fmin, fmax, freq_samples):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
-        scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
+        scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
         if self.computationPlatform=='GPU':
             xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
@@ -643,7 +643,7 @@ class MavisLO(object):
 
     def computeFocusPSDs(self, fmin, fmax, freq_samples, alib):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
-        scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
+        scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
         if self.computationPlatform=='GPU':
             xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
