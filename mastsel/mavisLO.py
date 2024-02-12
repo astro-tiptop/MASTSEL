@@ -11,6 +11,7 @@ from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 from mastsel.mavisFormulas import _mavisFormulas
 
+from sympy.physics.control.lti import TransferFunction
 import functools
 import multiprocessing as mp
 from configparser import ConfigParser
@@ -220,6 +221,7 @@ class MavisLO(object):
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
+        self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
         self.fCValue = self.specializedC_coefficient()
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
@@ -321,7 +323,23 @@ class MavisLO(object):
                 print('    no aTurbPSDTilt')
         return aTurbPSDTip, aTurbPSDTilt
 
-    
+    def specializedFocusFuncs(self):
+        aTurbPSDFocus = subsParamsByName(self.MavisFormulas['turbPSDFocus'], {'V':self.WindSpeed, 'R':self.TelescopeDiameter/2.0, 'r_0':self.r0_Value, 'L_0':self.L0, 'k_y_min':0.0001, 'k_y_max':100})
+        aSodiumPSDFocus = subsParamsByName(self.MavisFormulas['sodiumPSDFocus'], {'R':self.TelescopeDiameter/2.0, 'ZenithAngle':self.ZenithAngle})
+        if self.displayEquation:
+            print('mavisLO.specializedFocusFuncs')
+            print('    aTurbPSDFocus')
+            try:
+                display(aTurbPSDFocus)
+            except:
+                print('    no aTurbPSDFocus')
+            print('    aSodiumPSDFocus')
+            try:
+                display(aSodiumPSDFocus)
+            except:
+                print('    no aSodiumPSDFocus')
+        return aTurbPSDFocus, aSodiumPSDFocus
+        
     def specializedC_coefficient(self):
         ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
         self.fCValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_LO })
@@ -337,8 +355,18 @@ class MavisLO(object):
     
     def specializedNoiseFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function
-        self.fTiltS_LO1 = subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function
+        completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
+        self.fTipS_LO1 = subsParamsByName(completeIntegralTipLOandTf[0], dict1).function
+        self.fTipS_LO1tfW = completeIntegralTipLOandTf[1]
+        self.fTipS_LO1tfN = completeIntegralTipLOandTf[2]
+        self.fTipS_LO1ztfW = completeIntegralTipLOandTf[3]
+        self.fTipS_LO1ztfN = completeIntegralTipLOandTf[4]
+        completeIntegralTiltLOandTf = self.MavisFormulas['completeIntegralTiltLOandTf']
+        self.fTiltS_LO1 = subsParamsByName(completeIntegralTiltLOandTf[0], dict1).function
+        self.fTiltS_LO1tfW = completeIntegralTiltLOandTf[1]
+        self.fTiltS_LO1tfN = completeIntegralTiltLOandTf[2]
+        self.fTiltS_LO1ztfW = completeIntegralTiltLOandTf[3]
+        self.fTiltS_LO1ztfN = completeIntegralTiltLOandTf[4]
 #        self.fTipS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTipLO'], dict1 ).function)
 #        self.fTiltS_LO1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTiltLO'], dict1).function)
         if self.displayEquation:
@@ -358,8 +386,18 @@ class MavisLO(object):
     
     def specializedWindFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
-        self.fTipS1 = subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function
-        self.fTiltS1 = subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function
+        completeIntegralTipAndTf = self.MavisFormulas['completeIntegralTipAndTf']
+        self.fTipS1 = subsParamsByName(completeIntegralTipAndTf[0], dict1).function
+        self.fTipS1tfW = completeIntegralTipAndTf[1]
+        self.fTipS1tfN = completeIntegralTipAndTf[2]
+        self.fTipS1ztfW = completeIntegralTipAndTf[3]
+        self.fTipS1ztfN = completeIntegralTipAndTf[4]
+        completeIntegralTiltAndTf = self.MavisFormulas['completeIntegralTiltAndTf']
+        self.fTiltS1 = subsParamsByName(completeIntegralTiltAndTf[0], dict1).function
+        self.fTiltS1tfW = completeIntegralTiltAndTf[1]
+        self.fTiltS1tfN = completeIntegralTiltAndTf[2]
+        self.fTiltS1ztfW = completeIntegralTiltAndTf[3]
+        self.fTiltS1ztfN = completeIntegralTiltAndTf[4]
 #        self.fTipS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTip'], dict1).function)
 #        self.fTiltS1 = sp.simplify(subsParamsByName(self.MavisFormulas['completeIntegralTilt'], dict1).function)
         if self.displayEquation:
@@ -578,9 +616,9 @@ class MavisLO(object):
         return (bias,(mux,muy),(varx,vary))
 
     
-    def computeWindPSDs(self, fmin, fmax, freq_samples):    
+    def computeTurbPSDs(self, fmin, fmax, freq_samples):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
-        scaleFactor = 1000*np.pi/2.0  # from rad**2 to nm**2
+        scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
         if self.computationPlatform=='GPU':
             xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
@@ -598,22 +636,64 @@ class MavisLO(object):
 
         #print('x,z:', len(xplot1), len(zplot1))
         psd_freq = xplot1[0]
-        psd_tip_wind = zplot1*scaleFactor
+        psd_tip_turb = zplot1*scaleFactor
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
-        psd_tilt_wind = zplot1*scaleFactor
-        return psd_tip_wind, psd_tilt_wind
+        psd_tilt_turb = zplot1*scaleFactor
+        return psd_tip_turb, psd_tilt_turb
 
+    def computeFocusPSDs(self, fmin, fmax, freq_samples, alib):    
+        paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
+        scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
+
+        if self.computationPlatform=='GPU':
+            xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        else:
+            pool_size = int( min( mp.cpu_count(), freq_samples) )
+            pool = mp.Pool(processes=pool_size)
+            fx = np.linspace(fmin, fmax, freq_samples)
+            paramsAndRangesG = [( 'f', fxx, 0.0, 0.0, 'provided' ) for fxx in fx]
+            pool_outputs = pool.map(functools.partial(self.mIt.IntegralEvalE, eq=self.sTurbPSDFocus, integrationVarsSamplingSchemes=[(self.psdIntegrationPoints, 'linear')], method='rect') , [paramAndRange])
+            pool.close()
+            pool.join()
+            for rr in pool_outputs:
+                xplot1.append(rr[0])
+                zplot1.append(rr[1])
+
+        #print('x,z:', len(xplot1), len(zplot1))
+        psd_freq = xplot1[0]
+        psd_focus_turb = zplot1*scaleFactor
+        
+        psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], alib)
+        psd_focus_sodium = psd_focus_sodium_lambda1( psd_freq) 
+        return psd_focus_turb, psd_focus_sodium
+
+    def checkStability(self,keys,values,TFeq):
+        # substitute values in sympy expression
+        dictTf = {'d':self.loopDelaySteps_LO}
+        for key, value in zip(keys,values):
+            dictTf[key] = value
+        zTFeq = subsParamsByName(TFeq, dictTf)
+        # compute numerator and denominator of the polynomials
+        n,d = sp.fraction(sp.simplify(zTFeq))
+        # create a transfer function
+        z = sp.symbols('z', real=False)
+        zTF = TransferFunction(n,d,z)
+        # check stability thanks to the values of the poles
+        if np.max(np.abs(zTF.poles())) > 0.99:
+            return 0
+        else:
+            return 1
         
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
         Cfloat = self.fCValue.evalf()
-        psd_tip_wind, psd_tilt_wind = self.computeWindPSDs(fmin, fmax, freq_samples)
+        psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
         
         if self.plot4debug:
             fig, ax1 = plt.subplots(1,1)
-            im = ax1.plot(psd_freq,psd_tip_wind) 
-            im = ax1.plot(psd_freq,psd_tilt_wind) 
+            im = ax1.plot(psd_freq,psd_tip_turb) 
+            im = ax1.plot(psd_freq,psd_tilt_turb) 
             ax1.set_xscale('log')
             ax1.set_yscale('log')
             ax1.set_title('Turbulence PSD', color='black')
@@ -641,8 +721,8 @@ class MavisLO(object):
         if alib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
-            psd_tip_wind = cp.asarray(psd_tip_wind)
-            psd_tilt_wind = cp.asarray(psd_tilt_wind)        
+            psd_tip_turb = cp.asarray(psd_tip_turb)
+            psd_tilt_turb = cp.asarray(psd_tilt_turb)        
         else:
             xp = np
         if self.LoopGain_LO == 'optimize':
@@ -658,23 +738,23 @@ class MavisLO(object):
             g0g = xp.asarray(g0)
             
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
-        e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
-        e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
+        e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
+        e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
         e4 = g0g.reshape((g0g.shape[0], 1))
-        psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+        psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
                
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
             for x in range(g0g.shape[0]):
-                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext).get())[x,:]) 
             ax2.set_xscale('log')
             ax2.set_yscale('log')
             ax2.set_title('residual PSD', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Power')
         
-        resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
-        resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
+        resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1)) ) )
+        resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
         minTipIdx = xp.where(resultTip == xp.amin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
         if self.verbose:
@@ -731,7 +811,7 @@ class MavisLO(object):
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
             g0g = xp.asarray(g0)
             g0g, g1g = xp.meshgrid( g0g,g0g )
-            g1g *= 0
+            g1g *= 1e-6
         
         e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
         e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))

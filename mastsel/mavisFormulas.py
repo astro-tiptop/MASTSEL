@@ -17,6 +17,7 @@ def createMavisFormulary():
     sigma_w = sp.symbols('sigma^2_WCoG')
     mu_w = sp.symbols('mu_WCoG')
     df, DF = sp.symbols('df Delta_F')
+    zA = sp.symbols('ZenithAngle')
     
     
     # N_NGS = sp.symbols('N_NGS', integer=True, positive=True)
@@ -26,7 +27,9 @@ def createMavisFormulary():
     phi_noise_tip_f = sp.Function( 'phi^noise_Tip^f')(f)
     phi_noise_tilt_f = sp.Function( 'phi^noise_Tilt^f')(f)
     phi_turb_tip_f = sp.Function( 'phi^turb_Tip^f')(f)    
-    phi_turb_tilt_f = sp.Function( 'phi^turb_Tilt^f')(f)    
+    phi_turb_tilt_f = sp.Function( 'phi^turb_Tilt^f')(f)
+    phi_turb_focus_f = sp.Function( 'phi^turb_Focus^f')(f)
+    phi_sodium_focus_f = sp.Function( 'phi^sodium_Focus^f')(f)
 
     res, e_tip, e_tilt = sp.symbols('res epsilon_Tip epsilon_Tilt', 
                                     real=True, positive=True)
@@ -76,6 +79,7 @@ def createMavisFormulary():
         expr0 = C * sigma_w / (mu_w**2 * df * DF)
         return sp.Eq(phi_noise_tilt_f, expr0)
 
+    # PSD are generated follwing Conan+ 1995, see eq. (8) and (27) 
     def turbPSDTip():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
         with sp.evaluate(False):
@@ -83,6 +87,10 @@ def createMavisFormulary():
                     (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
         exprW = _rhs
         expr_k = sp.sqrt((f/V)**2 + k_y**2)
+        # Note :
+        #   f/(k*V))**2 is cos(mT)^2 see eq (27) Conan+ 1995
+        #   order of the bessel is n+1 (n is radial degree)
+        #   16 is (n+1)*2*4 with n=1
         expr2 = sp.Integral( 16/(V*sp.pi**2*R**2*k**2)*exprW * (f/(k*V))**2 * 
                             sp.besselj(2, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
@@ -95,12 +103,47 @@ def createMavisFormulary():
                     (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
         exprW = _rhs
         expr_k = sp.sqrt((f/V)**2 + k_y**2)
+        # Note :
+        #   (1.0 - (f/(k*V))**2) is sin(mT)^2=1-cos(mT)^2 see eq (27) Conan+ 1995
+        #   order of the bessel is n+1 (n is radial degree)
+        #   16 is (n+1)*2*4 with n=1
         expr2 = sp.Integral( 16.0/(V*sp.pi**2*R**2*k**2) * exprW * 
                             (1.0 - (f/(k*V))**2) * sp.besselj(2, 2*sp.pi*R*k )**2, 
                             (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
         return sp.Eq(phi_turb_tilt_f, expr2)
 
+    def turbPSDFocus():
+        k0 = 1.0 / L0 # 2 * sp.pi / L0
+        with sp.evaluate(False):
+            _rhs = 0.0229 * r0**(-sp.S(5) / sp.S(3)) * \
+                    (k**2 + k0**2) ** (-sp.S(11) / sp.S(6))
+        exprW = _rhs
+        expr_k = sp.sqrt((f/V)**2 + k_y**2)
+        # Note :
+        #   f/(k*V))**2 is not present because m (azimuthal frequency of the polynomial)
+        #       is 0 see eq (27) Conan+ 1995
+        #   order of the bessel is n+1 (n is radial degree)
+        #   12 is (n+1)*4 with n=2
+        expr2 = sp.Integral( 12/(V*sp.pi**2*R**2*k**2)*exprW * 
+                            sp.besselj(3, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
+        expr2 = expr2.subs({k:expr_k})
+        return sp.Eq(phi_turb_focus_f, expr2)
+    # end
+    
+    def sodiumPSDFocus():       
+        alphaCoeff = 31.
+        betaCoeff = -1.95
+        wavelengthInNm = 500
+        NaHeight = 90000.
+        expr = alphaCoeff * f**betaCoeff
+        # focus = delta_height / ( focus_P2V_RMS_ratio * 8. * focal_ratio^2. )
+        airmass = 1/sp.cos(zA/180*sp.pi)
+        focal_ratio = NaHeight*airmass/(2*R)
+        expr2 = expr * ( 1/ (2.*sp.sqrt(3.)*8.*focal_ratio**2.) * 1e9 )**2.
+        
+        return sp.Eq(phi_sodium_focus_f, expr2)
+    
     def residualTT():
         return sp.Eq(res, sp.sqrt(e_tip+e_tilt))
 
@@ -166,6 +209,25 @@ def createMavisFormulary():
         return sp.Eq(H_N_tiltf, 
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
     # end
+    
+    
+    # 4 tf in f obtained from corresponding tf in z
+    def tfTipWindMono(ztf = ztfTipWindMono()):
+        return sp.Eq(H_R_tipf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+    
+    def tfTiltWindMono(ztf = ztfTiltWindMono()):
+        return sp.Eq(H_R_tiltf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+
+    def tfTipNoiseMono(ztf = ztfTipNoiseMono()):
+        return sp.Eq(H_N_tipf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+
+    def tfTiltNoiseMono(ztf = ztfTiltNoiseMono()):
+        return sp.Eq(H_N_tiltf, 
+                     subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
+    # end
 
     def interactionMatrixNGS():
         expr0 = D + 2 * H_DM * r_FoV
@@ -196,6 +258,42 @@ def createMavisFormulary():
         completeIntegralTiltV = subsParamsByName( completeIntegralTiltV, {'H^R_Tilt':tfTiltWind().rhs, 'H^N_Tilt':tfTiltNoise().rhs} )
         return completeIntegralTiltV
 
+    def completeIntegralTipLOandTf():
+        ztfW = ztfTipWindMono()
+        ztfN = ztfTipNoiseMono()
+        tfW = tfTipWind(ztfW).rhs
+        tfN = tfTipNoise(ztfN).rhs
+        completeIntegralTipV = subsParamsByName( residualTip().rhs, {'phi^res_Tip':residualTipPSD().rhs} )
+        completeIntegralTipV = subsParamsByName( completeIntegralTipV, {'H^R_Tip':tfW, 'H^N_Tip':tfN} )
+        return completeIntegralTipV, tfW, tfN, ztfW.rhs, ztfN.rhs
+
+    def completeIntegralTiltLOandTf():
+        ztfW = ztfTiltWindMono()
+        ztfN = ztfTiltNoiseMono()
+        tfW = tfTiltWind(ztfW).rhs
+        tfN = tfTiltNoise(ztfN).rhs
+        completeIntegralTiltV = subsParamsByName( residualTilt().rhs, {'phi^res_Tilt':residualTiltPSD().rhs} )
+        completeIntegralTiltV = subsParamsByName( completeIntegralTiltV, {'H^R_Tilt':tfW, 'H^N_Tilt':tfN} )
+        return completeIntegralTiltV, tfW, tfN, ztfW.rhs, ztfN.rhs
+    
+    def completeIntegralTipAndTf():
+        ztfW = ztfTipWind()
+        ztfN = ztfTipNoise()
+        tfW = tfTipWind(ztfW).rhs
+        tfN = tfTipNoise(ztfN).rhs
+        completeIntegralTipV = subsParamsByName( residualTip().rhs, {'phi^res_Tip':residualTipPSD().rhs} )
+        completeIntegralTipV = subsParamsByName( completeIntegralTipV, {'H^R_Tip':tfW, 'H^N_Tip':tfN} )
+        return completeIntegralTipV, tfW, tfN, ztfW.rhs, ztfN.rhs
+    
+    def completeIntegralTiltAndTf():
+        ztfW = ztfTiltWind()
+        ztfN = ztfTiltNoise()
+        tfW = tfTiltWind(ztfW).rhs
+        tfN = tfTiltNoise(ztfN).rhs
+        completeIntegralTiltV = subsParamsByName( residualTilt().rhs, {'phi^res_Tilt':residualTiltPSD().rhs} )
+        completeIntegralTiltV = subsParamsByName( completeIntegralTiltV, {'H^R_Tilt':tfW, 'H^N_Tilt':tfN} )
+        return completeIntegralTiltV, tfW, tfN, ztfW.rhs, ztfN.rhs
+    
     def zernikeCovarianceI():
         _integrand = zernikeCovarianceD().rhs
         _rhs = sp.Integral(_integrand, (f, f_min, f_max))
@@ -369,6 +467,8 @@ def createMavisFormulary():
                              'noisePSDTilt',
                              'turbPSDTip',
                              'turbPSDTilt',
+                             'turbPSDFocus',
+                             'sodiumPSDFocus',
                              'interactionMatrixNGS',                                
                              'residualTT',
                              'residualTip',
@@ -387,10 +487,18 @@ def createMavisFormulary():
                              'tfTiltWind',
                              'tfTipNoise',
                              'tfTiltNoise',
+                             'tfTipWindMono',
+                             'tfTiltWindMono',
+                             'tfTipNoiseMono',
+                             'tfTiltNoiseMono',
                              'completeIntegralTipLO',
                              'completeIntegralTiltLO',
                              'completeIntegralTip',
-                             'completeIntegralTilt',                            
+                             'completeIntegralTilt',
+                             'completeIntegralTipLOandTf',
+                             'completeIntegralTiltLOandTf',
+                             'completeIntegralTipAndTf',
+                             'completeIntegralTiltAndTf',
                              'ZernikeCovarianceD', 
                              'ZernikeCovarianceI', 
                              'GaussianMean',
@@ -414,6 +522,8 @@ def createMavisFormulary():
                              noisePSDTilt(),
                              turbPSDTip(),
                              turbPSDTilt(),
+                             turbPSDFocus(),
+                             sodiumPSDFocus(),
                              interactionMatrixNGS(),                                
                              residualTT(),
                              residualTip(),
@@ -432,10 +542,18 @@ def createMavisFormulary():
                              tfTiltWind(),
                              tfTipNoise(),
                              tfTiltNoise(),
+                             tfTipWindMono(),
+                             tfTiltWindMono(),
+                             tfTipNoiseMono(),
+                             tfTiltNoiseMono(),
                              completeIntegralTipLO(),
                              completeIntegralTiltLO(),
                              completeIntegralTip(),
-                             completeIntegralTilt(),                            
+                             completeIntegralTilt(),
+                             completeIntegralTipLOandTf(),
+                             completeIntegralTiltLOandTf(),
+                             completeIntegralTipAndTf(),
+                             completeIntegralTiltAndTf(),
                              zernikeCovarianceD(),
                              zernikeCovarianceI(),
                              gaussianMean(),
