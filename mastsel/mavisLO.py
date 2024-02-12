@@ -616,7 +616,7 @@ class MavisLO(object):
         return (bias,(mux,muy),(varx,vary))
 
     
-    def computeWindPSDs(self, fmin, fmax, freq_samples):    
+    def computeTurbPSDs(self, fmin, fmax, freq_samples):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
         scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
@@ -636,10 +636,10 @@ class MavisLO(object):
 
         #print('x,z:', len(xplot1), len(zplot1))
         psd_freq = xplot1[0]
-        psd_tip_wind = zplot1*scaleFactor
+        psd_tip_turb = zplot1*scaleFactor
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
-        psd_tilt_wind = zplot1*scaleFactor
-        return psd_tip_wind, psd_tilt_wind
+        psd_tilt_turb = zplot1*scaleFactor
+        return psd_tip_turb, psd_tilt_turb
 
     def computeFocusPSDs(self, fmin, fmax, freq_samples, alib):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
@@ -661,11 +661,11 @@ class MavisLO(object):
 
         #print('x,z:', len(xplot1), len(zplot1))
         psd_freq = xplot1[0]
-        psd_focus_wind = zplot1*scaleFactor
+        psd_focus_turb = zplot1*scaleFactor
         
         psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], alib)
         psd_focus_sodium = psd_focus_sodium_lambda1( psd_freq) 
-        return psd_focus_wind, psd_focus_sodium
+        return psd_focus_turb, psd_focus_sodium
 
     def checkStability(self,keys,values,TFeq):
         # substitute values in sympy expression
@@ -687,13 +687,13 @@ class MavisLO(object):
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
         Cfloat = self.fCValue.evalf()
-        psd_tip_wind, psd_tilt_wind = self.computeWindPSDs(fmin, fmax, freq_samples)
+        psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
         
         if self.plot4debug:
             fig, ax1 = plt.subplots(1,1)
-            im = ax1.plot(psd_freq,psd_tip_wind) 
-            im = ax1.plot(psd_freq,psd_tilt_wind) 
+            im = ax1.plot(psd_freq,psd_tip_turb) 
+            im = ax1.plot(psd_freq,psd_tilt_turb) 
             ax1.set_xscale('log')
             ax1.set_yscale('log')
             ax1.set_title('Turbulence PSD', color='black')
@@ -721,8 +721,8 @@ class MavisLO(object):
         if alib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
-            psd_tip_wind = cp.asarray(psd_tip_wind)
-            psd_tilt_wind = cp.asarray(psd_tilt_wind)        
+            psd_tip_turb = cp.asarray(psd_tip_turb)
+            psd_tilt_turb = cp.asarray(psd_tilt_turb)        
         else:
             xp = np
         if self.LoopGain_LO == 'optimize':
@@ -738,23 +738,23 @@ class MavisLO(object):
             g0g = xp.asarray(g0)
             
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
-        e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
-        e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
+        e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
+        e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
         e4 = g0g.reshape((g0g.shape[0], 1))
-        psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+        psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
                
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
             for x in range(g0g.shape[0]):
-                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext).get())[x,:]) 
             ax2.set_xscale('log')
             ax2.set_yscale('log')
             ax2.set_title('residual PSD', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Power')
         
-        resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
-        resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
+        resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1)) ) )
+        resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
         minTipIdx = xp.where(resultTip == xp.amin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
         if self.verbose:
