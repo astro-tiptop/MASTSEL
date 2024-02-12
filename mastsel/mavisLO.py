@@ -736,7 +736,7 @@ class MavisLO(object):
             # if gain is set no optimization is done and bias is not compensated
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
             g0g = xp.asarray(g0)
-            
+        
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
         e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
         e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
@@ -755,8 +755,8 @@ class MavisLO(object):
         
         resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1)) ) )
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
-        minTipIdx = xp.where(resultTip == xp.amin(resultTip))
-        minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
+        minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
+        minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
             print('         best tip gain (noise)',g0g[minTipIdx[0][0]])
             print('         best tilt gain (noise)',g0g[minTiltIdx[0][0]])
@@ -821,8 +821,8 @@ class MavisLO(object):
         psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext, g1g_ext  = xp.broadcast_arrays(e1, e2, e3, e4, e5)
         resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(2)) ) )
         resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(2)) ) )
-        minTipIdx = xp.where(resultTip == xp.amin(resultTip))
-        minTiltIdx = xp.where(resultTilt == xp.amin(resultTilt))
+        minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
+        minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
             print('         best tip gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]])
             print('         best tilt gain (wind)',g0g[minTiltIdx[0][0],minTiltIdx[1][0]])
@@ -1013,8 +1013,11 @@ class MavisLO(object):
 
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
-            # TODO: this second computation must be embedded in the previous one.
-            wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
+            # This computation is skipped if no wind shake PSD is present.
+            if np.sum(self.psd_tip_wind) > 0 and np.sum(self.psd_tilt_wind) > 0:
+                wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
+            else:
+                wr = (0,0)
 
             self.nr.append(nr)
             self.wr.append(wr)
