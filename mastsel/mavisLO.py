@@ -811,7 +811,7 @@ class MavisLO(object):
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
             g0g = xp.asarray(g0)
             g0g, g1g = xp.meshgrid( g0g,g0g )
-            g1g *= 0
+            g1g *= 1e-6
         
         e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
         e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))
