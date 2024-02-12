@@ -14,7 +14,7 @@ mLO.LoopGain_LO = 0.3
 psd_freq, psd_tip_wind0, psd_tilt_wind0 = mLO.loadWindPsd('data/morfeo_windshake8ms_psd_1k.fits')
 
 # TIP and TILT PSDs
-psd_tip_wind1, psd_tilt_wind1 = mLO.computeWindPSDs(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0])
+psd_tip_wind1, psd_tilt_wind1 = mLO.computeTurbPSDs(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0])
 psd_freq1 = np.asarray(np.linspace(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0]))
 # FOCUS PSDs        
 psd_focus_wind, psd_focus_sodium = mLO.computeFocusPSDs(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0], cpulib)
