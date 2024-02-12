@@ -268,8 +268,8 @@ def createMavisFormulary():
         return completeIntegralTipV, tfW, tfN, ztfW.rhs, ztfN.rhs
 
     def completeIntegralTiltLOandTf():
-        ztfW = ztfTipWindMono()
-        ztfN = ztfTipNoiseMono()
+        ztfW = ztfTiltWindMono()
+        ztfN = ztfTiltNoiseMono()
         tfW = tfTiltWind(ztfW).rhs
         tfN = tfTiltNoise(ztfN).rhs
         completeIntegralTiltV = subsParamsByName( residualTilt().rhs, {'phi^res_Tilt':residualTiltPSD().rhs} )
