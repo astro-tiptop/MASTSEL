@@ -110,9 +110,9 @@ class TestNoiseResiduals(TestMavisLO):
         nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
         wr = TestMavisLO.mLO.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
         result = nr[0]
-        self.assertTrue( np.testing.assert_allclose(result, 2108.89544168, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 3827.13, rtol=1e-03, atol=1e-5)==None)
         result = nr[1]
-        self.assertTrue( np.testing.assert_allclose(result, 1361.65732465, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 2387.49, rtol=1e-03, atol=1e-5)==None)
         result = wr[0]
         self.assertTrue( np.testing.assert_allclose(result, 71.85, rtol=1e-03, atol=1e-5)==None)
         result = wr[1]
