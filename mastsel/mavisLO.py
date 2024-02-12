@@ -1014,7 +1014,7 @@ class MavisLO(object):
             var1x = avar[0] * self.PixelScale_LO**2
             nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
             # This computation is skipped if no wind shake PSD is present.
-            if np.sum(self.psd_tip_wind) > 0 and np.sum(self.psd_tilt_wind) > 0:
+            if np.sum(self.psd_tip_wind) > 0 or np.sum(self.psd_tilt_wind) > 0:
                 wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
             else:
                 wr = (0,0)
