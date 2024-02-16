@@ -420,8 +420,8 @@ class MavisLO(object):
         p = sp.symbols('p', real=False)
         cov_expr={}
         paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0} 
-        for ii in [2,3]:
-            for jj in [2,3]:
+        for ii in [2,3,4]:
+            for jj in [2,3,4]:
                 aa = subsParamsByName(cov_expr_jk(self.zernikeCov_rh1, ii, jj), paramDictBaseCov)
                 aaint = sp.Integral(aa, covValue_integrationLimits)
                 aaint = subsParamsByName(aaint, {'rho': sp.Abs(p), 'theta': sp.arg(p)} )
@@ -890,6 +890,56 @@ class MavisLO(object):
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
                         matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
+                        if pind==0:
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
+        return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
+
+    def computeFocusCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
+        points = aCartPointingCoords.shape[0]
+        nstars = aCartNGSCoords.shape[0]        
+        scaleF = (500.0/(2*np.pi))**2
+        matCasValue = xp.zeros((points,nstars), dtype=xp.float32)
+        matCssValue = xp.zeros((nstars,nstars), dtype=xp.float32)
+        matCaaValue = self.covValue(4, 4, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
+        hh = xp.asarray(self.Cn2Heights)
+        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
+        iidd = 0
+        for kk in range(nstars):
+            vv = np.ones((points,2))
+            vv[:,0] *= aCartNGSCoords[kk,0]
+            vv[:,1] *= aCartNGSCoords[kk,1]
+            polarPointingCoordsD = cartesianToPolar2(aCartPointingCoords- vv)
+            polarPointingCoordsD[:,1] *= degToRad
+            polarPointingCoordsD[:,0] *= arcsecsToRadians
+            polarPointingCoordsD[:,0] = np.maximum( polarPointingCoordsD[:,0], 1e-9*np.ones(points))
+            pp = polarPointingCoordsD[:,0]*xp.exp(1j*polarPointingCoordsD[:,1])
+            inputsArray[points*iidd:points*(iidd+1)] = pp
+            iidd = iidd+1
+        iidd=0
+        for kk1 in range(nstars):
+            for kk2 in range(nstars):
+                polarPointingCoordsD = cartesianToPolar(aCartNGSCoords[kk1,:]-aCartNGSCoords[kk2,:])
+                polarPointingCoordsD[1] *= degToRad
+                polarPointingCoordsD[0] *= arcsecsToRadians
+                polarPointingCoordsD[0] = max( polarPointingCoordsD[0], 1e-9)
+                pp = polarPointingCoordsD[0]*xp.exp(1j*polarPointingCoordsD[1])
+                inputsArray[nstars*points+iidd] = pp
+                iidd = iidd+1
+        
+        _idx0 = {4:[0]}
+        if nstars==6:
+            _idx0 = {4:[0,1,2,3,4,5]}
+        if nstars==3:
+            _idx0 = {4:[0,1,2]}
+        elif nstars==2:
+            _idx0 = {4:[0,1]}
+
+        for ii in [4]:
+            for jj in [4]:
+                outputArray1 = self.covValue(4, 4, inputsArray, hh)
+                for pind in range(points):
+                    for hidx, h_weight in enumerate(self.Cn2Weights):
+                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
                         if pind==0:
                             matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
