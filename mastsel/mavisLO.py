@@ -120,6 +120,7 @@ class MavisLO(object):
 
         self.SensorFrameRate_LO     = self.get_config_value('RTC','SensorFrameRate_LO')
         self.loopDelaySteps_LO      = self.get_config_value('RTC','LoopDelaySteps_LO')
+        self.maxLOtFreq = 0.5*self.SensorFrameRate_LO
 
         if self.check_config_key('RTC','LoopGain_LO'):
             self.LoopGain_LO            = self.get_config_value('RTC','LoopGain_LO')
@@ -132,9 +133,9 @@ class MavisLO(object):
         else:
             if self.verbose:
                 print('No windPsdFile file is set.')
-            self.psd_freq = np.asarray(np.linspace(0.5, 250.0, 500))
-            self.psd_tip_wind = np.zeros((500))
-            self.psd_tilt_wind = np.zeros((500))
+            self.psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
+            self.psd_tip_wind = np.zeros((int(2*self.maxLOtFreq)))
+            self.psd_tilt_wind = np.zeros((int(2*self.maxLOtFreq)))
 
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
@@ -949,8 +950,7 @@ class MavisLO(object):
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
         hdul.close()
-        maxFreq = 0.5*self.SensorFrameRate_LO
-        psd_freq = np.asarray(np.linspace(0.5, maxFreq, np.int32(2*maxFreq)))
+        psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
         psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
         psd_tilt_wind = np.interp(psd_freq, psd_data[0,:], psd_data[2,:],left=0,right=0)
         return psd_freq, psd_tip_wind, psd_tilt_wind
@@ -1062,7 +1062,7 @@ class MavisLO(object):
             self.avar.append(avar)
 
             var1x = avar[0] * self.PixelScale_LO**2
-            nr = self.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, self.platformlib )
+            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
             # This computation is skipped if no wind shake PSD is present.
             if np.sum(self.psd_tip_wind) > 0 or np.sum(self.psd_tilt_wind) > 0:
                 wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
