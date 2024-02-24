@@ -213,7 +213,7 @@ class MavisLO(object):
         self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
 
         # diffraction limited FWHM - full aperture
-        self.diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
+        #self.diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
         # diffraction limited FWHM - one aperture
         self.subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
 
@@ -512,8 +512,9 @@ class MavisLO(object):
 
     def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas):
         # aNGS_flux is provided in photons/s
-        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - self.diffNGS_FWHM_mas**2 ))
-        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + self.subapNGS_FWHM_mas**2 )
+        #FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - self.diffNGS_FWHM_mas**2 ))
+        #aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + self.subapNGS_FWHM_mas**2 )
+        aNGS_FWHM_mas_mod = aNGS_FWHM_mas # new code following new LO PSF computation in TIPTOP
         # print('             aNGS_FWHM_mas_mod',aNGS_FWHM_mas_mod)
         back = self.skyBackground_LO/self.SensorFrameRate_LO
         N_T = aNGS_FWHM_mas_mod/self.PixelScale_LO
@@ -542,9 +543,10 @@ class MavisLO(object):
         # aNGS_flux is provided in photons/s
 
         # increment of FWHM given by the partial correction
-        FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - self.diffNGS_FWHM_mas**2 ))
+        #FWHM_coeff = np.sqrt(np.abs(aNGS_FWHM_mas**2 - self.diffNGS_FWHM_mas**2 ))
         # estimated FWHM on a sub-aperture 
-        aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + self.subapNGS_FWHM_mas**2 )
+        #aNGS_FWHM_mas_mod = np.sqrt( FWHM_coeff**2 + self.subapNGS_FWHM_mas**2 )
+        aNGS_FWHM_mas_mod = aNGS_FWHM_mas # new code following new LO PSF computation in TIPTOP
         asigma = aNGS_FWHM_mas_mod/sigmaToFWHM/self.mediumPixelScale
             
         xCoords=np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
@@ -553,14 +555,14 @@ class MavisLO(object):
         
         loD = self.SensingWavelength_LO/self.TelescopeDiameter*radiansToArcsecs*1000
        
-        if aNGS_FWHM_mas >= 2*self.diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
+        if aNGS_FWHM_mas >= 2*self.subapNGS_FWHM_mas and not self.LoopGain_LO=='test':
             if self.verbose:
                 print('mavisLO.computeBiasVariance, FWHM (',aNGS_FWHM_mas,') is larger than 2 times the diffraction.')
             # if correction is low we consider that there is a seeing limited like PSF
             g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d)
             peakValue = np.max(g2d)
-        elif aNGS_FWHM_mas >= 1.25*self.diffNGS_FWHM_mas and aNGS_FWHM_mas < 2*self.diffNGS_FWHM_mas and not self.LoopGain_LO=='test':
+        elif aNGS_FWHM_mas >= 1.25*self.subapNGS_FWHM_mas and aNGS_FWHM_mas < 2*self.subapNGS_FWHM_mas and not self.LoopGain_LO=='test':
             if self.verbose:
                 print('mavisLO.computeBiasVariance, FWHM (',aNGS_FWHM_mas,') is less than 2 times the diffraction, but more than 1.25 times diffraction.')
             # if correction is "medium" we consider that there is a comination of diffration limited and seeing limited like PSF
@@ -570,7 +572,7 @@ class MavisLO(object):
             asigma_seeing = seeing/sigmaToFWHM/self.mediumPixelScale
             g2d_seeing = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d_seeing = g2d_seeing * (1-aNGS_SR_LO) * aNGS_flux/self.SensorFrameRate_LO * 1 / np.sum(g2d_seeing)
-            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.diffNGS_FWHM_mas/self.mediumPixelScale)**2)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.subapNGS_FWHM_mas/self.mediumPixelScale)**2)
             g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             g2d = g2d + g2d_seeing
             peakValue = np.max(g2d)
@@ -579,7 +581,7 @@ class MavisLO(object):
                 print('mavisLO.computeBiasVariance, FWHM (',aNGS_FWHM_mas,') is less than 1.25 times the diffraction.')
             # if correction is high we consider that there is a diffraction limited core
             # in the center of the PSF and wings given by the fitting error
-            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.diffNGS_FWHM_mas/self.mediumPixelScale)**2)
+            peakValue = aNGS_flux/self.SensorFrameRate_LO*aNGS_SR_LO*4.0*np.log(2)/(np.pi*(self.subapNGS_FWHM_mas/self.mediumPixelScale)**2)
             g2d = peakValue * simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
             
         if self.verbose:
@@ -613,6 +615,7 @@ class MavisLO(object):
         varx = np.sum(masked_sigma*fx*fx)/(np.sum(masked_mu0)**2)
         vary = np.sum(masked_sigma*fy*fy)/(np.sum(masked_mu0)**2)
         bias = mux/(self.p_offset/self.downsample_factor)
+        # TODO scale by nSA!
         return (bias,(mux,muy),(varx,vary))
 
     
