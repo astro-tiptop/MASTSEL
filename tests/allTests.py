@@ -12,6 +12,8 @@ class TestMavisLO(unittest.TestCase):
         fullPathFilename = path + parametersFile + '.ini'
         windPsdFile = 'data/windpsd_mavis.fits'
         TestMavisLO.mLO = MavisLO(path, parametersFile, verbose=True)
+        f1 = TestMavisLO.mLO.get_config_value('RTC','SensorFrameRate_LO')
+        TestMavisLO.mLO.configLOFreq(f1)
 
 class TestReconstructor(TestMavisLO):
                     
@@ -79,13 +81,14 @@ class TestWindResiduals(TestMavisLO):
         """ 
         print("Running Test: TestWindResiduals")
         NGS_flux = [2500, 7500 , 1250]
+        NGS_freq = [500, 500 , 500]
         NGS_SR_1650 = [0.4, 0.2, 0.6]
         NGS_FWHM_mas = [51.677, 81.673, 42.373]
         
         mItGPU = Integrator(cp, cp.float64, '')
-        r1 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
-        r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
-        r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
+        r1 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[0], NGS_freq[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
+        r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_freq[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
+        r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_freq[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
 
         self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.4592354532951008)), rtol=1e-03, atol=1e-5)==None)
         self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.1148088633237752, 3.348938898539153e-17)), rtol=1e-03, atol=1e-5)==None)

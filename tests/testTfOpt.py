@@ -9,6 +9,10 @@ parametersFile = 'mavisParamsTests'
 mLO = MavisLO(path, parametersFile)
 mLO.LoopGain_LO = 0.3
 
+
+f1 = mLO.get_config_value('RTC','SensorFrameRate_LO')
+ff= [f1, f1, f1]
+mLO.configLOFreq(f1)
 # WIND SHAKE PSD
 #psd_freq, psd_tip_wind0, psd_tilt_wind0 = mLO.loadWindPsd('data/windpsd_mavis.fits')
 psd_freq, psd_tip_wind0, psd_tilt_wind0 = mLO.loadWindPsd('data/morfeo_windshake8ms_psd_1k.fits')
@@ -19,11 +23,12 @@ psd_freq1 = np.asarray(np.linspace(np.min(psd_freq)/10., np.max(psd_freq), psd_f
 # FOCUS PSDs        
 psd_focus_wind, psd_focus_sodium = mLO.computeFocusPSDs(np.min(psd_freq)/10., np.max(psd_freq), psd_freq.shape[0], cpulib)
 
-aNGS_flux = 50.*mLO.SensorFrameRate_LO # flux per second per sub-aperture
+aNGS_flux = 50.*f1 # flux per second per sub-aperture
+aNGS_freq = f1
 aNGS_SR_LO = 0.5
 aNGS_FWHM_mas = mLO.PixelScale_LO * 2.
 
-bias, amu, avar = mLO.simplifiedComputeBiasAndVariance(aNGS_flux, aNGS_SR_LO, aNGS_FWHM_mas) 
+bias, amu, avar = mLO.simplifiedComputeBiasAndVariance(aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas) 
 
 var1x = avar[0] * mLO.PixelScale_LO**2
 
@@ -51,7 +56,7 @@ res = optimize.minimize(fun,x0,args=args,bounds=bounds)
 print(res)
 
 # variables for display
-dict1 = {'d':mLO.loopDelaySteps_LO, 'f_loop':mLO.SensorFrameRate_LO}
+dict1 = {'d':mLO.loopDelaySteps_LO, 'f_loop':f1}
 RTFwind = subsParamsByName( mLO.fTipS_LO1tfW, dict1)
 NTFwind = subsParamsByName( mLO.fTipS_LO1tfN, dict1)
 
