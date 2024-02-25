@@ -536,6 +536,7 @@ class MavisLO(object):
         # aNGS_flux is provided in photons/s
         # print('             aNGS_FWHM_mas',aNGS_FWHM_mas)
         # print('             self.PixelScale_LO',self.PixelScale_LO)
+        aNGS_frameflux = aNGS_flux / aNGS_freq
         back = self.skyBackground_LO/aNGS_freq
         N_T = aNGS_FWHM_mas/self.PixelScale_LO
         # print('             N_T',N_T)
@@ -553,7 +554,12 @@ class MavisLO(object):
         sigma_ron_sr = (1.0/aNGS_SR_LO)**2 * sigma_ron_fwhm
         sigma_tot_fwhm = self.sigmaTotXX(sigma_ph_fwhm, sigma_ron_fwhm)
         sigma_tot_sr = self.sigmaTotXX(sigma_ph_sr, sigma_ron_sr)
-        sigma_tot = (N_D/N_T)**2 * sigma_tot_sr + ( 1.0 - (N_D/N_T)**2 ) * sigma_tot_fwhm
+        coeff = (aNGS_SR_LO-0.01)/0.09*(N_D/N_T)**2
+        if aNGS_SR_LO > 0.1: coeff = (N_D/N_T)**2
+        if aNGS_SR_LO < 0.01: coeff = 0
+        #print('(N_D/N_T)**2',(N_D/N_T)**2)
+        #sigma_tot = (N_D/N_T)**2 * sigma_tot_sr + ( 1.0 - (N_D/N_T)**2 ) * sigma_tot_fwhm
+        sigma_tot = coeff * sigma_tot_sr + ( 1.0 - coeff ) * sigma_tot_fwhm
         # print('             sigma_tot',sigma_tot)
         varx = vary = sigma_tot
         mux = muy = 0
@@ -565,27 +571,29 @@ class MavisLO(object):
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
-        
-        # the following coefficient approximates the encircled energy in the core of the PSF
-        aNGS_EE_coeff = aNGS_SR_LO * (aNGS_FWHM_mas/self.subapNGS_FWHM_mas)**2
-        
+               
         xCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
         
-        loD = self.SensingWavelength_LO/self.TelescopeDiameter*radiansToArcsecs*1000
-        
         r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
         seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 * 1000 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
-        seeing = np.sqrt( seeing**2 + self.subapNGS_FWHM_mas**2 )
-        asigma_seeing = seeing/sigmaToFWHM/self.mediumPixelScale
+        seeingSubap = np.sqrt( seeing**2 + self.subapNGS_FWHM_mas**2 )
+        asigma_seeing = seeingSubap/sigmaToFWHM/self.mediumPixelScale
+        
+        # the following coefficient approximates the encircled energy in the core of the PSF
+        coeff = seeingSubap - aNGS_FWHM_mas
+        if coeff < 0:
+            coeff = 0
+        else:
+            coeff = (self.subapNGS_FWHM_mas/aNGS_FWHM_mas)**2 * (coeff/(seeingSubap - self.subapNGS_FWHM_mas))**2
         
         g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
         g2d_seeing = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma_seeing)
         g2d_seeing = g2d_seeing * 1 / np.sum(g2d_seeing)
           
-        I_k_data = g2d * aNGS_EE_coeff + g2d_seeing * (1-aNGS_EE_coeff)
+        I_k_data = g2d * coeff + g2d_seeing * (1-coeff)
         I_k_data = I_k_data * aNGS_flux/self.SensorFrameRate_LO
             
         g2d_prime = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma)
@@ -593,7 +601,7 @@ class MavisLO(object):
         g2d_prime_seeing = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma_seeing)
         g2d_prime_seeing = g2d_prime_seeing * 1 / np.sum(g2d_prime_seeing)
         
-        I_k_prime_data = g2d_prime * aNGS_EE_coeff + g2d_prime_seeing * (1-aNGS_EE_coeff)
+        I_k_prime_data = g2d_prime * coeff + g2d_prime_seeing * (1-coeff)
         I_k_prime_data = I_k_prime_data * aNGS_flux/self.SensorFrameRate_LO
             
         back = self.skyBackground_LO/self.SensorFrameRate_LO
