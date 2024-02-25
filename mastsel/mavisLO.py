@@ -576,7 +576,7 @@ class MavisLO(object):
         loD = self.SensingWavelength_LO/self.TelescopeDiameter*radiansToArcsecs*1000
         
         r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
-        seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
+        seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 * 1000 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
         seeing = np.sqrt( seeing**2 + self.subapNGS_FWHM_mas**2 )
         asigma_seeing = seeing/sigmaToFWHM/self.mediumPixelScale
         
