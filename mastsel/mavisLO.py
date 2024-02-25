@@ -586,7 +586,7 @@ class MavisLO(object):
         if coeff < 0:
             coeff = 0
         else:
-            coeff = (self.subapNGS_FWHM_mas/aNGS_FWHM_mas)**2 * (coeff/(seeingSubap - self.subapNGS_FWHM_mas))**2
+            coeff = (self.subapNGS_FWHM_mas/aNGS_FWHM_mas) * (coeff/(seeingSubap - self.subapNGS_FWHM_mas))
         
         g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
