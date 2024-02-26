@@ -527,11 +527,6 @@ class MavisLO(object):
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
 
-    def sigmaTotXX(self, sigma_ph_xx, sigma_ron_xx):
-        return (1.0/self.N_sa_tot_LO) * ( sigma_ph_xx + sigma_ron_xx)
-        # * self.PixelScale_LO**2
-
-
     def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas):
         # aNGS_flux is provided in photons/s
         # print('             aNGS_FWHM_mas',aNGS_FWHM_mas)
@@ -552,8 +547,8 @@ class MavisLO(object):
         # print('             sigma_ron_fwhm',sigma_ron_fwhm)
         sigma_ph_sr = (1.0/aNGS_SR_LO) * sigma_ph_fwhm
         sigma_ron_sr = (1.0/aNGS_SR_LO)**2 * sigma_ron_fwhm
-        sigma_tot_fwhm = self.sigmaTotXX(sigma_ph_fwhm, sigma_ron_fwhm)
-        sigma_tot_sr = self.sigmaTotXX(sigma_ph_sr, sigma_ron_sr)
+        sigma_tot_fwhm = sigma_ph_fwhm + sigma_ron_fwhm
+        sigma_tot_sr = sigma_ph_sr + sigma_ron_sr
         coeff = (aNGS_SR_LO-0.01)/0.09*(N_D/N_T)**2
         if aNGS_SR_LO > 0.1: coeff = (N_D/N_T)**2
         if aNGS_SR_LO < 0.01: coeff = 0
@@ -626,10 +621,10 @@ class MavisLO(object):
         masked_mu = W_Mask*mu_ktr_prime_array
         masked_sigma = W_Mask*W_Mask*var_ktr_array
         # TODO is the normalization correct?
-        mux = np.sqrt(1.0/self.N_sa_tot_LO) * np.sum(masked_mu*fx)/np.sum(masked_mu)
-        muy = np.sqrt(1.0/self.N_sa_tot_LO) * np.sum(masked_mu*fy)/np.sum(masked_mu)
-        varx = (1.0/self.N_sa_tot_LO) * np.sum(masked_sigma*fx*fx)/(np.sum(masked_mu0)**2)
-        vary = (1.0/self.N_sa_tot_LO) * np.sum(masked_sigma*fy*fy)/(np.sum(masked_mu0)**2)
+        mux = np.sum(masked_mu*fx)/np.sum(masked_mu)
+        muy = np.sum(masked_mu*fy)/np.sum(masked_mu)
+        varx = np.sum(masked_sigma*fx*fx)/(np.sum(masked_mu0)**2)
+        vary = np.sum(masked_sigma*fy*fy)/(np.sum(masked_mu0)**2)
         
         bias = mux/(self.p_offset/self.downsample_factor)
 
@@ -1066,6 +1061,9 @@ class MavisLO(object):
                 print('         amu',amu)
                 print('         avar',avar)
                 print('         ratio',cpuArray(cp.asarray(avar))/bias**2)
+            
+            # normalized by the number of subapertures
+            avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar)
 
             self.bias.append(bias)
             self.amu.append(amu)
