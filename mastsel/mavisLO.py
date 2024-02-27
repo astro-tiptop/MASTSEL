@@ -576,12 +576,16 @@ class MavisLO(object):
         seeingSubap = np.sqrt( seeing**2 + self.subapNGS_FWHM_mas**2 )
         asigma_seeing = seeingSubap/sigmaToFWHM/self.mediumPixelScale
         
-        # the following coefficient approximates the encircled energy in the core of the PSF
-        coeff = seeingSubap - aNGS_FWHM_mas
-        if coeff < 0:
-            coeff = 0
-        else:
-            coeff = (self.subapNGS_FWHM_mas/aNGS_FWHM_mas) * (coeff/(seeingSubap - self.subapNGS_FWHM_mas))
+        # ----------------------------------
+        #coeff = seeingSubap - aNGS_FWHM_mas
+        #if coeff < 0:
+        #    coeff = 0
+        #else:
+        #    coeff = (self.subapNGS_FWHM_mas/aNGS_FWHM_mas) * (coeff/(seeingSubap - self.subapNGS_FWHM_mas))
+            
+        coeff = aNGS_SR_LO + (1-aNGS_SR_LO)**2
+        # 1-coeff = aNGS_SR_LO*(1-aNGS_SR_LO)
+        # ----------------------------------
         
         g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
