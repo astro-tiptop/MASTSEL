@@ -128,7 +128,7 @@ class MavisLO(object):
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
         defaultIntegralDiscretization2 = 4000
-        defaultSimpleVarianceComputation = False#True
+        defaultSimpleVarianceComputation = True
         print('defaultSimpleVarianceComputation',defaultSimpleVarianceComputation)
         self.computationPlatform =defaultCompute
         self.integralDiscretization1 = defaultIntegralDiscretization1
@@ -529,22 +529,14 @@ class MavisLO(object):
 
     def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas):
         # aNGS_flux is provided in photons/s
-        # print('             aNGS_FWHM_mas',aNGS_FWHM_mas)
-        # print('             self.PixelScale_LO',self.PixelScale_LO)
         aNGS_frameflux = aNGS_flux / aNGS_freq
         back = self.skyBackground_LO/aNGS_freq
         N_T = aNGS_FWHM_mas/self.PixelScale_LO
-        # print('             N_T',N_T)
         N_W = self.smallGridSize
-        # print('             N_W',N_W)
         N_D = self.subapNGS_FWHM_mas/self.PixelScale_LO
-        # print('             N_D',N_D)
         sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * (self.Dark_LO / aNGS_freq + back) + self.sigmaRON_LO**2 )
-        # print('             sigma_e',sigma_e)
         sigma_ph_fwhm = 0.25*self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
-        # print('             sigma_ph_fwhm',sigma_ph_fwhm)
         sigma_ron_fwhm = 0.25*(np.pi/(32.0*(np.log(2.0)**2))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
-        # print('             sigma_ron_fwhm',sigma_ron_fwhm)
         sigma_ph_sr = (1.0/aNGS_SR_LO) * sigma_ph_fwhm
         sigma_ron_sr = (1.0/aNGS_SR_LO)**2 * sigma_ron_fwhm
         sigma_tot_fwhm = sigma_ph_fwhm + sigma_ron_fwhm
@@ -552,17 +544,14 @@ class MavisLO(object):
         coeff = (aNGS_SR_LO-0.01)/0.09*(N_D/N_T)**2
         if aNGS_SR_LO > 0.1: coeff = (N_D/N_T)**2
         if aNGS_SR_LO < 0.01: coeff = 0
-        #print('(N_D/N_T)**2',(N_D/N_T)**2)
-        #sigma_tot = (N_D/N_T)**2 * sigma_tot_sr + ( 1.0 - (N_D/N_T)**2 ) * sigma_tot_fwhm
         sigma_tot = coeff * sigma_tot_sr + ( 1.0 - coeff ) * sigma_tot_fwhm
-        # print('             sigma_tot',sigma_tot)
         varx = vary = sigma_tot
         mux = muy = 0
         bias = N_W**2/(N_W**2+N_T**2)
         return (bias,(mux,muy),(varx,vary))
 
 
-    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas):
+    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
@@ -570,37 +559,19 @@ class MavisLO(object):
         xCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         yCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
         xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
-        
-        r0_SensingWavelength_LO = self.r0_Value * (self.SensingWavelength_LO/self.AtmosphereWavelength)**(6/5)
-        seeing = 0.976*self.AtmosphereWavelength/r0_SensingWavelength_LO*206264.8 * 1000 # * np.sqrt(1-2.183*(r0_SensingWavelength_LO/self.L0)*0.356)
-        seeingSubap = np.sqrt( seeing**2 + self.subapNGS_FWHM_mas**2 )
-        asigma_seeing = seeingSubap/sigmaToFWHM/self.mediumPixelScale
-        
-        # ----------------------------------
-        #coeff = seeingSubap - aNGS_FWHM_mas
-        #if coeff < 0:
-        #    coeff = 0
-        #else:
-        #    coeff = (self.subapNGS_FWHM_mas/aNGS_FWHM_mas) * (coeff/(seeingSubap - self.subapNGS_FWHM_mas))
-            
-        coeff = aNGS_SR_LO + (1-aNGS_SR_LO)**2
-        # 1-coeff = aNGS_SR_LO*(1-aNGS_SR_LO)
-        # ----------------------------------
-        
+                
         g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
-        g2d_seeing = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma_seeing)
-        g2d_seeing = g2d_seeing * 1 / np.sum(g2d_seeing)
-          
-        I_k_data = g2d * coeff + g2d_seeing * (1-coeff)
+        I_k_data = g2d * aNGS_EE_LO/ 0.76**2 # Encirceld Energy in the FWHM is used to scale the PSF model
+                                             # 1D GAUSSIAN --> The corresponding area within the FWHM accounts
+                                             #                 to approximately 76%
         I_k_data = I_k_data * aNGS_flux/self.SensorFrameRate_LO
             
         g2d_prime = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma)
-        g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)
-        g2d_prime_seeing = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma_seeing)
-        g2d_prime_seeing = g2d_prime_seeing * 1 / np.sum(g2d_prime_seeing)
-        
-        I_k_prime_data = g2d_prime * coeff + g2d_prime_seeing * (1-coeff)
+        g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)       
+        I_k_prime_data = g2d_prime * aNGS_EE_LO/ 0.76**2 # Encirceld Energy in the FWHM is used to scale the PSF model
+                                                         # 1D GAUSSIAN --> The corresponding area within the FWHM accounts
+                                                         #                 to approximately 76%
         I_k_prime_data = I_k_prime_data * aNGS_flux/self.SensorFrameRate_LO
             
         back = self.skyBackground_LO/self.SensorFrameRate_LO
@@ -1000,7 +971,7 @@ class MavisLO(object):
         return Ctot
 
     
-    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas):
+    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = len(indices)
@@ -1037,7 +1008,7 @@ class MavisLO(object):
         return Ctot.reshape((nPointings,2,2))
 
 
-    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas, doAll=True):
+    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas, doAll=True):
         self.bias = []
         self.amu = []
         self.avar = []
@@ -1059,7 +1030,7 @@ class MavisLO(object):
             if self.simpleVarianceComputation:
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
             else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             if self.verbose:
                 print('         bias',bias)
                 print('         amu',amu)
