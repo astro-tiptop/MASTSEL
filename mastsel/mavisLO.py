@@ -527,7 +527,7 @@ class MavisLO(object):
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
 
-    def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_FWHM_mas):
+    def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         back = self.skyBackground_LO/aNGS_freq
@@ -537,14 +537,11 @@ class MavisLO(object):
         sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * (self.Dark_LO / aNGS_freq + back) + self.sigmaRON_LO**2 )
         sigma_ph_fwhm = 0.25*self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
         sigma_ron_fwhm = 0.25*(np.pi/(32.0*(np.log(2.0)**2))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
-        sigma_ph_sr = (1.0/aNGS_SR_LO) * sigma_ph_fwhm
-        sigma_ron_sr = (1.0/aNGS_SR_LO)**2 * sigma_ron_fwhm
-        sigma_tot_fwhm = sigma_ph_fwhm + sigma_ron_fwhm
-        sigma_tot_sr = sigma_ph_sr + sigma_ron_sr
-        coeff = (aNGS_SR_LO-0.01)/0.09*(N_D/N_T)**2
-        if aNGS_SR_LO > 0.1: coeff = (N_D/N_T)**2
-        if aNGS_SR_LO < 0.01: coeff = 0
-        sigma_tot = coeff * sigma_tot_sr + ( 1.0 - coeff ) * sigma_tot_fwhm
+        # in the next lines we approximate that 2 times the encircled energy present in the FWHM
+        # of the PSF can be effectively used to compute the centroid
+        sigma_ph_ee = (0.5/aNGS_EE_LO) * sigma_ph_fwhm
+        sigma_ron_ee = (0.5/aNGS_EE_LO)**2 * sigma_ron_fwhm
+        sigma_tot = sigma_ph_ee + sigma_ron_ee
         varx = vary = sigma_tot
         mux = muy = 0
         bias = N_W**2/(N_W**2+N_T**2)
@@ -1028,7 +1025,7 @@ class MavisLO(object):
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
             if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_SR_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
             if self.verbose:
