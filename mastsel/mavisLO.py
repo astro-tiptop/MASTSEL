@@ -99,6 +99,8 @@ class MavisLO(object):
 
         self.PixelScale_LO          = self.get_config_value('sensor_LO','PixelScale')
         self.WindowRadiusWCoG_LO    = self.get_config_value('sensor_LO','WindowRadiusWCoG')
+        if self.WindowRadiusWCoG_LO=='optimize':
+            self.WindowRadiusWCoG_LO = 0
         self.sigmaRON_LO            = self.get_config_value('sensor_LO','SigmaRON')
         if self.sigmaRON_LO == 0:
             self.sigmaRON_LO = 1e-6
@@ -528,6 +530,9 @@ class MavisLO(object):
 
 
     def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
+        if self.WindowRadiusWCoG_LO == 0:
+            self.WindowRadiusWCoG_LO = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
+            self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         back = self.skyBackground_LO/aNGS_freq
@@ -537,10 +542,10 @@ class MavisLO(object):
         sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * (self.Dark_LO / aNGS_freq + back) + self.sigmaRON_LO**2 )
         sigma_ph_fwhm = 0.25*self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
         sigma_ron_fwhm = 0.25*(np.pi/(32.0*(np.log(2.0)**2))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
-        # in the next lines we approximate that 2 times the encircled energy present in the FWHM
+        # in the next lines we approximate that the encircled energy present in 2 times the FWHM
         # of the PSF can be effectively used to compute the centroid
-        sigma_ph_ee = (0.5/aNGS_EE_LO) * sigma_ph_fwhm
-        sigma_ron_ee = (0.5/aNGS_EE_LO)**2 * sigma_ron_fwhm
+        sigma_ph_ee = (1.0/aNGS_EE_LO) * sigma_ph_fwhm
+        sigma_ron_ee = (1.0/aNGS_EE_LO)**2 * sigma_ron_fwhm
         sigma_tot = sigma_ph_ee + sigma_ron_ee
         varx = vary = sigma_tot
         mux = muy = 0
@@ -549,6 +554,9 @@ class MavisLO(object):
 
 
     def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
+        if self.WindowRadiusWCoG_LO == 0:
+            self.WindowRadiusWCoG_LO = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
+            self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
@@ -559,16 +567,12 @@ class MavisLO(object):
                 
         g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
-        I_k_data = g2d * aNGS_EE_LO/ 0.76**2 # Encirceld Energy in the FWHM is used to scale the PSF model
-                                             # 1D GAUSSIAN --> The corresponding area within the FWHM accounts
-                                             #                 to approximately 76%
+        I_k_data = g2d * aNGS_EE_LO # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_data = I_k_data * aNGS_flux/self.SensorFrameRate_LO
             
         g2d_prime = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma)
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)       
-        I_k_prime_data = g2d_prime * aNGS_EE_LO/ 0.76**2 # Encirceld Energy in the FWHM is used to scale the PSF model
-                                                         # 1D GAUSSIAN --> The corresponding area within the FWHM accounts
-                                                         #                 to approximately 76%
+        I_k_prime_data = g2d_prime * aNGS_EE_LO # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_prime_data = I_k_prime_data * aNGS_flux/self.SensorFrameRate_LO
             
         back = self.skyBackground_LO/self.SensorFrameRate_LO
