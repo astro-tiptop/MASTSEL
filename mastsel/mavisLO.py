@@ -99,6 +99,8 @@ class MavisLO(object):
 
         self.PixelScale_LO          = self.get_config_value('sensor_LO','PixelScale')
         self.WindowRadiusWCoG_LO    = self.get_config_value('sensor_LO','WindowRadiusWCoG')
+        if self.WindowRadiusWCoG_LO=='optimize':
+            self.WindowRadiusWCoG_LO = 0
         self.sigmaRON_LO            = self.get_config_value('sensor_LO','SigmaRON')
         if self.sigmaRON_LO == 0:
             self.sigmaRON_LO = 1e-6
@@ -528,8 +530,9 @@ class MavisLO(object):
 
 
     def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
-        self.WindowRadiusWCoG_LO = int(1+np.round(aNGS_FWHM_mas/16))
-        self.smallGridSize = 2*self.WindowRadiusWCoG_LO
+        if self.WindowRadiusWCoG_LO == 0:
+            self.WindowRadiusWCoG_LO = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
+            self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         back = self.skyBackground_LO/aNGS_freq
@@ -551,8 +554,9 @@ class MavisLO(object):
 
 
     def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
-        self.WindowRadiusWCoG_LO = int(min(1+np.round(aNGS_FWHM_mas/16), self.mediumGridSize/2))
-        self.smallGridSize = 2*self.WindowRadiusWCoG_LO
+        if self.WindowRadiusWCoG_LO == 0:
+            self.WindowRadiusWCoG_LO = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
+            self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
