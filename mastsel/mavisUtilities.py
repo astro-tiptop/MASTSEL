@@ -160,7 +160,19 @@ def cartesianToPolar2(x):
 def polarToCartesian(x):
     return x[0] * np.asarray( [np.cos(x[1]*degToRad), np.sin(x[1]*degToRad)], dtype=np.float64 )
 
+# compute cartasian coordinates from polar ones
+def getCartCoord(zen_field, az_field):
+    polarCoordsList = []
+    for aZen, aAz in zip(zen_field, az_field):
+        polarCoordsList.append([aZen, aAz])
+    polarCoords = np.asarray(polarCoordsList)
+    n_field  = len(zen_field)
 
+    cartCoordsList = []
+    for i in range(n_field):
+        cartCoordsList.append(polarToCartesian(polarCoords[i,:]))
+    return cartCoordsList
+    
 def FWHM_from_sigma(sigma):
     return sigma * sigmaToFWHM
 
