@@ -482,7 +482,7 @@ class MavisLO(object):
             for ii in range(nstars):
                 p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
             P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
-
+            
     #        rec_tomo = scipy.linalg.pinv(P_mat) # aka W, 5x6    
             u, s, vh = np.linalg.svd(P_mat)
             sv_threshold = 0.05 * s[0]
@@ -491,9 +491,12 @@ class MavisLO(object):
 
             sRes = np.diag(sRes)
             sRes = np.append(sRes, np.zeros((1,sRes.shape[1])), axis=0 )
-            if nstars==3:
+            if nstars>3:
+                for i in range(nstars - 3):
+                    sRes = np.append(sRes, np.zeros((2,sRes.shape[1])), axis=0 )
+            if nstars>=3:
                 sRes = sRes.transpose()
-
+                
             rec_tomo = vh.transpose() @  ( sRes  @ u.transpose() )
 
             vx = np.asarray(aCartPointingCoordsV[:,0])
@@ -874,6 +877,8 @@ class MavisLO(object):
             _idx0 = {2:[0,2,4], 3:[1,3,5]}
         elif nstars==2:
             _idx0 = {2:[0,2], 3:[1,3]}
+        elif nstars==4:
+            _idx0 = {2:[0,2,4,6], 3:[1,3,5,7]}
 
         for ii in [2,3]:
             for jj in [2,3]:
