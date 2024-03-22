@@ -482,19 +482,8 @@ class MavisLO(object):
             for ii in range(nstars):
                 p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
             P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
-
-    #        rec_tomo = scipy.linalg.pinv(P_mat) # aka W, 5x6    
-            u, s, vh = np.linalg.svd(P_mat)
-            sv_threshold = 0.05 * s[0]
-            s_inv = np.reciprocal(s)
-            sRes = np.where(s < sv_threshold, 0, s_inv)
-
-            sRes = np.diag(sRes)
-            sRes = np.append(sRes, np.zeros((1,sRes.shape[1])), axis=0 )
-            if nstars==3:
-                sRes = sRes.transpose()
-
-            rec_tomo = vh.transpose() @  ( sRes  @ u.transpose() )
+            
+            rec_tomo = scipy.linalg.pinv(P_mat,rcond=0.05) # aka W, 5x(2*nstars)    
 
             vx = np.asarray(aCartPointingCoordsV[:,0])
             vy = np.asarray(aCartPointingCoordsV[:,1])
@@ -869,11 +858,7 @@ class MavisLO(object):
                 inputsArray[nstars*points+iidd] = pp
                 iidd = iidd+1
         
-        _idx0 = {2:[0], 3:[1]}
-        if nstars==3:
-            _idx0 = {2:[0,2,4], 3:[1,3,5]}
-        elif nstars==2:
-            _idx0 = {2:[0,2], 3:[1,3]}
+        _idx0 = {2:np.arange(0, 2*nstars, 2), 3:np.arange(1, 2*nstars, 2)}
 
         for ii in [2,3]:
             for jj in [2,3]:
@@ -917,13 +902,7 @@ class MavisLO(object):
                 inputsArray[nstars*points+iidd] = pp
                 iidd = iidd+1
         
-        _idx0 = {4:[0]}
-        if nstars==6:
-            _idx0 = {4:[0,1,2,3,4,5]}
-        if nstars==3:
-            _idx0 = {4:[0,1,2]}
-        elif nstars==2:
-            _idx0 = {4:[0,1]}
+        _idx0 = {4:np.arange(0, nstars, 1)}
 
         for ii in [4]:
             for jj in [4]:
