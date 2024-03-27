@@ -748,7 +748,7 @@ class MavisLO(object):
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
         Cfloat = self.fCValue.evalf()
-        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples)
+        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, alib)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
 
         if self.plot4debug:
@@ -793,7 +793,7 @@ class MavisLO(object):
             g0g = xp.asarray(g0)
 
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
-        e2 = psd_focus_turb.reshape((1,psd_tip_turb.shape[0]))
+        e2 = psd_focus_turb.reshape((1,psd_focus_turb.shape[0]))
         e3 = g0g.reshape((g0g.shape[0], 1))
         psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3)
 
@@ -1114,7 +1114,6 @@ class MavisLO(object):
             return None
 
     def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas):
-        nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
         Cnn = np.zeros((nNaturalGS,nNaturalGS))
@@ -1129,9 +1128,7 @@ class MavisLO(object):
             # normalized by the number of subapertures
             avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar) # TODO update with noise propagation for focus
             var1x = avar[0] * self.PixelScale_LO**2
-            nr = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
-            
-            Cnn[starIndex,starIndex] = nr[0]
+            Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
             
         # NGS Rec. Mat.
         R = np.array(np.repeat(1, aCartNGSCoords.shape[0]))*1/np.float32(aCartNGSCoords.shape[0])
@@ -1139,10 +1136,16 @@ class MavisLO(object):
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
         # sum tomography and noise (Css) errors for a on-axis star
         Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT))
+        
+        # reference error for LGS case
+        HO_zen_field    = self.get_config_value('sources_HO','Zenith')
+        HO_az_field     = self.get_config_value('sources_HO','Azimuth')
+        HO_pointings = polarToCartesian(np.array( [HO_zen_field, HO_az_field]))
+        aCartLGSCoords = np.dstack( (HO_pointings[0,:], HO_pointings[1,:]) ).reshape(-1, 2)
         # LGS Rec. Mat.
         RL = np.array(np.repeat(1, aCartLGSCoords.shape[0]))*1/np.float32(aCartLGSCoords.shape[0])
         RLT = RL.transpose()
-        CaaL, CasL, CssL = mLO.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(LGSCartCoords), xp=np)
+        CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
         # tomography error for a on-axis star for LGS WFSs
         CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
         
