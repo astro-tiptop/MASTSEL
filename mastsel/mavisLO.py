@@ -745,6 +745,77 @@ class MavisLO(object):
         else:
             return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
+    def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
+        npoints = 99
+        Cfloat = self.fCValue.evalf()
+        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples)
+        psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
+
+        if self.plot4debug:
+            fig, ax1 = plt.subplots(1,1)
+            im = ax1.plot(psd_freq,psd_focus_turb)
+            im = ax1.plot(psd_freq,psd_focus_sodium)
+            ax1.set_xscale('log')
+            ax1.set_yscale('log')
+            ax1.set_title('Turbulence and Sodium PSD', color='black')
+            ax1.set_xlabel('frequency [Hz]')
+            ax1.set_ylabel('Power')
+
+        df = psd_freq[1]-psd_freq[0]
+        Df = psd_freq[-1]-psd_freq[0]
+        sigma2Noise =  cpuArray(varX) / bias**2 * Cfloat / (Df / df)
+        # must wait till this moment to substitute the noise level
+        self.fFocusS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
+        self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
+        if self.displayEquation:
+            print('computeNoiseResidual')
+            try:
+                display(self.fFocusS1)
+            except:
+                print('    no self.fFocusS1')
+
+        if alib==gpulib and gpuEnabled:
+            xp = cp
+            psd_freq = cp.asarray(psd_freq)
+            psd_focus_turb = cp.asarray(psd_focus_turb)
+        else:
+            xp = np
+        if self.LoopGain_LO == 'optimize':
+            # add small values of gain to have a good optimization
+            # when the noise level is high.
+            g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+        elif self.LoopGain_LO == 'test':
+            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+        else:
+            # if gain is set no optimization is done and bias is not compensated
+            g0 = (bias*self.LoopGain_LO)
+            g0g = xp.asarray(g0)
+
+        e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+        e2 = psd_focus_turb.reshape((1,psd_tip_turb.shape[0]))
+        e3 = g0g.reshape((g0g.shape[0], 1))
+        psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3)
+
+        if self.plot4debug:
+            fig, ax2 = plt.subplots(1,1)
+            for x in range(g0g.shape[0]):
+                im = ax2.plot(cpuArray(psd_freq),(self.fFocusS_lambda1( g0g_ext, psd_freq_ext, psd_focus_turb_ext).get())[x,:])
+            ax2.set_xscale('log')
+            ax2.set_yscale('log')
+            ax2.set_title('residual PSD', color='black')
+            ax2.set_xlabel('frequency [Hz]')
+            ax2.set_ylabel('Power')
+
+        resultFocus = xp.absolute((xp.sum(self.fFocusS_lambda1( g0g_ext, psd_freq_ext, psd_focus_turb_ext), axis=(1)) ) )
+
+        minFocusIdx = xp.where(resultFocus == xp.nanmin(resultFocus))
+        if self.verbose:
+            print('         best focus gain (noise)',g0g[minFocusIdx[0][0]])
+        if alib==gpulib and gpuEnabled:
+            return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
+        else:
+            return (resultFocus[minFocusIdx[0][0]])
         
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
         npoints = 99
@@ -1058,7 +1129,7 @@ class MavisLO(object):
             # normalized by the number of subapertures
             avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar) # TODO update with noise propagation for focus
             var1x = avar[0] * self.PixelScale_LO**2
-            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            nr = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
             
             Cnn[starIndex,starIndex] = nr[0]
             
