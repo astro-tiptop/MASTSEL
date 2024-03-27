@@ -960,14 +960,8 @@ class MavisLO(object):
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
             print('         aNGS_flux',aNGS_flux)
-            print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
-            if self.verbose:
-                print('         bias',bias)
-                print('         amu', amu)
-                print('         avar', avar)
-                print('         ratio', cpuArray(cp.asarray(avar))/bias**2)
             nr = self.nr[indices[starIndex]] 
             # TODO: this second computation must be embedded in the previous one.
             wr = self.wr[indices[starIndex]] 
@@ -1003,7 +997,6 @@ class MavisLO(object):
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
             print('         aNGS_flux',aNGS_flux)
-            print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
             
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
@@ -1011,11 +1004,6 @@ class MavisLO(object):
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
-            if self.verbose:
-                print('         bias',bias)
-                print('         amu',amu)
-                print('         avar',avar)
-                print('         ratio',cpuArray(cp.asarray(avar))/bias**2)
             
             # normalized by the number of subapertures
             avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar)
@@ -1054,6 +1042,41 @@ class MavisLO(object):
         else:
             return None
 
+    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas):
+        nPointings = aCartPointingCoords.shape[0]
+        maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
+        nNaturalGS = aCartNGSCoords.shape[0]
+        Cnn = np.zeros((nNaturalGS,nNaturalGS))
+        
+        for starIndex in range(nNaturalGS):
+            self.configLOFreq( aNGS_freq[starIndex] )
+            if self.simpleVarianceComputation:
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+            else:
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            
+            # normalized by the number of subapertures
+            avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar) # TODO update with noise propagation for focus
+            var1x = avar[0] * self.PixelScale_LO**2
+            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            
+            Cnn[starIndex,starIndex] = nr[0]
+            
+        # NGS Rec. Mat.
+        R = np.array(np.repeat(1, aCartNGSCoords.shape[0]))*1/np.float32(aCartNGSCoords.shape[0])
+        RT = R.transpose()
+        Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
+        # sum tomography and noise (Css) errors for a on-axis star
+        Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT))
+        # LGS Rec. Mat.
+        RL = np.array(np.repeat(1, aCartLGSCoords.shape[0]))*1/np.float32(aCartLGSCoords.shape[0])
+        RLT = RL.transpose()
+        CaaL, CasL, CssL = mLO.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(LGSCartCoords), xp=np)
+        # tomography error for a on-axis star for LGS WFSs
+        CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
+        
+        return Ctot - CtotL    
+        
     def ellipsesFromCovMats(self, Ctot):
         theta = sp.symbols('theta')
         sigma_1 = sp.symbols('sigma^2_1')
