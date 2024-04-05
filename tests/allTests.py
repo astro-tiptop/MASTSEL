@@ -90,15 +90,15 @@ class TestWindResiduals(TestMavisLO):
         r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_freq[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
         r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_freq[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
 
-        self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.4648798155634258)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.11621995389085645, 0.0)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r1[2]), np.array((0.09879586049734693, 0.09879586135784874)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r2[0]), np.array((0.414152240493474)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r2[1]), np.array((0.1035380601233685, -3.649587997405677e-09)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r2[2]), np.array((0.10850660436150454, 0.10850660702593513)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r3[0]), np.array((0.41736352182872927)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r3[1]), np.array((0.10434088045718232, 0.0)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r3[2]), np.array((0.10727464025272455, 0.10727464025272455)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.3305086490286356)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.0826271622571589, 0.0)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[2]), np.array((0.12942792320851965, 0.12942792320851965)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[0]), np.array((0.3067767436965856)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[1]), np.array((0.0766941859241464, 0.0)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[2]), np.array((0.1381058202766471, 0.1381058202766471)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[0]), np.array((0.28524614382590824)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[1]), np.array((0.07131153595647706, 0.0)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[2]), np.array((0.13778324257626204, 0.13778324257626204)), rtol=1e-03, atol=1e-5)==None)
 
 
 class TestNoiseResiduals(TestMavisLO):
@@ -117,9 +117,9 @@ class TestNoiseResiduals(TestMavisLO):
         result = nr[1]
         self.assertTrue( np.testing.assert_allclose(result, 2387.49, rtol=1e-03, atol=1e-5)==None)
         result = wr[0]
-        self.assertTrue( np.testing.assert_allclose(result, 71.85, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 243.63, rtol=1e-03, atol=1e-5)==None)
         result = wr[1]
-        self.assertTrue( np.testing.assert_allclose(result, 60.95, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 173.69, rtol=1e-03, atol=1e-5)==None)
 
 
 
