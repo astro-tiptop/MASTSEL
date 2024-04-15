@@ -709,7 +709,7 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.8, npoints)))
         elif self.LoopGain_LO == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
@@ -729,7 +729,7 @@ class MavisLO(object):
                 im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext).get())[x,:]) 
             ax2.set_xscale('log')
             ax2.set_yscale('log')
-            ax2.set_title('residual PSD', color='black')
+            ax2.set_title('residual turb. PSD', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Power')
         
@@ -765,10 +765,34 @@ class MavisLO(object):
             ax1.set_ylabel('Power')
                
         sigma2Noise = cpuArray(var1x) / bias**2 * Cfloat / (Df / df)
-        self.fTipS1 = subsParamsByName(self.fTipS, {'phi^noise_Tip': sigma2Noise})
-        self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
-        self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], alib)
-        self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'g^Tilt_1', 'f', 'phi^wind_Tilt'], alib)
+        
+        if self.plot4debug:
+            dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
+            RTFwind = subsParamsByName( self.fTipS1tfW, dict1)
+            NTFwind = subsParamsByName( self.fTipS1tfN, dict1)
+            RTFwind_lambda1 = lambdifyByName( RTFwind, ['g^Tip_0', 'g^Tip_1', 'f'], cpulib)
+            NTFwind_lambda1 = lambdifyByName( NTFwind, ['g^Tip_0', 'g^Tip_1', 'f'], cpulib)
+            RTFwindL1 = RTFwind_lambda1( 0.25, 1.0, psd_freq)
+            NTFwindL1 = NTFwind_lambda1( 0.25, 1.0, psd_freq)
+
+            fig, ax2 = plt.subplots(1,1)
+            im = ax2.plot(cpuArray(psd_freq),np.abs(RTFwindL1))
+            im = ax2.plot(cpuArray(psd_freq),np.abs(NTFwindL1))
+            ax2.set_xscale('log')
+            ax2.set_yscale('log')
+            ax2.set_xlabel('frequency [Hz]')
+            ax2.set_ylabel('Amplitude')
+            
+        if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
+            self.fTipS1 = subsParamsByName(self.fTipS, {'phi^noise_Tip': sigma2Noise})
+            self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
+            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], alib)
+            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'g^Tilt_1', 'f', 'phi^wind_Tilt'], alib)
+        else:
+            self.fTipS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
+            self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})
+            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
+            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], alib)
         if alib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
@@ -781,7 +805,7 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.8, npoints)))
             g0g, g1g = xp.meshgrid( g0g,g0g )
         elif self.LoopGain_LO == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
@@ -790,26 +814,65 @@ class MavisLO(object):
             # if gain is set no optimization is done and bias is not compensated
             g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
             g0g = xp.asarray(g0)
-            g0g, g1g = xp.meshgrid( g0g,g0g )
-            g1g *= 1e-6
         
-        e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
-        e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))
-        e3 = psd_tilt_wind.reshape((1,1,psd_tilt_wind.shape[0]))
-        e4 = g0g.reshape((g0g.shape[0],g0g.shape[1],1))
-        e5 = g1g.reshape((g1g.shape[0],g1g.shape[1],1))
-        psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext, g1g_ext  = xp.broadcast_arrays(e1, e2, e3, e4, e5)
-        resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(2)) ) )
-        resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(2)) ) )
+        if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
+            e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
+            e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))
+            e3 = psd_tilt_wind.reshape((1,1,psd_tilt_wind.shape[0]))
+            e4 = g0g.reshape((g0g.shape[0],g0g.shape[1],1))
+            e5 = g1g.reshape((g1g.shape[0],g1g.shape[1],1))
+            psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext, g1g_ext  = xp.broadcast_arrays(e1, e2, e3, e4, e5)
+            resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(2)) ) )
+            resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(2)) ) )
+            if self.plot4debug:
+                fig, ax2 = plt.subplots(1,1)
+                for x in range(g0g.shape[0]):
+                    im = ax2.plot(cpuArray(psd_freq),\
+                        (self.fTipS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,int(npoints/2),:]) 
+                ax2.set_xscale('log')
+                ax2.set_yscale('log')
+                ax2.set_title('residual wind PSD', color='black')
+                ax2.set_xlabel('frequency [Hz]')
+                ax2.set_ylabel('Power')
+        else:
+            e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+            e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
+            e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
+            e4 = g0g.reshape((g0g.shape[0], 1))
+            psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext  = xp.broadcast_arrays(e1, e2, e3, e4)
+            resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
+            resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
+            if self.plot4debug:
+                fig, ax2 = plt.subplots(1,1)
+                for x in range(g0g.shape[0]):
+                    im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+                ax2.set_xscale('log')
+                ax2.set_yscale('log')
+                ax2.set_title('residual wind PSD', color='black')
+                ax2.set_xlabel('frequency [Hz]')
+                ax2.set_ylabel('Power')
+                
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
+        
         if self.verbose:
-            print('         best tip gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]])
-            print('         best tilt gain (wind)',g0g[minTiltIdx[0][0],minTiltIdx[1][0]])
-        if alib==gpulib and gpuEnabled:
-            return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
+            if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
+                print('         best tip gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]],g1g[minTipIdx[0][0],minTipIdx[1][0]])
+                print('         best tilt gain (wind)',g0g[minTiltIdx[0][0],minTiltIdx[1][0]],g1g[minTipIdx[0][0],minTipIdx[1][0]])
+            else:
+                print('         best tip gain (wind)',g0g[minTipIdx[0][0]])
+                print('         best tilt gain (wind)',g0g[minTiltIdx[0][0]])
+                    
+        if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
+            if alib==gpulib and gpuEnabled:
+                return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
+            else:
+                return (resultTip[minTipIdx[0][0], minTipIdx[1][0]], resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
         else:
-            return (resultTip[minTipIdx[0][0], minTipIdx[1][0]], resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
+            if alib==gpulib and gpuEnabled:
+                return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
+            else:
+                return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
         
     def covValue(self, ii,jj, pp, hh):
