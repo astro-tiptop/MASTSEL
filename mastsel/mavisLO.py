@@ -53,6 +53,8 @@ class MavisLO(object):
         self.plot4debug = False
         self.displayEquation = False
 
+        if self.verbose: np.set_printoptions(precision=3)
+        
         filename_ini = os.path.join(path, parametersFile + '.ini')
         filename_yml = os.path.join(path, parametersFile + '.yml')
 
@@ -644,7 +646,7 @@ class MavisLO(object):
         psd_focus_turb = zplot1*scaleFactor
         
         psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], alib)
-        psd_focus_sodium = psd_focus_sodium_lambda1( psd_freq) 
+        psd_focus_sodium = psd_focus_sodium_lambda1( cp.array(psd_freq)) 
         return psd_focus_turb, psd_focus_sodium
 
     def checkStability(self,keys,values,TFeq):
@@ -738,8 +740,7 @@ class MavisLO(object):
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
-            print('         best tip gain (noise)',g0g[minTipIdx[0][0]])
-            print('         best tilt gain (noise)',g0g[minTiltIdx[0][0]])
+            print('         best tip & tilt gain (noise):',g0g[minTipIdx[0][0]],g0g[minTiltIdx[0][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
@@ -811,7 +812,7 @@ class MavisLO(object):
 
         minFocusIdx = xp.where(resultFocus == xp.nanmin(resultFocus))
         if self.verbose:
-            print('         best focus gain (noise)',g0g[minFocusIdx[0][0]])
+            print('         best focus gain (noise):',g0g[minFocusIdx[0][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
         else:
@@ -875,8 +876,7 @@ class MavisLO(object):
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
-            print('         best tip gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]])
-            print('         best tilt gain (wind)',g0g[minTiltIdx[0][0],minTiltIdx[1][0]])
+            print('         best tip & tilt gain (wind):',g0g[minTipIdx[0][0],minTipIdx[1][0]],g0g[minTiltIdx[0][0],minTiltIdx[1][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
         else:
@@ -942,7 +942,10 @@ class MavisLO(object):
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     def computeFocusCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
-        points = aCartPointingCoords.shape[0]
+        if len(aCartPointingCoords.shape) > 1:
+            points = aCartPointingCoords.shape[0]
+        else:
+            points = 1
         nstars = aCartNGSCoords.shape[0]        
         scaleF = (500.0/(2*np.pi))**2
         matCasValue = xp.zeros((points,nstars), dtype=xp.float32)
@@ -1037,8 +1040,8 @@ class MavisLO(object):
             # TODO: this second computation must be embedded in the previous one.
             wr = self.wr[indices[starIndex]] 
             if self.verbose:
-                print('         noise residual:     ',nr)
-                print('         wind-shake residual:',wr)
+                print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
+                print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
@@ -1048,8 +1051,7 @@ class MavisLO(object):
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
         if self.verbose:
-            print('         Ctot:')
-            print(Ctot)
+            print('         Ctot [nm\u00b2]:',Ctot)
         return Ctot.reshape((nPointings,2,2))
 
 
@@ -1067,7 +1069,7 @@ class MavisLO(object):
 
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
-            print('         aNGS_flux',aNGS_flux)
+            print('         aNGS_flux:',aNGS_flux)
             
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
@@ -1095,8 +1097,8 @@ class MavisLO(object):
             self.wr.append(wr)
 
             if self.verbose:
-                print('         noise residual:     ',nr)
-                print('         wind-shake residual:',wr)
+                print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
+                print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
@@ -1107,8 +1109,7 @@ class MavisLO(object):
             # C1 and Cnn do not depend on aCartPointingCoords[i]
             Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
             if self.verbose:
-                print('         Ctot:')
-                print(Ctot)
+                print('         Ctot [nm\u00b2]:',Ctot)
             return Ctot.reshape((nPointings,2,2))
         else:
             return None
@@ -1118,6 +1119,9 @@ class MavisLO(object):
         nNaturalGS = aCartNGSCoords.shape[0]
         Cnn = np.zeros((nNaturalGS,nNaturalGS))
         
+        if self.verbose:
+            print('mavisLO.computeFocusTotalResidualMatrix')
+            
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
             if self.simpleVarianceComputation:
@@ -1148,8 +1152,13 @@ class MavisLO(object):
         CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
         # tomography error for a on-axis star for LGS WFSs
         CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
+        # difference
+        CtotDiff = Ctot - CtotL
         
-        return Ctot - CtotL    
+        if self.verbose:
+            print('         focus residual [nm]:',np.sqrt(CtotDiff))
+        
+        return CtotDiff    
         
     def ellipsesFromCovMats(self, Ctot):
         theta = sp.symbols('theta')
