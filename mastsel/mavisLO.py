@@ -53,6 +53,8 @@ class MavisLO(object):
         self.plot4debug = False
         self.displayEquation = False
 
+        if self.verbose: np.set_printoptions(precision=3)
+        
         filename_ini = os.path.join(path, parametersFile + '.ini')
         filename_yml = os.path.join(path, parametersFile + '.yml')
 
@@ -644,7 +646,7 @@ class MavisLO(object):
         psd_focus_turb = zplot1*scaleFactor
         
         psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], alib)
-        psd_focus_sodium = psd_focus_sodium_lambda1( psd_freq) 
+        psd_focus_sodium = psd_focus_sodium_lambda1( cp.array(psd_freq)) 
         return psd_focus_turb, psd_focus_sodium
 
     def checkStability(self,keys,values,TFeq):
@@ -738,13 +740,83 @@ class MavisLO(object):
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
-            print('         best tip gain (noise)',g0g[minTipIdx[0][0]])
-            print('         best tilt gain (noise)',g0g[minTiltIdx[0][0]])
+            print('         best tip & tilt gain (noise):',g0g[minTipIdx[0][0]],g0g[minTiltIdx[0][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
             return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
+    def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
+        npoints = 99
+        Cfloat = self.fCValue.evalf()
+        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, alib)
+        psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
+
+        if self.plot4debug:
+            fig, ax1 = plt.subplots(1,1)
+            im = ax1.plot(psd_freq,psd_focus_turb)
+            im = ax1.plot(psd_freq,psd_focus_sodium)
+            ax1.set_xscale('log')
+            ax1.set_yscale('log')
+            ax1.set_title('Turbulence and Sodium PSD', color='black')
+            ax1.set_xlabel('frequency [Hz]')
+            ax1.set_ylabel('Power')
+
+        df = psd_freq[1]-psd_freq[0]
+        Df = psd_freq[-1]-psd_freq[0]
+        sigma2Noise =  cpuArray(varX) / bias**2 * Cfloat / (Df / df)
+        # must wait till this moment to substitute the noise level
+        self.fFocusS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
+        self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
+        if self.displayEquation:
+            print('computeNoiseResidual')
+            try:
+                display(self.fFocusS1)
+            except:
+                print('    no self.fFocusS1')
+
+        if alib==gpulib and gpuEnabled:
+            xp = cp
+            psd_freq = cp.asarray(psd_freq)
+            psd_focus_turb = cp.asarray(psd_focus_turb)
+        else:
+            xp = np
+        if self.LoopGain_LO == 'optimize':
+            # add small values of gain to have a good optimization
+            # when the noise level is high.
+            g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+        elif self.LoopGain_LO == 'test':
+            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+        else:
+            # if gain is set no optimization is done and bias is not compensated
+            g0 = (bias*self.LoopGain_LO)
+            g0g = xp.asarray(g0)
+
+        e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+        e2 = psd_focus_turb.reshape((1,psd_focus_turb.shape[0]))
+        e3 = g0g.reshape((g0g.shape[0], 1))
+        psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3)
+
+        if self.plot4debug:
+            fig, ax2 = plt.subplots(1,1)
+            for x in range(g0g.shape[0]):
+                im = ax2.plot(cpuArray(psd_freq),(self.fFocusS_lambda1( g0g_ext, psd_freq_ext, psd_focus_turb_ext).get())[x,:])
+            ax2.set_xscale('log')
+            ax2.set_yscale('log')
+            ax2.set_title('residual PSD', color='black')
+            ax2.set_xlabel('frequency [Hz]')
+            ax2.set_ylabel('Power')
+
+        resultFocus = xp.absolute((xp.sum(self.fFocusS_lambda1( g0g_ext, psd_freq_ext, psd_focus_turb_ext), axis=(1)) ) )
+
+        minFocusIdx = xp.where(resultFocus == xp.nanmin(resultFocus))
+        if self.verbose:
+            print('         best focus gain (noise):',g0g[minFocusIdx[0][0]])
+        if alib==gpulib and gpuEnabled:
+            return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
+        else:
+            return (resultFocus[minFocusIdx[0][0]])
         
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
         npoints = 99
@@ -934,7 +1006,10 @@ class MavisLO(object):
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     def computeFocusCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
-        points = aCartPointingCoords.shape[0]
+        if len(aCartPointingCoords.shape) > 1:
+            points = aCartPointingCoords.shape[0]
+        else:
+            points = 1
         nstars = aCartNGSCoords.shape[0]        
         scaleF = (500.0/(2*np.pi))**2
         matCasValue = xp.zeros((points,nstars), dtype=xp.float32)
@@ -1023,20 +1098,14 @@ class MavisLO(object):
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
             print('         aNGS_flux',aNGS_flux)
-            print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
-            if self.verbose:
-                print('         bias',bias)
-                print('         amu', amu)
-                print('         avar', avar)
-                print('         ratio', cpuArray(cp.asarray(avar))/bias**2)
             nr = self.nr[indices[starIndex]] 
             # TODO: this second computation must be embedded in the previous one.
             wr = self.wr[indices[starIndex]] 
             if self.verbose:
-                print('         noise residual:     ',nr)
-                print('         wind-shake residual:',wr)
+                print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
+                print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
@@ -1046,8 +1115,7 @@ class MavisLO(object):
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
         if self.verbose:
-            print('         Ctot:')
-            print(Ctot)
+            print('         Ctot [nm\u00b2]:',Ctot)
         return Ctot.reshape((nPointings,2,2))
 
 
@@ -1065,8 +1133,7 @@ class MavisLO(object):
 
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
-            print('         aNGS_flux',aNGS_flux)
-            print('         self.N_sa_tot_LO',self.N_sa_tot_LO)
+            print('         aNGS_flux:',aNGS_flux)
             
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
@@ -1074,11 +1141,6 @@ class MavisLO(object):
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
-            if self.verbose:
-                print('         bias',bias)
-                print('         amu',amu)
-                print('         avar',avar)
-                print('         ratio',cpuArray(cp.asarray(avar))/bias**2)
             
             # normalized by the number of subapertures
             avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar)
@@ -1099,8 +1161,8 @@ class MavisLO(object):
             self.wr.append(wr)
 
             if self.verbose:
-                print('         noise residual:     ',nr)
-                print('         wind-shake residual:',wr)
+                print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
+                print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
@@ -1111,12 +1173,57 @@ class MavisLO(object):
             # C1 and Cnn do not depend on aCartPointingCoords[i]
             Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
             if self.verbose:
-                print('         Ctot:')
-                print(Ctot)
+                print('         Ctot [nm\u00b2]:',Ctot)
             return Ctot.reshape((nPointings,2,2))
         else:
             return None
 
+    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas):
+        maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
+        nNaturalGS = aCartNGSCoords.shape[0]
+        Cnn = np.zeros((nNaturalGS,nNaturalGS))
+        
+        if self.verbose:
+            print('mavisLO.computeFocusTotalResidualMatrix')
+            
+        for starIndex in range(nNaturalGS):
+            self.configLOFreq( aNGS_freq[starIndex] )
+            if self.simpleVarianceComputation:
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+            else:
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
+            
+            # normalized by the number of subapertures
+            avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar) # TODO update with noise propagation for focus
+            var1x = avar[0] * self.PixelScale_LO**2
+            Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            
+        # NGS Rec. Mat.
+        R = np.array(np.repeat(1, aCartNGSCoords.shape[0]))*1/np.float32(aCartNGSCoords.shape[0])
+        RT = R.transpose()
+        Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
+        # sum tomography and noise (Css) errors for a on-axis star
+        Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT))
+        
+        # reference error for LGS case
+        HO_zen_field    = self.get_config_value('sources_HO','Zenith')
+        HO_az_field     = self.get_config_value('sources_HO','Azimuth')
+        HO_pointings = polarToCartesian(np.array( [HO_zen_field, HO_az_field]))
+        aCartLGSCoords = np.dstack( (HO_pointings[0,:], HO_pointings[1,:]) ).reshape(-1, 2)
+        # LGS Rec. Mat.
+        RL = np.array(np.repeat(1, aCartLGSCoords.shape[0]))*1/np.float32(aCartLGSCoords.shape[0])
+        RLT = RL.transpose()
+        CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
+        # tomography error for a on-axis star for LGS WFSs
+        CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
+        # difference
+        CtotDiff = Ctot - CtotL
+        
+        if self.verbose:
+            print('         focus residual [nm]:',np.sqrt(CtotDiff))
+        
+        return CtotDiff    
+        
     def ellipsesFromCovMats(self, Ctot):
         theta = sp.symbols('theta')
         sigma_1 = sp.symbols('sigma^2_1')
