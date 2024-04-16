@@ -929,11 +929,10 @@ class MavisLO(object):
         
         if self.verbose:
             if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-                print('         best tip gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]],g1g[minTipIdx[0][0],minTipIdx[1][0]])
-                print('         best tilt gain (wind)',g0g[minTiltIdx[0][0],minTiltIdx[1][0]],g1g[minTipIdx[0][0],minTipIdx[1][0]])
+                print('         best tip & tilt gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]],\
+                                                             g0g[minTiltIdx[0][0],minTiltIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]])
             else:
-                print('         best tip gain (wind)',g0g[minTipIdx[0][0]])
-                print('         best tilt gain (wind)',g0g[minTiltIdx[0][0]])
+                print('         best tip & tilt gain (wind)',g0g[minTipIdx[0][0]],g0g[minTiltIdx[0][0]])
                     
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
             if alib==gpulib and gpuEnabled:
@@ -1101,16 +1100,16 @@ class MavisLO(object):
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
             nr = self.nr[indices[starIndex]] 
-            # TODO: this second computation must be embedded in the previous one.
             wr = self.wr[indices[starIndex]] 
             if self.verbose:
                 print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
-                print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
                 C1[0,0] = wr[0]
                 C1[1,1] = wr[1]
+                if self.verbose:
+                    print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
 
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
