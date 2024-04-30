@@ -812,7 +812,7 @@ class MavisLO(object):
 
         minFocusIdx = xp.where(resultFocus == xp.nanmin(resultFocus))
         if self.verbose:
-            print('    best focus gain (noise):',"%.3f" % g0g[minFocusIdx[0][0]])
+            print('    best focus gain (noise):',"%.3f" % cpuArray(g0g[minFocusIdx[0][0]]))
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
         else:
@@ -929,10 +929,10 @@ class MavisLO(object):
         
         if self.verbose:
             if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-                print('    best tip & tilt gain (wind)',"%.3f" % g0g[minTipIdx[0][0],minTipIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]],\
-                                                        "%.3f" % g0g[minTiltIdx[0][0],minTiltIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]])
+                print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g[minTipIdx[0][0],minTipIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]]),\
+                                                        "%.3f" % cpuArray(g0g[minTiltIdx[0][0],minTiltIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]]))
             else:
-                print('    best tip & tilt gain (wind)',"%.3f" % g0g[minTipIdx[0][0]], "%.3f" % g0g[minTiltIdx[0][0]])
+                print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g[minTipIdx[0][0]]), "%.3f" % cpuArray(g0g[minTiltIdx[0][0]]))
                     
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
             if alib==gpulib and gpuEnabled:
