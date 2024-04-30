@@ -243,7 +243,7 @@ class MavisLO(object):
             self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
         else:
             if self.verbose:
-                print('No windPsdFile file is set.')
+                print('    WARNING: no windPsdFile file is set.')
             self.psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
             self.psd_tip_wind = np.zeros((int(2*self.maxLOtFreq)))
             self.psd_tilt_wind = np.zeros((int(2*self.maxLOtFreq)))
@@ -740,7 +740,7 @@ class MavisLO(object):
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
-            print('         best tip & tilt gain (noise):',g0g[minTipIdx[0][0]],g0g[minTiltIdx[0][0]])
+            print('    best tip & tilt gain (noise):', "%.3f" % g0g[minTipIdx[0][0]], "%.3f" % g0g[minTiltIdx[0][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
@@ -790,7 +790,7 @@ class MavisLO(object):
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
             # if gain is set no optimization is done and bias is not compensated
-            g0 = (bias*self.LoopGain_LO)
+            g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
             g0g = xp.asarray(g0)
 
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
@@ -812,7 +812,7 @@ class MavisLO(object):
 
         minFocusIdx = xp.where(resultFocus == xp.nanmin(resultFocus))
         if self.verbose:
-            print('         best focus gain (noise):',g0g[minFocusIdx[0][0]])
+            print('    best focus gain (noise):',"%.3f" % g0g[minFocusIdx[0][0]])
         if alib==gpulib and gpuEnabled:
             return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
         else:
@@ -929,10 +929,10 @@ class MavisLO(object):
         
         if self.verbose:
             if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-                print('         best tip & tilt gain (wind)',g0g[minTipIdx[0][0],minTipIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]],\
-                                                             g0g[minTiltIdx[0][0],minTiltIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]])
+                print('    best tip & tilt gain (wind)',"%.3f" % g0g[minTipIdx[0][0],minTipIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]],\
+                                                        "%.3f" % g0g[minTiltIdx[0][0],minTiltIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]])
             else:
-                print('         best tip & tilt gain (wind)',g0g[minTipIdx[0][0]],g0g[minTiltIdx[0][0]])
+                print('    best tip & tilt gain (wind)',"%.3f" % g0g[minTipIdx[0][0]], "%.3f" % g0g[minTiltIdx[0][0]])
                     
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
             if alib==gpulib and gpuEnabled:
@@ -1064,13 +1064,17 @@ class MavisLO(object):
             Casi = Cas[2*i:2*(i+1),:]
             C2b = xp.dot(Ri, xp.dot(Css, RTi)) - xp.dot(Casi, RTi) - xp.dot(Ri, Casi.transpose())
             C3 = xp.dot(Ri, xp.dot(xp.asarray(aCnn), RTi))
-            # sum tomography (Caa + C2b), noise (C3), wind (aC1) errors
+            # tomography (C2), noise (C3), wind (aC1) errors
             if self.noNoise:
                 ss = xp.asarray(aC1) + Caa + C2b 
-                print('WARNING: LO noise is not active!')
+                print('    WARNING: LO noise is not active!')
             else:
                 ss = xp.asarray(aC1) + Caa + C2b + C3
             Ctot[2*i:2*(i+1),:] = ss
+            if self.verbose:
+                print('    Star coordinates [arcsec]: ', ("{:.1f}, "*len(aCartPointingCoordsV[i])).format(*aCartPointingCoordsV[i]))
+                print('    Total Cov. (tomo., tur.+noi., wind) [nm]:',"%.2f" % np.sqrt(np.trace(ss)),
+                      '(', "%.2f" % np.sqrt(np.trace(Caa + C2b)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
         
@@ -1082,9 +1086,13 @@ class MavisLO(object):
         # sum tomography (C2), noise (C3), wind (aC1) errors
         if self.noNoise:
             ss = aC1 + C2
-            print('WARNING: LO noise is not active!')
+            print('    WARNING: LO noise is not active!')
         else:
             Ctot = aC1 + C2 + C3
+        if self.verbose:
+            print('    Star coordinates [arcsec]: ', ("{:.1f}, "*len(aCartPointingCoordsV)).format(*aCartPointingCoordsV))
+            print('    Total Cov. (tomo., tur.+noi., wind) [nm]:', "%.2f" % np.sqrt(np.trace(Ctot)),
+                  '(', "%.2f" % np.sqrt(np.trace(C2)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
     
@@ -1096,25 +1104,24 @@ class MavisLO(object):
         Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
-            print('         aNGS_flux',aNGS_flux)
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
             nr = self.nr[indices[starIndex]] 
             wr = self.wr[indices[starIndex]] 
             if self.verbose:
-                print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
+                print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
+                print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
                 C1[0,0] = wr[0]
                 C1[1,1] = wr[1]
                 if self.verbose:
-                    print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
+                    print('    wind-shake residual (brightest NGS)    [nm\u00b2]:',np.array(wr))
 
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
-        if self.verbose:
-            print('         Ctot [nm\u00b2]:',Ctot)
         return Ctot.reshape((nPointings,2,2))
 
 
@@ -1132,7 +1139,6 @@ class MavisLO(object):
 
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
-            print('         aNGS_flux:',aNGS_flux)
             
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
@@ -1160,8 +1166,10 @@ class MavisLO(object):
             self.wr.append(wr)
 
             if self.verbose:
-                print('         turb. + noise residual [nm\u00b2]:',np.array(nr))
-                print('         wind-shake residual    [nm\u00b2]:',np.array(wr))
+                print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
+                print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
+                print('    wind-shake residual (per NGS)    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
             if starIndex == maxFluxIndex[0][0]:
@@ -1171,8 +1179,6 @@ class MavisLO(object):
         if doAll:
             # C1 and Cnn do not depend on aCartPointingCoords[i]
             Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
-            if self.verbose:
-                print('         Ctot [nm\u00b2]:',Ctot)
             return Ctot.reshape((nPointings,2,2))
         else:
             return None
@@ -1219,7 +1225,7 @@ class MavisLO(object):
         CtotDiff = Ctot - CtotL
         
         if self.verbose:
-            print('         focus residual [nm]:',np.sqrt(CtotDiff))
+            print('    focus residual [nm]:',np.sqrt(CtotDiff))
         
         return CtotDiff    
         
