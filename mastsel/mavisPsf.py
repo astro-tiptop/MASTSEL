@@ -363,7 +363,7 @@ def shortExposurePsf(mask, phaseScreen):
     return result
 
 
-def longExposurePsf(mask, psd):
+def longExposurePsf(mask, psd, otf_tel = None):
     xp = mask.xp
     if (mask.N != psd.N):
         print('Mask and PSD sampling not compatible (grids sizes in pixels are different!)')
@@ -382,10 +382,11 @@ def longExposurePsf(mask, psd):
     ################################################
     
     # step 0 : compute telescope otf
-    maskC = Field(mask.wvl, mask.N, pitch*mask.N)
-    maskC.sampling = xp.copy(mask.sampling)    
-    maskC.pupilToOtf()
-    otf_tel = maskC.sampling
+    if otf_tel is None:
+        maskC = Field(mask.wvl, mask.N, pitch*mask.N)
+        maskC.sampling = xp.copy(mask.sampling)
+        maskC.pupilToOtf()
+        otf_tel = maskC.sampling
     
     psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2)
     
