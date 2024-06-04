@@ -485,7 +485,7 @@ class MavisLO(object):
                 p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
             P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
             
-            rec_tomo = scipy.linalg.pinv(P_mat,rcond=0.05) # aka W, 5x(2*nstars)    
+            rec_tomo = np.linalg.pinv(P_mat,rcond=0.05) # aka W, 5x(2*nstars)    
 
             vx = np.asarray(aCartPointingCoordsV[:,0])
             vy = np.asarray(aCartPointingCoordsV[:,1])
