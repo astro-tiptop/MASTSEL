@@ -1084,7 +1084,7 @@ class MavisLO(object):
         # -----------------------------
         # correction efficiency
         # this factor is added to consider that the correction provided by the HO is not perfect
-        k_efficiency = 0.9
+        k_efficiency = np.array([0.8,0.9])
 
         # -----------------------------
         # footprint reduction
@@ -1103,7 +1103,8 @@ class MavisLO(object):
         alpha_max = self.TelescopeDiameter/h0*206264.8 + alpha_min
         x = np.arange(np.round(alpha_max))
         y = (-1/(alpha_max-alpha_min)*x + alpha_max/(alpha_max-alpha_min))**2.
-        k_off = y[(np.abs(x - np.mean(NGSr))).argmin()]
+        # k_off = y[(np.abs(x - np.mean(NGSr))).argmin()]
+        k_off = y[(np.abs(x - np.mean(0.5*self.TechnicalFoV))).argmin()]
         if k_off > 1:
             k_off = 1
 
@@ -1292,8 +1293,10 @@ class MavisLO(object):
             C2 *= kTomo[1]**2
             if self.verbose:
                 print('    tomo error scaling factor',kTomo[1])
+        # noise error
+        Css = np.dot(R, np.dot(Cnn, RT))
         # sum tomography (C2) and noise (Css) errors for a on-axis star
-        Ctot = C2 + np.dot(R, np.dot(Cnn, RT))
+        Ctot = C2 + Css
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
         HO_az_field     = self.get_config_value('sources_HO','Azimuth')
@@ -1307,12 +1310,14 @@ class MavisLO(object):
         CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
         if self.addTomoScaling:
             # scale tomo error
-            CtotL *= k[1]**2
+            CtotL *= kTomo[1]**2
         # difference
         CtotDiff = Ctot - CtotL
         
         if self.verbose:
             print('    focus residual [nm]:',np.sqrt(CtotDiff))
+            print('    focus residual from NGS (tomo., tur.+noi.) [nm]:',np.sqrt(Ctot),'(',np.sqrt(C2),',',np.sqrt(Css),')')
+            print('    focus residual from LGS [nm]:',np.sqrt(CtotL))
         
         return CtotDiff    
         
