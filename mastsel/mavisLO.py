@@ -120,6 +120,8 @@ class MavisLO(object):
         else:
             self.noNoise = False
 
+        self.addTomoScaling         = self.get_config_value('sensor_LO','addTomoScaling')
+
         self.DmHeights              = self.get_config_value('DM','DmHeights')
 
         self.loopDelaySteps_LO      = self.get_config_value('RTC','LoopDelaySteps_LO')
@@ -1051,6 +1053,68 @@ class MavisLO(object):
                             matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
+    def scaleTomoError(self):
+
+        # This function computes two scale factors, one for tip/tilt and one for focus,
+        # that accounts for the tomographic error reduction given by the HO correction:
+        # HO correction is effective starting from the third radial order of out of the
+        # pupil aberrations and this corresponds to a part of the field dependent tip/tilt
+        # errors that LO must no more correct.
+
+        hStar = self.get_config_value('sources_HO','Height') * 1/np.cos(self.ZenithAngle/180*np.pi)
+        nSA = self.get_config_value('sensor_HO','NumberLenslets')[0]
+        rLGS = self.get_config_value('sources_HO','Zenith')[0]
+        NGSr = self.get_config_value('sources_LO','Zenith')
+        SA_size = self.TelescopeDiameter/nSA
+
+        # ground layer altitude
+        hmin = SA_size / (self.TechnicalFoV / 206264.8)
+        idx = np.where(np.array(self.Cn2Heights) >= hmin)
+        # average altitude of the atmosperic profile excluding the ground layer (h<=hmin)
+        h0 = np.sum(np.array(self.Cn2Weights)[idx]/np.sum(np.array(self.Cn2Weights)[idx]) \
+                  * np.array(self.Cn2Heights)[idx]**(5/3))**(3/5)
+
+        # -----------------------------
+        # spatial filter
+        # these factors consider that the HO correction is equivalent to a spatial filter
+        # with a cut-off frequency (2nd order high-pass) the is the double of the LO one
+        # for tip-tilt and 3/2 for the focus.
+        k_hpsf = np.array([0.500,0.667])
+
+        # -----------------------------
+        # correction efficiency
+        # this factor is added to consider that the correction provided by the HO is not perfect
+        k_efficiency = 0.9
+
+        # -----------------------------
+        # footprint reduction
+        if hStar > 0:
+            k_foot = (hStar-h0)/hStar
+        else:
+            k_foot = 1
+
+        # -----------------------------
+        # off-axis reduction
+        if hStar > 0:
+            mDiam = self.TelescopeDiameter*(hStar-h0)/hStar+2*rLGS*h0/206264.8
+            alpha_min = 0.5*(mDiam-self.TelescopeDiameter)/h0*206264.8
+        else:
+            alpha_min = rLGS
+        alpha_max = self.TelescopeDiameter/h0*206264.8 + alpha_min
+        x = np.arange(np.round(alpha_max))
+        y = (-1/(alpha_max-alpha_min)*x + alpha_max/(alpha_max-alpha_min))**2.
+        k_off = y[(np.abs(x - np.mean(NGSr))).argmin()]
+        if k_off > 1:
+            k_off = 1
+
+        # this effect is present only when more that 1 DM is condidered and
+        # when the second DM altitude is greater than the ground layer
+        if max(self.DmHeights) > hmin and len(self.DmHeights) > 1:
+            k_tot = 1 - k_hpsf*k_foot*k_off*k_efficiency
+        else:
+            k_tot = np.array([1,1])
+
+        return k_tot
 
     def multiCMatAssemble(self, aCartPointingCoordsV, aaCartNGSCoords, aCnn, aC1):
         xp = np
@@ -1064,17 +1128,24 @@ class MavisLO(object):
             Casi = Cas[2*i:2*(i+1),:]
             C2b = xp.dot(Ri, xp.dot(Css, RTi)) - xp.dot(Casi, RTi) - xp.dot(Ri, Casi.transpose())
             C3 = xp.dot(Ri, xp.dot(xp.asarray(aCnn), RTi))
+            C2 = Caa + C2b
+            if self.addTomoScaling:
+                # scale tomo error
+                kTomo = self.scaleTomoError()
+                C2 *= kTomo[0]**2
+                if self.verbose:
+                    print('    tomo error scaling factor',kTomo[0])
             # tomography (C2), noise (C3), wind (aC1) errors
             if self.noNoise:
-                ss = xp.asarray(aC1) + Caa + C2b 
+                ss = xp.asarray(aC1) + C2
                 print('    WARNING: LO noise is not active!')
             else:
-                ss = xp.asarray(aC1) + Caa + C2b + C3
+                ss = xp.asarray(aC1) + C2 + C3
             Ctot[2*i:2*(i+1),:] = ss
             if self.verbose:
                 print('    Star coordinates [arcsec]: ', ("{:.1f}, "*len(aCartPointingCoordsV[i])).format(*aCartPointingCoordsV[i]))
                 print('    Total Cov. (tomo., tur.+noi., wind) [nm]:',"%.2f" % np.sqrt(np.trace(ss)),
-                      '(', "%.2f" % np.sqrt(np.trace(Caa + C2b)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
+                      '(', "%.2f" % np.sqrt(np.trace(C2)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
         
@@ -1082,6 +1153,12 @@ class MavisLO(object):
         R, RT = self.buildReconstuctor2(np.asarray(aCartPointingCoordsV), aaCartNGSCoords)
         Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aaCartNGSCoords)        
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
+        if self.addTomoScaling:
+            # scale tomo error
+            kTomo = self.scaleTomoError()
+            C2 *= kTomo[0]**2
+            if self.verbose:
+                print('    tomo error scaling factor',kTomo[0])
         C3 = np.dot(R, np.dot(aCnn, RT))
         # sum tomography (C2), noise (C3), wind (aC1) errors
         if self.noNoise:
@@ -1207,9 +1284,16 @@ class MavisLO(object):
         R = np.array(np.repeat(1, aCartNGSCoords.shape[0]))*1/np.float32(aCartNGSCoords.shape[0])
         RT = R.transpose()
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
-        # sum tomography and noise (Css) errors for a on-axis star
-        Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT))
-        
+        # tomography errors for a on-axis star
+        C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
+        if self.addTomoScaling:
+            # scale tomo error
+            kTomo = self.scaleTomoError()
+            C2 *= kTomo[1]**2
+            if self.verbose:
+                print('    tomo error scaling factor',kTomo[1])
+        # sum tomography (C2) and noise (Css) errors for a on-axis star
+        Ctot = C2 + np.dot(R, np.dot(Cnn, RT))
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
         HO_az_field     = self.get_config_value('sources_HO','Azimuth')
@@ -1221,6 +1305,9 @@ class MavisLO(object):
         CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
         # tomography error for a on-axis star for LGS WFSs
         CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
+        if self.addTomoScaling:
+            # scale tomo error
+            CtotL *= k[1]**2
         # difference
         CtotDiff = Ctot - CtotL
         
