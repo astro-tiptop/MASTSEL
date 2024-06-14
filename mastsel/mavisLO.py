@@ -120,7 +120,10 @@ class MavisLO(object):
         else:
             self.noNoise = False
 
-        self.addTomoScaling         = self.get_config_value('sensor_LO','addTomoScaling')
+        if self.check_config_key('sensor_LO','addTomoScaling'):
+            self.addTomoScaling = self.get_config_value('sensor_LO','addTomoScaling')
+        else:
+            self.addTomoScaling = False
 
         self.DmHeights              = self.get_config_value('DM','DmHeights')
 
