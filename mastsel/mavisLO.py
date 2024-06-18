@@ -1141,20 +1141,22 @@ class MavisLO(object):
             print('mavisLO.computeTotalResidualMatrix')
             
         for starIndex in range(nNaturalGS):
-            self.configLOFreq( aNGS_freq[starIndex] )
+            # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                # conversion from rad2 to mas2
+                rad2mas = (self.SensingWavelength_LO*1e9/(2*np.pi)) * (1000*4e-9/(self.TelescopeDiameter/self.NumberLenslets[0])*206264.8)
+                var1x = avar[0] * rad2mas**2
             else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
-            
-            # normalized by the number of subapertures
-            avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar)
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                # conversion from pixel2 to mas2
+                var1x = avar[0] * self.PixelScale_LO**2
 
             self.bias.append(bias)
             self.amu.append(amu)
             self.avar.append(avar)
 
-            var1x = avar[0] * self.PixelScale_LO**2
+            # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
             nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
             # This computation is skipped if no wind shake PSD is present.
             if np.sum(self.psd_tip_wind) > 0 or np.sum(self.psd_tilt_wind) > 0:
@@ -1193,14 +1195,21 @@ class MavisLO(object):
             
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
+            # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                # conversion from rad2 to mas2
+                rad2mas = (self.SensingWavelength_LO*1e9/(2*np.pi)) * (1000*4e-9/(self.TelescopeDiameter/self.NumberLenslets[0])*206264.8)
+                var1x = avar[0] * rad2mas**2
             else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex]) # one scalar, two tuples of 2
-            
-            # normalized by the number of subapertures
-            avar = tuple((1.0/self.N_sa_tot_LO) * elem for elem in avar) # TODO update with noise propagation for focus
-            var1x = avar[0] * self.PixelScale_LO**2
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                # conversion from pixel2 to mas2
+                var1x = avar[0] * self.PixelScale_LO**2
+
+            # noise propagation for focus is 0.4 time the tilt one (linear)
+            var1x *= 0.16
+            # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
+            # except for the 0.16 factor that is applied above
             Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
             
         # NGS Rec. Mat.
