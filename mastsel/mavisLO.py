@@ -1141,6 +1141,7 @@ class MavisLO(object):
             print('mavisLO.computeTotalResidualMatrix')
             
         for starIndex in range(nNaturalGS):
+            self.configLOFreq( aNGS_freq[starIndex] )
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
