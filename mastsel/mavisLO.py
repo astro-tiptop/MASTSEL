@@ -574,7 +574,7 @@ class MavisLO(object):
         (fx, fy) = np.meshgrid(ffx, ffx)
         # binary mask
         W_Mask = np.where( np.logical_or(fx**2 +fy**2 > self.WindowRadiusWCoG_LO**2, fx**2 + fy**2 < 0**2), 0.0, 1.0)
-        ii1, ii2 = int(self.mediumGridSize/2-self.smallGridSize/2), int(self.mediumGridSize/2+self.smallGridSize/2)
+        ii1, ii2 = int(self.mediumGridSize/2-self.smallGridSize), int(self.mediumGridSize/2+self.smallGridSize)
         I_k_data = I_k_data[ii1:ii2,ii1:ii2]
         I_k_prime_data = I_k_prime_data[ii1:ii2,ii1:ii2]
         W_Mask = W_Mask[ii1:ii2,ii1:ii2]
