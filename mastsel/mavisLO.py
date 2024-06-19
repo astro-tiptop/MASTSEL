@@ -290,7 +290,7 @@ class MavisLO(object):
     
     def specializedMeanVarFormulas(self, kind):
         dd0 = {'t':self.ThresholdWCoG_LO, 'nu':self.NewValueThrPix_LO, 'sigma_RON':self.sigmaRON_LO}
-        dd1 = {'b':self.Dark_LO/self.SensorFrameRate_LO}
+        dd1 = {'b':(self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO}
         dd2 = {'F':self.ExcessNoiseFactor_LO}
         expr0, exprK, integral = self.MavisFormulas[kind+"0"], self.MavisFormulas[kind+"1"], self.MavisFormulas[kind+"2"]
         expr0 = subsParamsByName( expr0, {**dd0, **dd1} )
@@ -318,7 +318,7 @@ class MavisLO(object):
 
     def specializedGMeanVarFormulas(self, kind):
         dd0 = {'t':self.ThresholdWCoG_LO, 'nu':self.NewValueThrPix_LO, 'sigma_RON':self.sigmaRON_LO}
-        dd1 = {'b':self.Dark_LO/self.SensorFrameRate_LO}
+        dd1 = {'b':(self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO}
         dd2 = {'F':self.ExcessNoiseFactor_LO}
         expr0 = self.MavisFormulas[kind]
         expr0 = subsParamsByName( expr0, {**dd0, **dd1, **dd2} )
@@ -497,7 +497,7 @@ class MavisLO(object):
             return R_1, R_1.transpose()
     
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, expr1):
-        gaussianPoints = gaussianPointsM.reshape(self.smallGridSize*self.smallGridSize)
+        gaussianPoints = gaussianPointsM.flatten()
         aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
         lh = sp.Function('B')(getSymbolByName(aFunction, 'f_k'))
@@ -507,8 +507,8 @@ class MavisLO(object):
         lh = sp.Function('B')(getSymbolByName(expr1, 'f_k'))
         ssx, zplot2 = self.mIt.functionEval(expr1, paramsAndRanges )
         # magic number 10 here is due to the fact that more than 10 photons flux can be approximated witha gaussian distribution
-        rr = np.where(gaussianPoints + self.Dark_LO/self.SensorFrameRate_LO < 10.0, zplot1, zplot2)
-        rr = rr.reshape((self.smallGridSize,self.smallGridSize))
+        rr = np.where(gaussianPoints + (self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO < 10.0, zplot1, zplot2)
+        rr = rr.reshape(gaussianPointsM.shape)
         return ssx, rr
 
     
@@ -526,11 +526,11 @@ class MavisLO(object):
             self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
-        back = self.skyBackground_LO/aNGS_freq
+        sky_and_back = (self.skyBackground_LO + self.Dark_LO)/aNGS_freq
         N_T = aNGS_FWHM_mas/self.PixelScale_LO
         N_W = self.smallGridSize
         N_D = self.subapNGS_FWHM_mas/self.PixelScale_LO
-        sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * (self.Dark_LO / aNGS_freq + back) + self.sigmaRON_LO**2 )
+        sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * sky_and_back + self.sigmaRON_LO**2 )
         sigma_ph_fwhm = 0.25*self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
         sigma_ron_fwhm = 0.25*(np.pi/(32.0*(np.log(2.0)**2))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
         # in the next lines we approximate that the encircled energy present in 2 times the FWHM
@@ -565,33 +565,31 @@ class MavisLO(object):
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)       
         I_k_prime_data = g2d_prime * aNGS_EE_LO # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_prime_data = I_k_prime_data * aNGS_flux/self.SensorFrameRate_LO
-            
-        back = self.skyBackground_LO/self.SensorFrameRate_LO
         
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
         I_k_prime_data = intRebin(I_k_prime_data,self.mediumShape) * self.downsample_factor**2
-        f_k_data = I_k_data + back
-        f_k_prime_data = I_k_prime_data + back
         W_Mask = np.zeros(self.mediumShape)
+        # this is the array with the CoG weights, they are not normalized and so the variance is in pixel2
         ffx = np.arange(-self.mediumGridSize/2, self.mediumGridSize/2, 1.0) + 0.5
         (fx, fy) = np.meshgrid(ffx, ffx)
+        # binary mask
         W_Mask = np.where( np.logical_or(fx**2 +fy**2 > self.WindowRadiusWCoG_LO**2, fx**2 + fy**2 < 0**2), 0.0, 1.0)
         ii1, ii2 = int(self.mediumGridSize/2-self.smallGridSize/2), int(self.mediumGridSize/2+self.smallGridSize/2)
-        f_k_data = f_k_data[ii1:ii2,ii1:ii2]
-        f_k_prime_data = f_k_prime_data[ii1:ii2,ii1:ii2]
+        I_k_data = I_k_data[ii1:ii2,ii1:ii2]
+        I_k_prime_data = I_k_prime_data[ii1:ii2,ii1:ii2]
         W_Mask = W_Mask[ii1:ii2,ii1:ii2]
         fx = fx[ii1:ii2,ii1:ii2]
         fy = fy[ii1:ii2,ii1:ii2]
-        mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(f_k_data)
-        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(f_k_prime_data)
-        masked_mu0 = W_Mask*mu_ktr_array
-        masked_mu = W_Mask*mu_ktr_prime_array
-        masked_sigma = W_Mask*W_Mask*var_ktr_array
+        mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(I_k_data)
+        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(I_k_prime_data)
+        masked_mu0 = W_Mask * mu_ktr_array
+        masked_mu = W_Mask * mu_ktr_prime_array
+        masked_sigma = W_Mask**2 * var_ktr_array
         # TODO is the normalization correct?
         mux = np.sum(masked_mu*fx)/np.sum(masked_mu)
         muy = np.sum(masked_mu*fy)/np.sum(masked_mu)
-        varx = np.sum(masked_sigma*fx*fx)/(np.sum(masked_mu0)**2)
-        vary = np.sum(masked_sigma*fy*fy)/(np.sum(masked_mu0)**2)
+        varx = np.sum(masked_sigma*fx**2)/(np.sum(masked_mu0)**2)
+        vary = np.sum(masked_sigma*fy**2)/(np.sum(masked_mu0)**2)
         
         bias = mux/(self.p_offset/self.downsample_factor)
 
