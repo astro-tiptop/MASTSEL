@@ -1210,12 +1210,17 @@ class MavisLO(object):
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
             # except for the 0.16 factor that is applied above
             Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
-            
-        # NGS Rec. Mat.
-        R = np.array(np.repeat(1, aCartNGSCoords.shape[0]))*1/np.float32(aCartNGSCoords.shape[0])
-        RT = R.transpose()
+
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
-        # sum tomography and noise (Css) errors for a on-axis star
+        # NGS Rec. Mat. - MMSE estimator
+        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
+        cov_turb_inv = np.array(1e-3) # the minimum ratio between turb. and noise cov. is 1e3 (this guarantees that the sum of the elements of R is 1).
+        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Css)*1e-3,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
+        cov_noise_inv = np.linalg.pinv(cov_noise)
+        H = np.matmul(np.matmul(IMt,cov_noise_inv),np.transpose(IMt))
+        R = np.matmul(1/H*IMt,cov_noise_inv)
+        RT = R.transpose()
+        # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT))
         
         # reference error for LGS case
