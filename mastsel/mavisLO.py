@@ -133,7 +133,6 @@ class MavisLO(object):
         defaultIntegralDiscretization1 = 1000
         defaultIntegralDiscretization2 = 4000
         defaultSimpleVarianceComputation = True
-        print('defaultSimpleVarianceComputation',defaultSimpleVarianceComputation)
         self.computationPlatform =defaultCompute
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
@@ -149,6 +148,8 @@ class MavisLO(object):
             if self.check_config_key('COMPUTATION','simpleVarianceComputation'):
                 self.simpleVarianceComputation = self.get_config_value('COMPUTATION','simpleVarianceComputation')
 
+        print('defaultSimpleVarianceComputation',self.simpleVarianceComputation)
+        
         if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
             print('%%%%%%%% ATTENTION %%%%%%%%')
             print('You must provide r0_Value or Seeing value, not both, ')
@@ -1215,7 +1216,7 @@ class MavisLO(object):
         # NGS Rec. Mat. - MMSE estimator
         IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
         cov_turb_inv = np.array(1e-3) # the minimum ratio between turb. and noise cov. is 1e3 (this guarantees that the sum of the elements of R is 1).
-        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Css)*1e-3,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
+        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Css)*1e-2,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
         cov_noise_inv = np.linalg.pinv(cov_noise)
         H = np.matmul(np.matmul(IMt,cov_noise_inv),np.transpose(IMt))
         R = np.matmul(1/H*IMt,cov_noise_inv)
