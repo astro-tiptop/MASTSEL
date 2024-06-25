@@ -523,8 +523,8 @@ class MavisLO(object):
 
     def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
         if self.WindowRadiusWCoG_LO == 0:
-            self.WindowRadiusWCoG_LO = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
-            self.smallGridSize = 2*self.WindowRadiusWCoG_LO
+            WindowRadiusWCoG_LO = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
+            self.smallGridSize = 2*WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         sky_and_back = (self.skyBackground_LO + self.Dark_LO)/aNGS_freq
@@ -547,8 +547,10 @@ class MavisLO(object):
 
     def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
         if self.WindowRadiusWCoG_LO == 0:
-            self.WindowRadiusWCoG_LO = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
-            self.smallGridSize = 2*self.WindowRadiusWCoG_LO
+            WindowRadiusWCoG_LO = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
+            self.smallGridSize = 2*WindowRadiusWCoG_LO
+        else:
+            WindowRadiusWCoG_LO = self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
@@ -574,7 +576,7 @@ class MavisLO(object):
         ffx = np.arange(-self.mediumGridSize/2, self.mediumGridSize/2, 1.0) + 0.5
         (fx, fy) = np.meshgrid(ffx, ffx)
         # binary mask
-        W_Mask = np.where( np.logical_or(fx**2 +fy**2 > self.WindowRadiusWCoG_LO**2, fx**2 + fy**2 < 0**2), 0.0, 1.0)
+        W_Mask = np.where( np.logical_or(fx**2 +fy**2 > WindowRadiusWCoG_LO**2, fx**2 + fy**2 < 0**2), 0.0, 1.0)
         ii1, ii2 = int(self.mediumGridSize/2-self.smallGridSize), int(self.mediumGridSize/2+self.smallGridSize)
         I_k_data = I_k_data[ii1:ii2,ii1:ii2]
         I_k_prime_data = I_k_prime_data[ii1:ii2,ii1:ii2]
@@ -1144,8 +1146,9 @@ class MavisLO(object):
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
-                # conversion from rad2 to mas2
-                rad2mas = (self.SensingWavelength_LO*1e9/(2*np.pi)) * (1000*4e-9/(self.TelescopeDiameter/self.NumberLenslets[0])*206264.8)
+                # conversion from rad2 (peak-to-valley) to mas2
+                # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
+                rad2mas = self.SensingWavelength_LO*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets[starIndex])
                 var1x = avar[0] * rad2mas**2
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
@@ -1198,8 +1201,9 @@ class MavisLO(object):
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
-                # conversion from rad2 to mas2
-                rad2mas = (self.SensingWavelength_LO*1e9/(2*np.pi)) * (1000*4e-9/(self.TelescopeDiameter/self.NumberLenslets[0])*206264.8)
+                # conversion from rad2 (peak-to-valley) to mas2
+                # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
+                rad2mas = self.SensingWavelength_LO*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets[starIndex])
                 var1x = avar[0] * rad2mas**2
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
