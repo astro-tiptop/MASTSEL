@@ -532,8 +532,8 @@ class MavisLO(object):
         N_W = self.smallGridSize
         N_D = self.subapNGS_FWHM_mas/self.PixelScale_LO
         sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * sky_and_back + self.sigmaRON_LO**2 )
-        sigma_ph_fwhm = 0.25*self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
-        sigma_ron_fwhm = 0.25*(np.pi/(32.0*np.log(2.0))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
+        sigma_ph_fwhm = self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
+        sigma_ron_fwhm = (np.pi/(32.0*np.log(2.0))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
         # in the next lines we approximate that the encircled energy present in 2 times the FWHM
         # of the PSF can be effectively used to compute the centroid
         sigma_ph_ee = (1.0/aNGS_EE_LO) * sigma_ph_fwhm
