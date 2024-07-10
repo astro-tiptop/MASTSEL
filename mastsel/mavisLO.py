@@ -129,6 +129,10 @@ class MavisLO(object):
         else:
             self.LoopGain_LO            = 'optimize'
 
+        self.LoopGain_HO            = self.get_config_value('RTC','LoopGain_HO')
+        self.SensorFrameRate_HO     = self.get_config_value('RTC','SensorFrameRate_HO')
+        self.LoopDelaySteps_HO      = self.get_config_value('RTC','LoopDelaySteps_HO')
+
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
         defaultIntegralDiscretization2 = 4000
@@ -223,6 +227,7 @@ class MavisLO(object):
 
         self.MavisFormulas = _mavisFormulas
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
+        self.zernikeCov_rh1_filt = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceDfiltered')
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
@@ -445,13 +450,32 @@ class MavisLO(object):
         covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
         p = sp.symbols('p', real=False)
         cov_expr={}
-        paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0} 
-        for ii in [2,3,4]:
-            for jj in [2,3,4]:
-                aa = subsParamsByName(cov_expr_jk(self.zernikeCov_rh1, ii, jj), paramDictBaseCov)
-                aaint = sp.Integral(aa, covValue_integrationLimits)
-                aaint = subsParamsByName(aaint, {'rho': sp.Abs(p), 'theta': sp.arg(p)} )
-                cov_expr[ii+10*jj] = aaint
+        self.filtCov = True
+        if self.filtCov:
+            # holoop0, holoop1, holoop2, holoop3 --> [Loop frequency (Hz), gain, delay (frames), tech. FoV radius (arcsec)]
+            paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0, \
+                                 'holoop_0': self.SensorFrameRate_HO, 'holoop_1': self.LoopGain_HO, \
+                                 'holoop_2': self.LoopDelaySteps_HO, 'holoop_3': self.TechnicalFoV}
+            if self.displayEquation:
+                print('zernikeCov_rh1_filt')
+                try:
+                    display(self.zernikeCov_rh1_filt)
+                except:
+                    print('    no zernikeCov_rh1_filt')
+            for ii in [2,3,4]:
+                for jj in [2,3,4]:
+                    aa = subsParamsByName(cov_expr_jk(self.zernikeCov_rh1_filt, ii, jj), paramDictBaseCov)
+                    aaint = sp.Integral(aa, covValue_integrationLimits)
+                    aaint = subsParamsByName(aaint, {'rho': sp.Abs(p), 'theta': sp.arg(p)} )
+                    cov_expr[ii+10*jj] = aaint
+        else:
+            paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0}
+            for ii in [2,3,4]:
+                for jj in [2,3,4]:
+                    aa = subsParamsByName(cov_expr_jk(self.zernikeCov_rh1, ii, jj), paramDictBaseCov)
+                    aaint = sp.Integral(aa, covValue_integrationLimits)
+                    aaint = subsParamsByName(aaint, {'rho': sp.Abs(p), 'theta': sp.arg(p)} )
+                    cov_expr[ii+10*jj] = aaint
 
         return cov_expr
 
@@ -818,7 +842,7 @@ class MavisLO(object):
             return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
         else:
             return (resultFocus[minFocusIdx[0][0]])
-        
+
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
         npoints = 99
         Cfloat = self.fCValue.evalf()
@@ -826,7 +850,7 @@ class MavisLO(object):
         Df = psd_freq[-1]-psd_freq[0]
         psd_tip_wind = psd_tip_wind0 * df
         psd_tilt_wind = psd_tilt_wind0 * df
-        
+
         if self.plot4debug:
             fig, ax1 = plt.subplots(1,1)
             im = ax1.plot(psd_freq,psd_tip_wind) 
@@ -836,9 +860,9 @@ class MavisLO(object):
             ax1.set_title('wind shake PSD', color='black')
             ax1.set_xlabel('frequency [Hz]')
             ax1.set_ylabel('Power')
-               
+
         sigma2Noise = cpuArray(var1x) / bias**2 * Cfloat / (Df / df)
-        
+
         if self.plot4debug:
             dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
             RTFwind = subsParamsByName( self.fTipS1tfW, dict1)
@@ -853,9 +877,9 @@ class MavisLO(object):
             im = ax2.plot(cpuArray(psd_freq),np.abs(NTFwindL1))
             ax2.set_xscale('log')
             ax2.set_yscale('log')
+            ax2.set_title('TF', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Amplitude')
-            
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
             self.fTipS1 = subsParamsByName(self.fTipS, {'phi^noise_Tip': sigma2Noise})
             self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
@@ -947,14 +971,28 @@ class MavisLO(object):
                 return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
         
-    def covValue(self, ii,jj, pp, hh):
+    def covValue(self, ii,jj, pp, hh, ws):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
-#    with self.mutex:
-        xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h),
+        if self.filtCov:
+            wind_speed =sp.symbols('wind_speed', positive=True)
+            if self.displayEquation:
+                print('specializedCovExprs')
+                try:
+                    display(self.specializedCovExprs[ii+10*jj])
+                except:
+                    print('    no specializedCovExprs')
+            xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h, wind_speed),
                                                          self.specializedCovExprs[ii+10*jj], 
-                                                         [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')], 
+                                                         [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided'), ('wind_speed', ws , 0, 0, 'provided')],
                                                          [(self.integrationPoints, 'linear')], 
+                                                         method='raw')
+        else:
+        #    with self.mutex:
+            xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h),
+                                                         self.specializedCovExprs[ii+10*jj],
+                                                         [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')],
+                                                         [(self.integrationPoints, 'linear')],
                                                          method='raw')
         return np.real(np.asarray(zplot1))
 
@@ -966,9 +1004,10 @@ class MavisLO(object):
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
         matCasValue = xp.zeros((2*points,2*nstars), dtype=xp.float32)
         matCssValue = xp.zeros((2*nstars,2*nstars), dtype=xp.float32)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]), xp.asarray([1]))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]), xp.asarray([1]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
+        ws = xp.asarray(self.wSpeed)
         inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
         iidd = 0
         for kk in range(nstars):
@@ -997,7 +1036,7 @@ class MavisLO(object):
 
         for ii in [2,3]:
             for jj in [2,3]:
-                outputArray1 = self.covValue(ii, jj, inputsArray, hh)
+                outputArray1 = self.covValue(ii, jj, inputsArray, hh, ws)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
                         matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
@@ -1014,8 +1053,9 @@ class MavisLO(object):
         scaleF = (500.0/(2*np.pi))**2
         matCasValue = xp.zeros((points,nstars), dtype=xp.float32)
         matCssValue = xp.zeros((nstars,nstars), dtype=xp.float32)
-        matCaaValue = self.covValue(4, 4, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
+        matCaaValue = self.covValue(4, 4, xp.asarray([1e-10, 1e-10]), xp.asarray([1]), xp.asarray([1]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
+        ws = xp.asarray(self.wSpeed)
         inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
         iidd = 0
         for kk in range(nstars):
@@ -1044,7 +1084,7 @@ class MavisLO(object):
 
         for ii in [4]:
             for jj in [4]:
-                outputArray1 = self.covValue(4, 4, inputsArray, hh)
+                outputArray1 = self.covValue(4, 4, inputsArray, hh, ws)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
                         matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
@@ -1159,8 +1199,10 @@ class MavisLO(object):
             self.amu.append(amu)
             self.avar.append(avar)
 
+
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
             nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+
             # This computation is skipped if no wind shake PSD is present.
             if np.sum(self.psd_tip_wind) > 0 or np.sum(self.psd_tilt_wind) > 0:
                 wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
