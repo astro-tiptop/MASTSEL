@@ -1039,9 +1039,9 @@ class MavisLO(object):
                 outputArray1 = self.covValue(ii, jj, inputsArray, hh, ws)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
+                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx, hidx]
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:, hidx, hidx], (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     def computeFocusCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
@@ -1087,9 +1087,9 @@ class MavisLO(object):
                 outputArray1 = self.covValue(4, 4, inputsArray, hh, ws)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
+                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx, hidx]
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:,hidx], (nstars,nstars))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:, hidx, hidx], (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
 
