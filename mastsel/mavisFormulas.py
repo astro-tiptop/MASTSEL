@@ -18,8 +18,7 @@ def createMavisFormulary():
     mu_w = sp.symbols('mu_WCoG')
     df, DF = sp.symbols('df Delta_F')
     zA = sp.symbols('ZenithAngle')
-    
-    
+
     # N_NGS = sp.symbols('N_NGS', integer=True, positive=True)
     H_DM, DP, r_FoV = sp.symbols('H_DM D\' r_FoV', real=True)
     x_NGS, y_NGS = sp.symbols('x_NGS y_NGS', real=True)
@@ -64,7 +63,10 @@ def createMavisFormulary():
     hh, z1, z2 = sp.symbols('h z_1 z_2', positive=True)
     jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
     R1, R2 = sp.symbols('R_1 R_2', positive=True)
-    
+
+    ws = sp.symbols('wind_speed', positive=True)
+    frHo, fovRadius = sp.symbols('fr_ho fov_radius', positive=True)
+
     def noisePropagationCoefficient():
         expr0 = ((sp.S.Pi/(180*3600*1000) * D / (4*1e-9)))**2/Nsa
         return sp.Eq(C, expr0)
@@ -313,6 +315,57 @@ def createMavisFormulary():
         _rhs = f0 * f1 * (psd_def * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R1) * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R2) / f) * (f3*f4+f5*f6)    
         return sp.Eq(dW_phi, _rhs)
 
+    def zernikeCovarianceDfiltered():
+        f0 = (-1)**mk * sp.sqrt((nj+1)*(nk+1)) * sp.I**(nj+nk) * 2 ** ( 1 - 0.5*((sp.KroneckerDelta(0,mj) + sp.KroneckerDelta(0,mk))) )
+        f1 = 1 / (sp.pi * R1 * R2)
+        ff0 = 1 / L0
+
+        # meta-pupil radius
+        arcsec2rad = sp.S.Pi/(180*3600)
+        # TODO: there is some issue with hh in this expression, but without the sum the filter is conservative
+        #cur_R1 = R1 + hh * sp.tan(fovRadius*arcsec2rad)
+        cur_R1 = R1
+        f2p = 2*sp.S.Pi*f
+
+        # ------------------------------------------------------------------------------------------------------
+        #    original
+        # ------------------------------------------------------------------------------------------------------
+        # this filter removes up to the 2nd radial order in the turbulence covariance (see filters in Sasiela93)
+        #filt = 1 -   (2*sp.besselj(1,f2p*cur_R1)/(f2p*cur_R1))**2 \
+        #         -   (4*sp.besselj(2,f2p*cur_R1)/(f2p*cur_R1))**2 \
+        #         - 9*(2*sp.besselj(3,f2p*cur_R1)/(f2p*cur_R1))**2
+        #
+        # -----> original cur_rtf
+        # equivalence spatial frequency <=> temporal frequency
+        # HO loop RTF computation (frHo is HO loop framerate in Hz)
+        #zVar = sp.exp(2*sp.S.Pi*sp.I*ws*f/frHo)
+        #cVar = 0.25 * zVar**(-3)
+        #OLTF = cVar/(1-zVar**(-1))
+        #cur_rtf = (1/(1+OLTF))**2
+        #
+        # -----> approximation of cur_rtf
+        #cur_rtf = f**2/(f**2+frHo/ws**2)
+        #
+        # correction so that the RTF does not reject first 2 radial orders (TTFA) and global piston
+        #rtf = 1 - (1-cur_rtf)*filt
+        # ------------------------------------------------------------------------------------------------------
+        #    new
+        # ------------------------------------------------------------------------------------------------------
+        filt = 1 - ( (2*sp.besselj(1,f2p*cur_R1))**2 \
+                 +   (4*sp.besselj(2,f2p*cur_R1))**2 \
+                 + 9*(2*sp.besselj(3,f2p*cur_R1))**2 )/(f2p*cur_R1)**2
+        lpf = 0.8*frHo/ws**2/(f**2+0.8*frHo/ws**2)
+        rtf = 1 - lpf*filt
+
+        with sp.evaluate(False):
+            psd_def = 0.0229*r0**(-sp.S(5)/sp.S(3))*(f**2+ff0**2)**(-sp.S(11)/sp.S(6))
+        f3 = sp.cos( (mj+mk)*theta + (sp.pi/4) * ( (1-sp.KroneckerDelta(0, mj)) * ((-1)**jj-1) + (1-sp.KroneckerDelta(0, mk)) * ((-1)**kk-1)) )
+        f4 = sp.I**(3*(mj+mk)) * sp.besselj( (mj+mk), 2*sp.pi*f*hh*rho)
+        f5 = sp.cos( (mj-mk)*theta + (sp.pi/4) * ( (1-sp.KroneckerDelta(0, mj)) * ((-1)**jj-1) - (1-sp.KroneckerDelta(0, mk)) * ((-1)**kk-1)) )
+        f6 = sp.I**(3*sp.Abs(mj-mk)) * sp.besselj( sp.Abs(mj-mk), 2*sp.pi*f*hh*rho)
+        _rhs = f0 * f1 * (psd_def * rtf * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R1) * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R2) / f) * (f3*f4+f5*f6)
+        return sp.Eq(dW_phi, _rhs)
+
     def expr_phi():
         x = sp.symbols('x', real=True)
         return (sp.S(1)/sp.sqrt(sp.S(2)*sp.pi)) * sp.exp( - x**2 / 2)
@@ -500,14 +553,15 @@ def createMavisFormulary():
                              'completeIntegralTiltLOandTf',
                              'completeIntegralTipAndTf',
                              'completeIntegralTiltAndTf',
-                             'ZernikeCovarianceD', 
-                             'ZernikeCovarianceI', 
+                             'ZernikeCovarianceD',
+                             'ZernikeCovarianceDfiltered',
+                             'ZernikeCovarianceI',
                              'GaussianMean',
                              'GaussianVariance',
-                             'TruncatedMeanBasic', 
+                             'TruncatedMeanBasic',
                              'TruncatedVarianceBasic',
-                             'TruncatedMean', 
-                             'TruncatedMeanIntegrand', 
+                             'TruncatedMean',
+                             'TruncatedMeanIntegrand',
                              'TruncatedVariance',
                              'TruncatedVarianceIntegrand',
                              'truncatedMeanComponents0',
@@ -556,6 +610,7 @@ def createMavisFormulary():
                              completeIntegralTipAndTf(),
                              completeIntegralTiltAndTf(),
                              zernikeCovarianceD(),
+                             zernikeCovarianceDfiltered(),
                              zernikeCovarianceI(),
                              gaussianMean(),
                              gaussianVariance(),
