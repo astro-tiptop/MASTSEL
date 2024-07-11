@@ -64,7 +64,8 @@ def createMavisFormulary():
     jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
     R1, R2 = sp.symbols('R_1 R_2', positive=True)
 
-    ws = sp.symbols('wind_speed', positive=True)
+    hMean = sp.symbols('h_mean', positive=True)
+    wsMean = sp.symbols('wind_speed_mean', positive=True)
     frHo, fovRadius = sp.symbols('fr_ho fov_radius', positive=True)
 
     def noisePropagationCoefficient():
@@ -322,9 +323,8 @@ def createMavisFormulary():
 
         # meta-pupil radius
         arcsec2rad = sp.S.Pi/(180*3600)
-        # TODO: there is some issue with hh in this expression, but without the sum the filter is conservative
-        #cur_R1 = R1 + hh * sp.tan(fovRadius*arcsec2rad)
-        cur_R1 = R1
+        # we use average values
+        cur_R1 = R1 + hMean * sp.tan(fovRadius*arcsec2rad)
         f2p = 2*sp.S.Pi*f
 
         # ------------------------------------------------------------------------------------------------------
@@ -354,7 +354,7 @@ def createMavisFormulary():
         filt = 1 - ( (2*sp.besselj(1,f2p*cur_R1))**2 \
                  +   (4*sp.besselj(2,f2p*cur_R1))**2 \
                  + 9*(2*sp.besselj(3,f2p*cur_R1))**2 )/(f2p*cur_R1)**2
-        lpf = 0.8*frHo/ws**2/(f**2+0.8*frHo/ws**2)
+        lpf = 0.8*frHo/wsMean**2/(f**2+0.8*frHo/wsMean**2)
         rtf = 1 - lpf*filt
 
         with sp.evaluate(False):
