@@ -120,6 +120,11 @@ class MavisLO(object):
         else:
             self.noNoise = False
 
+        if self.check_config_key('sensor_LO','filtZernikeCov'):
+            self.filtZernikeCov = self.get_config_value('sensor_LO','filtZernikeCov')
+        else:
+            self.filtZernikeCov = False
+
         self.DmHeights              = self.get_config_value('DM','DmHeights')
 
         self.loopDelaySteps_LO      = self.get_config_value('RTC','LoopDelaySteps_LO')
@@ -450,12 +455,9 @@ class MavisLO(object):
         covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
         p = sp.symbols('p', real=False)
         cov_expr={}
-        self.filtCov = True
-        if self.filtCov:
-            # holoop0, holoop1, holoop2, holoop3 --> [Loop frequency (Hz), gain, delay (frames), tech. FoV radius (arcsec)]
+        if self.filtZernikeCov:
             paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0, \
-                                 'holoop_0': self.SensorFrameRate_HO, 'holoop_1': self.LoopGain_HO, \
-                                 'holoop_2': self.LoopDelaySteps_HO, 'holoop_3': self.TechnicalFoV}
+                                 'fr_ho': self.SensorFrameRate_HO, 'fov_radius': 0.5*self.TechnicalFoV}
             if self.displayEquation:
                 print('zernikeCov_rh1_filt')
                 try:
@@ -464,6 +466,7 @@ class MavisLO(object):
                     print('    no zernikeCov_rh1_filt')
             for ii in [2,3,4]:
                 for jj in [2,3,4]:
+
                     aa = subsParamsByName(cov_expr_jk(self.zernikeCov_rh1_filt, ii, jj), paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
                     aaint = subsParamsByName(aaint, {'rho': sp.Abs(p), 'theta': sp.arg(p)} )
@@ -974,7 +977,7 @@ class MavisLO(object):
     def covValue(self, ii,jj, pp, hh, ws):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
-        if self.filtCov:
+        if self.filtZernikeCov:
             wind_speed =sp.symbols('wind_speed', positive=True)
             if self.displayEquation:
                 print('specializedCovExprs')
@@ -994,6 +997,7 @@ class MavisLO(object):
                                                          [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')],
                                                          [(self.integrationPoints, 'linear')],
                                                          method='raw')
+
         return np.real(np.asarray(zplot1))
 
         
@@ -1039,9 +1043,17 @@ class MavisLO(object):
                 outputArray1 = self.covValue(ii, jj, inputsArray, hh, ws)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx, hidx]
+                        if self.filtZernikeCov:
+                            temp = outputArray1[pind:nstars*points:points, hidx, hidx]
+                        else:
+                            temp = outputArray1[pind:nstars*points:points, hidx]
+                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*temp
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:, hidx, hidx], (nstars,nstars))
+                            if self.filtZernikeCov:
+                                temp = outputArray1[nstars*points:, hidx, hidx]
+                            else:
+                                temp = outputArray1[nstars*points:, hidx]
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*temp, (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     def computeFocusCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
@@ -1087,9 +1099,18 @@ class MavisLO(object):
                 outputArray1 = self.covValue(4, 4, inputsArray, hh, ws)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx, hidx]
+                        if self.filtZernikeCov:
+                            temp = outputArray1[pind:nstars*points:points, hidx, hidx]
+                        else:
+                            temp = outputArray1[pind:nstars*points:points, hidx]
+                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*temp
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:, hidx, hidx], (nstars,nstars))
+                            if self.filtZernikeCov:
+                                temp = outputArray1[nstars*points:, hidx, hidx]
+                            else:
+                                temp = outputArray1[nstars*points:, hidx]
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*temp, (nstars,nstars))
+
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
 
@@ -1268,7 +1289,10 @@ class MavisLO(object):
         R = np.matmul(1/H*IMt,cov_noise_inv)
         RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
-        Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT))
+        #Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT)
+        C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
+        C3 = np.dot(R, np.dot(Cnn, RT))
+        Ctot = C2 + C3
         
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
@@ -1285,7 +1309,8 @@ class MavisLO(object):
         CtotDiff = Ctot - CtotL
         
         if self.verbose:
-            print('    focus residual [nm]:',np.sqrt(CtotDiff))
+            print('    focus residual (tomo., tur.+noi., LGS) [nm]:', "%.2f" % np.sqrt(CtotDiff),
+                '(', "%.2f" % np.sqrt(C2), ',', "%.2f" % np.sqrt(C3), ',', "%.2f" % np.sqrt(CtotL),')')
         
         return CtotDiff    
         
