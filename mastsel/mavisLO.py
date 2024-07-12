@@ -126,8 +126,8 @@ class MavisLO(object):
 
         if self.check_config_key('sensor_LO','filtZernikeCov'):
             self.filtZernikeCov = self.get_config_value('sensor_LO','filtZernikeCov')
-            if len(self.DmHeights) == 1:
-                print('WARNING: [sensor_LO]filtZernikeCov cannot be used in systems with a single DM.')
+            if self.filtZernikeCov and len(self.DmHeights) == 1:
+                print('WARNING: [sensor_LO] filtZernikeCov cannot be used in systems with a single DM.')
                 self.filtZernikeCov = False
         else:
             self.filtZernikeCov = False
