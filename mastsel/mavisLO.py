@@ -122,15 +122,15 @@ class MavisLO(object):
         else:
             self.noNoise = False
 
+        self.DmHeights              = self.get_config_value('DM','DmHeights')
+
         if self.check_config_key('sensor_LO','filtZernikeCov'):
             self.filtZernikeCov = self.get_config_value('sensor_LO','filtZernikeCov')
-            if len(self.get_config_value('DM','DmHeights')) == 1:
+            if len(self.DmHeights) == 1:
                 print('WARNING: [sensor_LO]filtZernikeCov cannot be used in systems with a single DM.')
                 self.filtZernikeCov = False
         else:
             self.filtZernikeCov = False
-
-        self.DmHeights              = self.get_config_value('DM','DmHeights')
 
         self.loopDelaySteps_LO      = self.get_config_value('RTC','LoopDelaySteps_LO')
 
