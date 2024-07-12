@@ -87,6 +87,8 @@ class MavisLO(object):
         if np.min(self.Cn2Heights) == 0:
             self.Cn2Heights[np.argmin(self.Cn2Heights)] = 1e-6
 
+        self.Cn2HeightsMean = (np.dot( np.power(np.asarray(self.Cn2Heights), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+
         SensingWavelength_LO = self.get_config_value('sources_LO','Wavelength')
         if isinstance(SensingWavelength_LO, list):
             self.SensingWavelength_LO = SensingWavelength_LO[0]
@@ -457,7 +459,8 @@ class MavisLO(object):
         cov_expr={}
         if self.filtZernikeCov:
             paramDictBaseCov = { 'L_0': self.L0, 'r_0': self.r0_Value, 'R_1': self.TelescopeDiameter/2.0, 'R_2': self.TelescopeDiameter/2.0, \
-                                 'fr_ho': self.SensorFrameRate_HO, 'fov_radius': 0.5*self.TechnicalFoV}
+                                 'fr_ho': self.SensorFrameRate_HO, 'fov_radius': 0.5*self.TechnicalFoV, 'h_mean': self.Cn2HeightsMean, \
+                                 'wind_speed_mean': self.WindSpeed}
             if self.displayEquation:
                 print('zernikeCov_rh1_filt')
                 try:
@@ -974,29 +977,15 @@ class MavisLO(object):
                 return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
         
-    def covValue(self, ii,jj, pp, hh, ws):
+    def covValue(self, ii,jj, pp, hh):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
-        if self.filtZernikeCov:
-            wind_speed =sp.symbols('wind_speed', positive=True)
-            if self.displayEquation:
-                print('specializedCovExprs')
-                try:
-                    display(self.specializedCovExprs[ii+10*jj])
-                except:
-                    print('    no specializedCovExprs')
-            xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h, wind_speed),
-                                                         self.specializedCovExprs[ii+10*jj], 
-                                                         [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided'), ('wind_speed', ws , 0, 0, 'provided')],
-                                                         [(self.integrationPoints, 'linear')], 
-                                                         method='raw')
-        else:
         #    with self.mutex:
-            xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h),
-                                                         self.specializedCovExprs[ii+10*jj],
-                                                         [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')],
-                                                         [(self.integrationPoints, 'linear')],
-                                                         method='raw')
+        xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h),
+                                                      self.specializedCovExprs[ii+10*jj],
+                                                      [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')],
+                                                      [(self.integrationPoints, 'linear')],
+                                                      method='raw')
 
         return np.real(np.asarray(zplot1))
 
@@ -1008,10 +997,9 @@ class MavisLO(object):
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
         matCasValue = xp.zeros((2*points,2*nstars), dtype=xp.float32)
         matCssValue = xp.zeros((2*nstars,2*nstars), dtype=xp.float32)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]), xp.asarray([1]))[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]), xp.asarray([1]))[0,0]
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
-        ws = xp.asarray(self.wSpeed)
         inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
         iidd = 0
         for kk in range(nstars):
@@ -1040,20 +1028,12 @@ class MavisLO(object):
 
         for ii in [2,3]:
             for jj in [2,3]:
-                outputArray1 = self.covValue(ii, jj, inputsArray, hh, ws)
+                outputArray1 = self.covValue(ii, jj, inputsArray, hh)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        if self.filtZernikeCov:
-                            temp = outputArray1[pind:nstars*points:points, hidx, hidx]
-                        else:
-                            temp = outputArray1[pind:nstars*points:points, hidx]
-                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*temp
+                        matCasValue[ii-2+pind*2][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
                         if pind==0:
-                            if self.filtZernikeCov:
-                                temp = outputArray1[nstars*points:, hidx, hidx]
-                            else:
-                                temp = outputArray1[nstars*points:, hidx]
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*temp, (nstars,nstars))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:, hidx], (nstars,nstars))
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
     def computeFocusCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
@@ -1065,9 +1045,8 @@ class MavisLO(object):
         scaleF = (500.0/(2*np.pi))**2
         matCasValue = xp.zeros((points,nstars), dtype=xp.float32)
         matCssValue = xp.zeros((nstars,nstars), dtype=xp.float32)
-        matCaaValue = self.covValue(4, 4, xp.asarray([1e-10, 1e-10]), xp.asarray([1]), xp.asarray([1]))[0,0]
+        matCaaValue = self.covValue(4, 4, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
-        ws = xp.asarray(self.wSpeed)
         inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
         iidd = 0
         for kk in range(nstars):
@@ -1096,20 +1075,12 @@ class MavisLO(object):
 
         for ii in [4]:
             for jj in [4]:
-                outputArray1 = self.covValue(4, 4, inputsArray, hh, ws)
+                outputArray1 = self.covValue(4, 4, inputsArray, hh)
                 for pind in range(points):
                     for hidx, h_weight in enumerate(self.Cn2Weights):
-                        if self.filtZernikeCov:
-                            temp = outputArray1[pind:nstars*points:points, hidx, hidx]
-                        else:
-                            temp = outputArray1[pind:nstars*points:points, hidx]
-                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*temp
+                        matCasValue[ii-4+pind][_idx0[jj]] +=  h_weight*outputArray1[pind:nstars*points:points, hidx]
                         if pind==0:
-                            if self.filtZernikeCov:
-                                temp = outputArray1[nstars*points:, hidx, hidx]
-                            else:
-                                temp = outputArray1[nstars*points:, hidx]
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*temp, (nstars,nstars))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  xp.reshape( h_weight*outputArray1[nstars*points:, hidx], (nstars,nstars))
 
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
