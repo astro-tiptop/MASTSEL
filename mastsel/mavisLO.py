@@ -145,11 +145,13 @@ class MavisLO(object):
 
         if self.check_section_key('sensor_Focus'):
             self.WindowRadiusWCoG_Focus  = self.get_config_value('sensor_Focus','WindowRadiusWCoG')
-            self.skyBackground_Focus     = self.get_config_value('sensor_Focus','skyBackground')
+            if self.WindowRadiusWCoG_Focus=='optimize':
+                self.WindowRadiusWCoG_Focus = 0
+            self.skyBackground_Focus     = self.get_config_value('sensor_Focus','SkyBackground')
             self.Dark_Focus              = self.get_config_value('sensor_Focus','Dark')
             self.PixelScale_Focus        = self.get_config_value('sensor_Focus','PixelScale')
             self.ExcessNoiseFactor_Focus = self.get_config_value('sensor_Focus','ExcessNoiseFactor')
-            self.sigmaRON_Focus          = self.get_config_value('sensor_Focus','sigmaRON')
+            self.sigmaRON_Focus          = self.get_config_value('sensor_Focus','SigmaRON')
             self.NumberLenslets_Focus    = self.get_config_value('sensor_Focus','NumberLenslets')
         else:
             self.WindowRadiusWCoG_Focus  = self.WindowRadiusWCoG_LO
