@@ -143,11 +143,51 @@ class MavisLO(object):
         self.SensorFrameRate_HO     = self.get_config_value('RTC','SensorFrameRate_HO')
         self.LoopDelaySteps_HO      = self.get_config_value('RTC','LoopDelaySteps_HO')
 
+        if self.check_section_key('sensor_Focus'):
+            self.WindowRadiusWCoG_Focus  = self.get_config_value('sensor_Focus','WindowRadiusWCoG')
+            self.skyBackground_Focus     = self.get_config_value('sensor_Focus','skyBackground')
+            self.Dark_Focus              = self.get_config_value('sensor_Focus','Dark')
+            self.PixelScale_Focus        = self.get_config_value('sensor_Focus','PixelScale')
+            self.ExcessNoiseFactor_Focus = self.get_config_value('sensor_Focus','ExcessNoiseFactor')
+            self.sigmaRON_Focus          = self.get_config_value('sensor_Focus','sigmaRON')
+            self.NumberLenslets_Focus    = self.get_config_value('sensor_Focus','NumberLenslets')
+        else:
+            self.WindowRadiusWCoG_Focus  = self.WindowRadiusWCoG_LO
+            self.skyBackground_Focus     = self.skyBackground_LO
+            self.Dark_Focus              = self.Dark_LO
+            self.PixelScale_Focus        = self.PixelScale_LO
+            self.ExcessNoiseFactor_Focus = self.ExcessNoiseFactor_LO
+            self.sigmaRON_Focus          = self.sigmaRON_LO
+            self.NumberLenslets_Focus    = self.NumberLenslets
+
+        if self.check_section_key('sensor_Focus'):
+            SensingWavelength_Focus = self.get_config_value('sources_Focus','Wavelength')
+            if isinstance(SensingWavelength_Focus, list):
+                self.SensingWavelength_Focus = SensingWavelength_Focus[0]
+            else:
+                self.SensingWavelength_Focus = SensingWavelength_Focus
+        else:
+            self.SensingWavelength_Focus = self.SensingWavelength_LO
+
+        if self.check_config_key('RTC','LoopGain_Focus'):
+            self.LoopGain_Focus        = self.get_config_value('RTC','LoopGain_Focus')
+        else:
+            self.LoopGain_Focus        = 'optimize'
+
+        if self.check_config_key('RTC','LoopDelaySteps_Focus'):
+            self.loopDelaySteps_Focus  = self.get_config_value('RTC','LoopDelaySteps_Focus')
+        else:
+            self.loopDelaySteps_Focus  = self.loopDelaySteps_LO
+
+        self.N_sa_tot_Focus            = self.NumberLenslets_Focus[0]**2
+        if self.NumberLenslets_Focus[0] > 2:
+            self.N_sa_tot_Focus        = int ( np.floor( self.N_sa_tot_Focus * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
+
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
         defaultIntegralDiscretization2 = 4000
         defaultSimpleVarianceComputation = True
-        self.computationPlatform =defaultCompute
+        self.computationPlatform = defaultCompute
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
         self.simpleVarianceComputation = defaultSimpleVarianceComputation
@@ -225,7 +265,8 @@ class MavisLO(object):
         #self.diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
         # diffraction limited FWHM - one aperture
         self.subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
-
+        self.subapFocus_FWHM_mas = self.SensingWavelength_Focus/(self.TelescopeDiameter/self.NumberLenslets_Focus[0])*radiansToArcsecs*1000
+        
         if self.computationPlatform=='GPU' and gpuEnabled:
             self.mIt = Integrator(cp, cp.float64, '')
             self.mItcomplex = Integrator(cp, cp.complex64, '')
@@ -242,6 +283,7 @@ class MavisLO(object):
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
         self.fCValue = self.specializedC_coefficient()
+        self.fCfocusValue = self.specializedCfocus_coefficient()
         self.specializedCovExprs = self.buildSpecializedCovFunctions()
 
         # this is not used for now, as the frequencies of the LO loop are passed as parameters when needed
@@ -266,10 +308,17 @@ class MavisLO(object):
 
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
-        self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
-        self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
-        self.aFunctionMGauss = self.specializedGMeanVarFormulas('GaussianMean')
-        self.aFunctionVGauss = self.specializedGMeanVarFormulas('GaussianVariance')
+        if not self.simpleVarianceComputation:
+            self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
+            self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
+            self.aFunctionMGauss = self.specializedGMeanVarFormulas('GaussianMean')
+            self.aFunctionVGauss = self.specializedGMeanVarFormulas('GaussianVariance')
+
+
+    def configFocusFreq(self, frequency):
+        self.SensorFrameRate_Focus = frequency
+        self.maxFocustFreq = 0.5*self.SensorFrameRate_Focus
+        self.fFocusS_LO = self.specializedNoiseFocusFuncs()
 
 
     def loadWindPsd(self, filename):
@@ -393,6 +442,17 @@ class MavisLO(object):
                 print('    no self.fCValue1')
         return self.fCValue1
 
+    def specializedCfocus_coefficient(self):
+        ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
+        self.fCfocusValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_Focus })
+        if self.displayEquation:
+            print('mavisLO.specializedCfocus_coefficient')
+            print('    self.fCfocusValue1')
+            try:
+                display(self.fCfocusValue1)
+            except:
+                print('    no self.fCfocusValue1')
+        return self.fCfocusValue1
     
     def specializedNoiseFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
@@ -424,7 +484,25 @@ class MavisLO(object):
                 print('    no self.fTiltS_LO1')
         return self.fTipS_LO1, self.fTiltS_LO1
 
-    
+
+    def specializedNoiseFocusFuncs(self):
+        dict1 = {'d':self.loopDelaySteps_Focus, 'f_loop':self.SensorFrameRate_Focus}
+        completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
+        self.fFocusS_LO1 = subsParamsByName(completeIntegralTipLOandTf[0], dict1).function
+        self.fFocusS_LO1tfW = completeIntegralTipLOandTf[1]
+        self.fFocusS_LO1tfN = completeIntegralTipLOandTf[2]
+        self.fFocusS_LO1ztfW = completeIntegralTipLOandTf[3]
+        self.fFocusS_LO1ztfN = completeIntegralTipLOandTf[4]
+        if self.displayEquation:
+            print('mavisLO.specializedNoiseFocusFuncs')
+            print('    self.fFocusS_LO1')
+            try:
+                display(self.fFocusS_LO1)
+            except:
+                print('    no self.fFocusS_LO1')
+        return self.fFocusS_LO1
+
+
     def specializedWindFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
         completeIntegralTipAndTf = self.MavisFormulas['completeIntegralTipAndTf']
@@ -554,23 +632,43 @@ class MavisLO(object):
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
 
-    def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
-        if self.WindowRadiusWCoG_LO == 0:
-            WindowRadiusWCoG_LO = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
-            self.smallGridSize = 2*WindowRadiusWCoG_LO
+    def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas, doLO=True):
+        if doLO:
+            if self.WindowRadiusWCoG_LO == 0:
+                WindowRadiusWCoG = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
+            else:
+                WindowRadiusWCoG = self.WindowRadiusWCoG_LO
+            skyBackground = self.skyBackground_LO
+            Dark = self.Dark_LO
+            PixelScale = self.PixelScale_LO
+            ExcessNoiseFactor = self.ExcessNoiseFactor_LO
+            sigmaRON = self.sigmaRON_LO
+            subap_FWHM_mas = self.subapNGS_FWHM_mas
+        else:
+            if self.WindowRadiusWCoG_Focus == 0:
+                WindowRadiusWCoG = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_Focus)), 1)
+            else:
+                WindowRadiusWCoG = self.WindowRadiusWCoG_Focus
+            skyBackground = self.skyBackground_Focus
+            Dark = self.Dark_Focus
+            PixelScale = self.PixelScale_Focus
+            ExcessNoiseFactor = self.ExcessNoiseFactor_Focus
+            sigmaRON = self.sigmaRON_Focus
+            subap_FWHM_mas = self.subapFocus_FWHM_mas
+
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
-        sky_and_back = (self.skyBackground_LO + self.Dark_LO)/aNGS_freq
-        N_T = aNGS_FWHM_mas/self.PixelScale_LO
-        N_W = self.smallGridSize
-        N_D = self.subapNGS_FWHM_mas/self.PixelScale_LO
-        sigma_e = np.sqrt( self.ExcessNoiseFactor_LO * sky_and_back + self.sigmaRON_LO**2 )
-        sigma_ph_fwhm = self.ExcessNoiseFactor_LO*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
+        sky_and_back = (skyBackground + Dark)/aNGS_freq
+        N_T = aNGS_FWHM_mas/PixelScale
+        N_W = 2*WindowRadiusWCoG
+        N_D = subap_FWHM_mas/PixelScale
+        sigma_e = np.sqrt( ExcessNoiseFactor * sky_and_back + sigmaRON**2 )
+        sigma_ph_fwhm = ExcessNoiseFactor*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
         sigma_ron_fwhm = (np.pi/(32.0*np.log(2.0))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
         # in the next lines we approximate that the encircled energy present in 2 times the FWHM
         # of the PSF can be effectively used to compute the centroid
-        sigma_ph_ee = (1.0/aNGS_EE_LO) * sigma_ph_fwhm
-        sigma_ron_ee = (1.0/aNGS_EE_LO)**2 * sigma_ron_fwhm
+        sigma_ph_ee = (1.0/aNGS_EE) * sigma_ph_fwhm
+        sigma_ron_ee = (1.0/aNGS_EE)**2 * sigma_ron_fwhm
         sigma_tot = sigma_ph_ee + sigma_ron_ee
         varx = vary = sigma_tot
         mux = muy = 0
@@ -578,7 +676,7 @@ class MavisLO(object):
         return (bias,(mux,muy),(varx,vary))
 
 
-    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas):
+    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas):
         if self.WindowRadiusWCoG_LO == 0:
             WindowRadiusWCoG_LO = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
             self.smallGridSize = 2*WindowRadiusWCoG_LO
@@ -594,13 +692,13 @@ class MavisLO(object):
                 
         g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
-        I_k_data = g2d * aNGS_EE_LO # Encirceld Energy in double FWHM is used to scale the PSF model
-        I_k_data = I_k_data * aNGS_flux/self.SensorFrameRate_LO
+        I_k_data = g2d * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
+        I_k_data = I_k_data * aNGS_flux/aNGS_freq
             
         g2d_prime = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma)
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)       
-        I_k_prime_data = g2d_prime * aNGS_EE_LO # Encirceld Energy in double FWHM is used to scale the PSF model
-        I_k_prime_data = I_k_prime_data * aNGS_flux/self.SensorFrameRate_LO
+        I_k_prime_data = g2d_prime * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
+        I_k_prime_data = I_k_prime_data * aNGS_flux/aNGS_freq
         
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
         I_k_prime_data = intRebin(I_k_prime_data,self.mediumShape) * self.downsample_factor**2
@@ -782,7 +880,7 @@ class MavisLO(object):
 
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
-        Cfloat = self.fCValue.evalf()
+        Cfloat = self.fCfocusValue.evalf()
         psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, alib)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
 
@@ -800,7 +898,7 @@ class MavisLO(object):
         Df = psd_freq[-1]-psd_freq[0]
         sigma2Noise =  cpuArray(varX) / bias**2 * Cfloat / (Df / df)
         # must wait till this moment to substitute the noise level
-        self.fFocusS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
+        self.fFocusS1 = subsParamsByName(self.fFocusS_LO, {'phi^noise_Tip': sigma2Noise})
         self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
         if self.displayEquation:
             print('computeNoiseResidual')
@@ -815,16 +913,16 @@ class MavisLO(object):
             psd_focus_turb = cp.asarray(psd_focus_turb)
         else:
             xp = np
-        if self.LoopGain_LO == 'optimize':
+        if self.LoopGain_Focus == 'optimize':
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
-        elif self.LoopGain_LO == 'test':
+        elif self.LoopGain_Focus == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
             # if gain is set no optimization is done and bias is not compensated
-            g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
+            g0 = (bias*self.LoopGain_Focus,bias*self.LoopGain_Focus)
             g0g = xp.asarray(g0)
 
         e1 = psd_freq.reshape((1,psd_freq.shape[0]))
@@ -1132,7 +1230,7 @@ class MavisLO(object):
         return Ctot
 
     
-    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas):
+    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = len(indices)
@@ -1161,7 +1259,7 @@ class MavisLO(object):
         return Ctot.reshape((nPointings,2,2))
 
 
-    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas, doAll=True):
+    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas, doAll=True):
         self.bias = []
         self.amu = []
         self.avar = []
@@ -1180,13 +1278,13 @@ class MavisLO(object):
             self.configLOFreq( aNGS_freq[starIndex] )
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
                 # conversion from rad2 (peak-to-valley) to mas2
                 # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
                 rad2mas = self.SensingWavelength_LO*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets[starIndex])
                 var1x = avar[0] * rad2mas**2
             else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
                 # conversion from pixel2 to mas2
                 var1x = avar[0] * self.PixelScale_LO**2
 
@@ -1195,7 +1293,7 @@ class MavisLO(object):
             self.avar.append(avar)
 
 
-            # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
+            # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeNoiseResidual
             nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
 
             # This computation is skipped if no wind shake PSD is present.
@@ -1225,7 +1323,7 @@ class MavisLO(object):
         else:
             return None
 
-    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR_LO, aNGS_EE_LO, aNGS_FWHM_mas):
+    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas):
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
         Cnn = np.zeros((nNaturalGS,nNaturalGS))
@@ -1234,16 +1332,16 @@ class MavisLO(object):
             print('mavisLO.computeFocusTotalResidualMatrix')
             
         for starIndex in range(nNaturalGS):
-            self.configLOFreq( aNGS_freq[starIndex] )
+            self.configFocusFreq( aNGS_freq[starIndex] )
             # one scalar (bias), two tuples of 2 (amu, avar)
-            if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+            if self.simpleVarianceComputation or self.check_section_key('sensor_Focus'):
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
                 # conversion from rad2 (peak-to-valley) to mas2
                 # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
-                rad2mas = self.SensingWavelength_LO*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets[starIndex])
+                rad2mas = self.SensingWavelength_Focus*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets[starIndex])
                 var1x = avar[0] * rad2mas**2
             else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE_LO[starIndex], aNGS_FWHM_mas[starIndex])
+                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
                 # conversion from pixel2 to mas2
                 var1x = avar[0] * self.PixelScale_LO**2
 
@@ -1251,7 +1349,7 @@ class MavisLO(object):
             var1x *= 0.16
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
             # except for the 0.16 factor that is applied above
-            Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
 
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
         # NGS Rec. Mat. - MMSE estimator
