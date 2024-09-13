@@ -204,7 +204,8 @@ class MavisLO(object):
             if self.check_config_key('COMPUTATION','simpleVarianceComputation'):
                 self.simpleVarianceComputation = self.get_config_value('COMPUTATION','simpleVarianceComputation')
 
-        print('defaultSimpleVarianceComputation',self.simpleVarianceComputation)
+        if self.verbose:
+            print('defaultSimpleVarianceComputation',self.simpleVarianceComputation)
         
         if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
             print('%%%%%%%% ATTENTION %%%%%%%%')
