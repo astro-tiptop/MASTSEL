@@ -44,10 +44,10 @@ if not gpuEnabled:
         This prevents extrapolation one element beyond bounds of input array.
         '''
         if a.dtype not in [np.float64, np.float32]:
-            a = np.cast[float](a)
+            a = np.asarray(a, np.float64)
 
-        m1 = np.cast[int](minusone)
-        ofs = np.cast[int](centre) * 0.5
+        m1 = np.asarray(minusone, np.int64)
+        ofs = np.asarray(centre, np.int64) * 0.5
         old = np.array(a.shape)
         ndims = len(a.shape)
         if len(newdims) != ndims:
