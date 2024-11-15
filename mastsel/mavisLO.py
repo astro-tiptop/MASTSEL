@@ -1250,7 +1250,7 @@ class MavisLO(object):
 
         return C2, C3 
 
-    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas):
+    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = len(indices)
@@ -1347,7 +1347,7 @@ class MavisLO(object):
         else:
             return None
 
-    def computeFocusTotalResidualMatrixI(self, indices, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas):
+    def computeFocusTotalResidualMatrixI(self, indices, aCartNGSCoords, aNGS_flux):
         nNaturalGS = len(indices)
         Cnn = np.zeros((nNaturalGS,nNaturalGS))
         if self.verbose:
