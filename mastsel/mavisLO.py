@@ -1389,7 +1389,7 @@ class MavisLO(object):
                                                                         aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
                 # conversion from rad2 (peak-to-valley) to mas2
                 # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
-                rad2mas = self.SensingWavelength_Focus*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets_Focus[starIndex])
+                rad2mas = self.SensingWavelength_Focus*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets_Focus[0])
                 var1x = avar[0] * rad2mas**2
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
