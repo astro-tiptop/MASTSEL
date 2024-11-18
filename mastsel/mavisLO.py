@@ -1356,8 +1356,8 @@ class MavisLO(object):
             bias, amu, avar = self.biasF[indices[starIndex]], self.amuF[indices[starIndex]], self.avarF[indices[starIndex]]            
             nr = self.nrF[indices[starIndex]] 
             if self.verbose:
-                print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
-                print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
+                print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
             Cnn[starIndex,starIndex] = nr
             
@@ -1409,6 +1409,9 @@ class MavisLO(object):
             self.nrF.append(nr)
 
             Cnn[starIndex,starIndex] = nr
+            if self.verbose:
+                print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
+                print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
 
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
