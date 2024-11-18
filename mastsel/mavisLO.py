@@ -1189,12 +1189,12 @@ class MavisLO(object):
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
 
-    def multiCMatAssemble(self, aCartPointingCoordsV, aaCartNGSCoords, aCnn, aC1):
+    def multiCMatAssemble(self, aCartPointingCoordsV, aCartNGSCoords, aCnn, aC1):
         xp = np
         points = aCartPointingCoordsV.shape[0]
         Ctot = np.zeros((2*points,2))
-        R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aaCartNGSCoords)
-        Caa, Cas, Css = self.computeCovMatrices(xp.asarray(aCartPointingCoordsV), xp.asarray(aaCartNGSCoords), xp=np)
+        R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords)
+        Caa, Cas, Css = self.computeCovMatrices(xp.asarray(aCartPointingCoordsV), xp.asarray(aCartNGSCoords), xp=np)
         for i in range(points):
             Ri = R[2*i:2*(i+1),:]
             RTi = RT[:, 2*i:2*(i+1)]
@@ -1215,9 +1215,9 @@ class MavisLO(object):
         return Ctot
 
         
-    def CMatAssemble(self, aCartPointingCoordsV, aaCartNGSCoords, aCnn, aC1):
-        R, RT = self.buildReconstuctor2(np.asarray(aCartPointingCoordsV), aaCartNGSCoords)
-        Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aaCartNGSCoords)        
+    def CMatAssemble(self, aCartPointingCoordsV, aCartNGSCoords, aCnn, aC1):
+        R, RT = self.buildReconstuctor2(np.asarray(aCartPointingCoordsV), aCartNGSCoords)
+        Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aCartNGSCoords)        
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(aCnn, RT))
         # sum tomography (C2), noise (C3), wind (aC1) errors
@@ -1232,8 +1232,25 @@ class MavisLO(object):
                   '(', "%.2f" % np.sqrt(np.trace(C2)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
-    
-    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas):
+    def multiFocusCMatAssemble(self, aCartNGSCoords, Cnn):
+        xp = np
+        Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
+        # NGS Rec. Mat. - MMSE estimator
+        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
+        cov_turb_inv = np.array(1e-3) # the minimum ratio between turb. and noise cov. is 1e3 (this guarantees that the sum of the elements of R is 1).
+        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Css)*1e-2,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
+        cov_noise_inv = np.linalg.pinv(cov_noise)
+        H = np.matmul(np.matmul(IMt,cov_noise_inv),np.transpose(IMt))
+        R = np.matmul(1/H*IMt,cov_noise_inv)
+        RT = R.transpose()
+        # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
+        #Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT)
+        C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
+        C3 = np.dot(R, np.dot(Cnn, RT))
+
+        return C2, C3 
+
+    def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = len(indices)
@@ -1330,7 +1347,33 @@ class MavisLO(object):
         else:
             return None
 
-    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas):
+    def computeFocusTotalResidualMatrixI(self, indices, aCartNGSCoords, aNGS_flux):
+        nNaturalGS = len(indices)
+        Cnn = np.zeros((nNaturalGS,nNaturalGS))
+        if self.verbose:
+            print('mavisLO.computeFocusTotalResidualMatrixI')
+        for starIndex in range(nNaturalGS):
+            bias, amu, avar = self.biasF[indices[starIndex]], self.amuF[indices[starIndex]], self.avarF[indices[starIndex]]            
+            nr = self.nrF[indices[starIndex]] 
+            if self.verbose:
+                print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
+                print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
+            Cnn[starIndex,starIndex] = nr
+            
+        C2, C3 = self.multiFocusCMatAssemble( aCartNGSCoords, Cnn)
+            
+        # difference
+        CtotDiff = C2 + C3  - self.CtotL
+
+        return CtotDiff
+
+    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas, doAll=True):
+        self.biasF = []
+        self.amuF = []
+        self.avarF = []
+        self.nrF = []
+        
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
         Cnn = np.zeros((nNaturalGS,nNaturalGS))
@@ -1342,37 +1385,34 @@ class MavisLO(object):
             self.configFocusFreq( aNGS_freq[starIndex] )
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation or self.check_section_key('sensor_Focus'):
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
+                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex],
+                                                                        aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
                 # conversion from rad2 (peak-to-valley) to mas2
                 # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
-                rad2mas = self.SensingWavelength_Focus*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets_Focus[starIndex])
+                rad2mas = self.SensingWavelength_Focus*2000*206264.8/(np.pi*self.TelescopeDiameter/self.NumberLenslets_Focus[0])
                 var1x = avar[0] * rad2mas**2
             else:
                 bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
                 # conversion from pixel2 to mas2
                 var1x = avar[0] * self.PixelScale_LO**2
-
+                
+            self.biasF.append(bias)
+            self.amuF.append(amu)
+            self.avarF.append(avar)
+            
             # noise propagation for focus is 0.4 time the tilt one (linear)
             var1x *= 0.16
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
             # except for the 0.16 factor that is applied above
-            Cnn[starIndex,starIndex] = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
+            nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
 
-        Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
-        # NGS Rec. Mat. - MMSE estimator
-        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
-        cov_turb_inv = np.array(1e-3) # the minimum ratio between turb. and noise cov. is 1e3 (this guarantees that the sum of the elements of R is 1).
-        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Css)*1e-2,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
-        cov_noise_inv = np.linalg.pinv(cov_noise)
-        H = np.matmul(np.matmul(IMt,cov_noise_inv),np.transpose(IMt))
-        R = np.matmul(1/H*IMt,cov_noise_inv)
-        RT = R.transpose()
-        # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
-        #Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT)
-        C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
-        C3 = np.dot(R, np.dot(Cnn, RT))
-        Ctot = C2 + C3
-        
+            self.nrF.append(nr)
+
+            Cnn[starIndex,starIndex] = nr
+            if self.verbose:
+                print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
+                print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
         HO_az_field     = self.get_config_value('sources_HO','Azimuth')
@@ -1383,16 +1423,22 @@ class MavisLO(object):
         RLT = RL.transpose()
         CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
         # tomography error for a on-axis star for LGS WFSs
-        CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
-        # difference
-        CtotDiff = Ctot - CtotL
+        self.CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
         
-        if self.verbose:
-            print('    focus residual (tomo., tur.+noi., LGS) [nm]:', "%.2f" % np.sqrt(CtotDiff),
-                '(', "%.2f" % np.sqrt(C2), ',', "%.2f" % np.sqrt(C3), ',', "%.2f" % np.sqrt(CtotL),')')
-        
-        return CtotDiff    
-        
+        if doAll:
+            C2, C3 = self.multiFocusCMatAssemble(aCartNGSCoords, Cnn)
+            
+            # difference
+            CtotDiff = C2 + C3 - self.CtotL
+
+            if self.verbose:
+                print('    focus residual (tomo., tur.+noi., LGS) [nm]:', "%.2f" % np.sqrt(CtotDiff),
+                    '(', "%.2f" % np.sqrt(C2), ',', "%.2f" % np.sqrt(C3), ',', "%.2f" % np.sqrt(self.CtotL),')')
+
+            return CtotDiff
+        else:
+            return None
+
     def ellipsesFromCovMats(self, Ctot):
         theta = sp.symbols('theta')
         sigma_1 = sp.symbols('sigma^2_1')
