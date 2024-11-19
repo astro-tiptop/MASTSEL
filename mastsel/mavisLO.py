@@ -1261,18 +1261,20 @@ class MavisLO(object):
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
             nr = self.nr[indices[starIndex]] 
-            wr = self.wr[indices[starIndex]] 
             if self.verbose:
                 print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
                 print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
-            if starIndex == maxFluxIndex[0][0]:
-                C1[0,0] = wr[0]
-                C1[1,1] = wr[1]
-                if self.verbose:
-                    print('    wind-shake residual (brightest NGS)    [nm\u00b2]:',np.array(wr))
+
+        wr = [self.wr[i] for i in indices]
+        wrSum = [x[0] + x[1] for x in wr]
+        wIndex = np.argmin(wrSum)
+        C1[0,0] = (wr[wIndex])[0]
+        C1[1,1] = (wr[wIndex])[1]
+        if self.verbose:
+            print('    wind-shake residual (brightest NGS)    [nm\u00b2]:',np.array(wr))
 
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
@@ -1336,9 +1338,13 @@ class MavisLO(object):
                 print('    wind-shake residual (per NGS)    [nm\u00b2]:',np.array(wr))
             Cnn[2*starIndex,2*starIndex] = nr[0]
             Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
-            if starIndex == maxFluxIndex[0][0]:
-                C1[0,0] = wr[0]
-                C1[1,1] = wr[1]
+
+        wrSum = [x[0] + x[1] for x in self.wr]
+        wIndex = np.argmin(wrSum)
+        C1[0,0] = (self.wr[wIndex])[0]
+        C1[1,1] = (self.wr[wIndex])[1]
+        if self.verbose:
+            print('    wind-shake residual (brightest NGS)    [nm\u00b2]:',np.array(wr))
 
         if doAll:
             # C1 and Cnn do not depend on aCartPointingCoords[i]
