@@ -1274,7 +1274,7 @@ class MavisLO(object):
         C1[0,0] = (wr[wIndex])[0]
         C1[1,1] = (wr[wIndex])[1]
         if self.verbose:
-            print('    wind-shake residual (brightest NGS)    [nm\u00b2]:',np.array(wr))
+            print('    wind-shake residual (best NGS)   [nm\u00b2]:',np.array(wr[wIndex]))
 
         # C1 and Cnn do not depend on aCartPointingCoords[i]
         Ctot = self.multiCMatAssemble(aCartPointingCoords, aCartNGSCoords, Cnn, C1)
@@ -1344,7 +1344,7 @@ class MavisLO(object):
         C1[0,0] = (self.wr[wIndex])[0]
         C1[1,1] = (self.wr[wIndex])[1]
         if self.verbose:
-            print('    wind-shake residual (brightest NGS)    [nm\u00b2]:',np.array(wr))
+            print('    wind-shake residual (best NGS)   [nm\u00b2]:',np.array(self.wr[wIndex]))
 
         if doAll:
             # C1 and Cnn do not depend on aCartPointingCoords[i]
