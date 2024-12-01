@@ -1336,7 +1336,6 @@ class MavisLO(object):
                     aliasRMS = 0.1
                 # conversion in nm RMS
                 aliasRMS *= self.TelescopeDiameter/(NumberLenslets*4e-6*206264.8)
-                print('aliasRMS [nm]:',aliasRMS)
                 # conversion to nm2 considering the number of sub-apertures
                 ar = (aliasRMS/NumberLenslets)**2
             else:
