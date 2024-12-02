@@ -1260,13 +1260,15 @@ class MavisLO(object):
             print('mavisLO.computeTotalResidualMatrix')
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
-            nr = self.nr[indices[starIndex]] 
+            nr = self.nr[indices[starIndex]]
+            ar = self.ar[indices[starIndex]]
             if self.verbose:
                 print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
                 print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
-            Cnn[2*starIndex,2*starIndex] = nr[0]
-            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
+                print('    aliasing (per NGS)               [nm\u00b2]:',np.array(ar))
+            Cnn[2*starIndex,2*starIndex] = nr[0]+0.5*ar
+            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]+0.5*ar
 
         wr = [self.wr[i] for i in indices]
         wrSum = [x[0] + x[1] for x in wr]
@@ -1281,11 +1283,13 @@ class MavisLO(object):
         return Ctot.reshape((nPointings,2,2))
 
 
-    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas, doAll=True):
+    def computeTotalResidualMatrix(self, aCartPointingCoords, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas,
+                                   aNGS_FWHM_DL_mas=None, doAll=True):
         self.bias = []
         self.amu = []
         self.avar = []
         self.wr = []
+        self.ar = []
         self.nr = []
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
@@ -1298,15 +1302,15 @@ class MavisLO(object):
             
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
+            if nNaturalGS != len(self.NumberLenslets):
+                NumberLenslets = self.NumberLenslets[0]
+            else:
+                NumberLenslets = self.NumberLenslets[starIndex]
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
                 # conversion from rad2 (peak-to-valley) to mas2
                 # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
-                if nNaturalGS != len(self.NumberLenslets):
-                    NumberLenslets = self.NumberLenslets[0]
-                else:
-                    NumberLenslets = self.NumberLenslets[starIndex]
                 rad2mas = self.SensingWavelength_LO*2000*206264.8/(np.pi*self.TelescopeDiameter/NumberLenslets)
                 var1x = avar[0] * rad2mas**2
             else:
@@ -1318,9 +1322,24 @@ class MavisLO(object):
             self.amu.append(amu)
             self.avar.append(avar)
 
-
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeNoiseResidual
             nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+
+            if aNGS_FWHM_DL_mas is not None:
+                # aliasing error in mas RMS
+                #   empirical expression:
+                #   aliasing on TT is 4 times the linear increase of the difference
+                #   between FWHM of the PSF and the FWHM of the DL PSF
+                if aNGS_FWHM_mas[starIndex]-aNGS_FWHM_DL_mas > 0:
+                    aliasRMS = 4*(aNGS_FWHM_mas[starIndex]-aNGS_FWHM_DL_mas)
+                else:
+                    aliasRMS = 0.1
+                # conversion in nm RMS
+                aliasRMS *= self.TelescopeDiameter/(NumberLenslets*4e-6*206264.8)
+                # conversion to nm2 considering the number of sub-apertures
+                ar = (aliasRMS/NumberLenslets)**2
+            else:
+                ar = 0
 
             # This computation is skipped if no wind shake PSD is present.
             if np.sum(self.psd_tip_wind) > 0 or np.sum(self.psd_tilt_wind) > 0:
@@ -1329,15 +1348,17 @@ class MavisLO(object):
                 wr = (0,0)
 
             self.nr.append(nr)
+            self.ar.append(ar)
             self.wr.append(wr)
 
             if self.verbose:
                 print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
                 print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
+                print('    aliasing (per NGS)               [nm\u00b2]:',np.array(ar))
                 print('    wind-shake residual (per NGS)    [nm\u00b2]:',np.array(wr))
-            Cnn[2*starIndex,2*starIndex] = nr[0]
-            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
+            Cnn[2*starIndex,2*starIndex] = nr[0]+0.5*ar
+            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]+0.5*ar
 
         wrSum = [x[0] + x[1] for x in self.wr]
         wIndex = np.argmin(wrSum)
