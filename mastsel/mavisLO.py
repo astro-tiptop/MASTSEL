@@ -249,7 +249,10 @@ class MavisLO(object):
 
         self.Cn2Heights = [x * airmass for x in self.Cn2Heights]
         self.Cn2HeightsMean = (np.dot( np.power(np.asarray(self.Cn2Heights), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-                 
+
+        # from mas to nm
+        self.mas2nm = np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9)
+
 #        self.mutex = None
         self.imax = 30
         self.zmin = 0.03
@@ -1293,9 +1296,7 @@ class MavisLO(object):
             self.amu.append(amu)
             self.avar.append(avar)
 
-            # from mas to nm
-            Cmas2nm = np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9)
-            var1x = float(cpuArray(var1x) * Cmas2nm**2)
+            var1x = float(cpuArray(var1x) * self.mas2nm**2)
 
             nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
 
@@ -1401,11 +1402,9 @@ class MavisLO(object):
             self.amuF.append(amu)
             self.avarF.append(avar)
 
-            # from mas to nm
-            Cmas2nm = np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9)
             # noise propagation coefficient of focus is 0.4 times the one of tilt
             Cnoise = 0.4
-            var1x = float(cpuArray(var1x) * Cmas2nm**2 * Cnoise**2) # var1x in in nm2
+            var1x = float(cpuArray(var1x) * self.mas2nm**2 * Cnoise**2) # var1x in in nm2
             
             # noise propagation considering the number of LO sub-apertures is applied in computeFocusNoiseResidual
             nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
