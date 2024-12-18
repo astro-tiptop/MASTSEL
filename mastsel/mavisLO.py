@@ -87,8 +87,6 @@ class MavisLO(object):
         if np.min(self.Cn2Heights) == 0:
             self.Cn2Heights[np.argmin(self.Cn2Heights)] = 1e-6
 
-        self.Cn2HeightsMean = (np.dot( np.power(np.asarray(self.Cn2Heights), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
-
         SensingWavelength_LO = self.get_config_value('sources_LO','Wavelength')
         if isinstance(SensingWavelength_LO, list):
             self.SensingWavelength_LO = SensingWavelength_LO[0]
@@ -248,7 +246,13 @@ class MavisLO(object):
        
         airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
-                 
+
+        self.Cn2Heights = [x * airmass for x in self.Cn2Heights]
+        self.Cn2HeightsMean = (np.dot( np.power(np.asarray(self.Cn2Heights), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+
+        # from mas to nm
+        self.mas2nm = np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9)
+
 #        self.mutex = None
         self.imax = 30
         self.zmin = 0.03
@@ -285,8 +289,6 @@ class MavisLO(object):
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
-        self.fCValue = self.specializedC_coefficient()
-        self.fCfocusValue = self.specializedCfocus_coefficient()
         self.specializedCovExprs = self.buildSpecializedCovFunctions()
 
         # this is not used for now, as the frequencies of the LO loop are passed as parameters when needed
@@ -432,30 +434,6 @@ class MavisLO(object):
             except:
                 print('    no aSodiumPSDFocus')
         return aTurbPSDFocus, aSodiumPSDFocus
-        
-    def specializedC_coefficient(self):
-        ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
-        self.fCValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_LO })
-        if self.displayEquation:
-            print('mavisLO.specializedC_coefficient')
-            print('    self.fCValue1')
-            try:
-                display(self.fCValue1)
-            except:
-                print('    no self.fCValue1')
-        return self.fCValue1
-
-    def specializedCfocus_coefficient(self):
-        ffC = self.MavisFormulas['noisePropagationCoefficient'].rhs
-        self.fCfocusValue1 = subsParamsByName(ffC, {'D':self.TelescopeDiameter, 'N_sa_tot':self.N_sa_tot_Focus })
-        if self.displayEquation:
-            print('mavisLO.specializedCfocus_coefficient')
-            print('    self.fCfocusValue1')
-            try:
-                display(self.fCfocusValue1)
-            except:
-                print('    no self.fCfocusValue1')
-        return self.fCfocusValue1
     
     def specializedNoiseFuncs(self):
         dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
@@ -803,7 +781,6 @@ class MavisLO(object):
         
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
-        Cfloat = self.fCValue.evalf()
         psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
         
@@ -819,7 +796,7 @@ class MavisLO(object):
         
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
-        sigma2Noise =  cpuArray(varX) / bias**2 * Cfloat / (Df / df)
+        sigma2Noise =  varX / bias**2 / (Df / df)
         # must wait till this moment to substitute the noise level
         self.fTipS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
         self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})    
@@ -883,7 +860,6 @@ class MavisLO(object):
 
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
         npoints = 99
-        Cfloat = self.fCfocusValue.evalf()
         psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, alib)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
 
@@ -899,7 +875,7 @@ class MavisLO(object):
 
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
-        sigma2Noise =  cpuArray(varX) / bias**2 * Cfloat / (Df / df)
+        sigma2Noise =  varX / bias**2 / (Df / df)
         # must wait till this moment to substitute the noise level
         self.fFocusS1 = subsParamsByName(self.fFocusS_LO, {'phi^noise_Tip': sigma2Noise})
         self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
@@ -955,7 +931,6 @@ class MavisLO(object):
 
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
         npoints = 99
-        Cfloat = self.fCValue.evalf()
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
         psd_tip_wind = psd_tip_wind0 * df
@@ -971,7 +946,7 @@ class MavisLO(object):
             ax1.set_xlabel('frequency [Hz]')
             ax1.set_ylabel('Power')
 
-        sigma2Noise = cpuArray(var1x) / bias**2 * Cfloat / (Df / df)
+        sigma2Noise = var1x / bias**2 / (Df / df)
 
         if self.plot4debug:
             dict1 = {'d':self.loopDelaySteps_LO, 'f_loop':self.SensorFrameRate_LO}
@@ -1210,7 +1185,7 @@ class MavisLO(object):
             Ctot[2*i:2*(i+1),:] = ss
             if self.verbose:
                 print('    Star coordinates [arcsec]: ', ("{:.1f}, "*len(aCartPointingCoordsV[i])).format(*aCartPointingCoordsV[i]))
-                print('    Total Cov. (tomo., tur.+noi., wind) [nm]:',"%.2f" % np.sqrt(np.trace(ss)),
+                print('    Total Cov. (tomo., tur.+noi., wind+alias.) [nm]:',"%.2f" % np.sqrt(np.trace(ss)),
                       '(', "%.2f" % np.sqrt(np.trace(Caa + C2b)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
@@ -1244,7 +1219,6 @@ class MavisLO(object):
         R = np.matmul(1/H*IMt,cov_noise_inv)
         RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
-        #Ctot = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose()) + np.dot(R, np.dot(Cnn, RT)
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(Cnn, RT))
 
@@ -1267,14 +1241,14 @@ class MavisLO(object):
                 print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
                 print('    aliasing (per NGS)               [nm\u00b2]:',np.array(ar))
-            Cnn[2*starIndex,2*starIndex] = nr[0]+0.5*ar
-            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]+0.5*ar
+            Cnn[2*starIndex,2*starIndex] = nr[0]
+            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
 
         wr = [self.wr[i] for i in indices]
         wrSum = [x[0] + x[1] for x in wr]
         wIndex = np.argmin(wrSum)
-        C1[0,0] = (wr[wIndex])[0]
-        C1[1,1] = (wr[wIndex])[1]
+        C1[0,0] = (wr[wIndex])[0]+self.ar[wIndex]
+        C1[1,1] = (wr[wIndex])[1]+self.ar[wIndex]
         if self.verbose:
             print('    wind-shake residual (best NGS)   [nm\u00b2]:',np.array(wr[wIndex]))
 
@@ -1322,7 +1296,8 @@ class MavisLO(object):
             self.amu.append(amu)
             self.avar.append(avar)
 
-            # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeNoiseResidual
+            var1x = float(cpuArray(var1x) * self.mas2nm**2)
+
             nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
 
             if aNGS_FWHM_DL_mas is not None:
@@ -1357,13 +1332,13 @@ class MavisLO(object):
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
                 print('    aliasing (per NGS)               [nm\u00b2]:',np.array(ar))
                 print('    wind-shake residual (per NGS)    [nm\u00b2]:',np.array(wr))
-            Cnn[2*starIndex,2*starIndex] = nr[0]+0.5*ar
-            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]+0.5*ar
+            Cnn[2*starIndex,2*starIndex] = nr[0]
+            Cnn[2*starIndex+1,2*starIndex+1] = nr[1]
 
         wrSum = [x[0] + x[1] for x in self.wr]
         wIndex = np.argmin(wrSum)
-        C1[0,0] = (self.wr[wIndex])[0]
-        C1[1,1] = (self.wr[wIndex])[1]
+        C1[0,0] = (self.wr[wIndex])[0] + 0.5*self.ar[wIndex]
+        C1[1,1] = (self.wr[wIndex])[1] + 0.5*self.ar[wIndex]
         if self.verbose:
             print('    wind-shake residual (best NGS)   [nm\u00b2]:',np.array(self.wr[wIndex]))
 
@@ -1426,11 +1401,12 @@ class MavisLO(object):
             self.biasF.append(bias)
             self.amuF.append(amu)
             self.avarF.append(avar)
+
+            # noise propagation coefficient of focus is 0.4 times the one of tilt
+            Cnoise = 0.4
+            var1x = float(cpuArray(var1x) * self.mas2nm**2 * Cnoise**2) # var1x in in nm2
             
-            # noise propagation for focus is 0.4 time the tilt one (linear)
-            var1x *= 0.16
-            # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
-            # except for the 0.16 factor that is applied above
+            # noise propagation considering the number of LO sub-apertures is applied in computeFocusNoiseResidual
             nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
 
             self.nrF.append(nr)
@@ -1439,6 +1415,7 @@ class MavisLO(object):
             if self.verbose:
                 print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
                 print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    turb. + noi. r. (per NGS, focus) [nm\u00b2]:',np.array(nr))
 
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
