@@ -307,9 +307,9 @@ class MavisLO(object):
         else:
             if self.verbose:
                 print('    WARNING: no windPsdFile file is set.')
-            self.psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
-            self.psd_tip_wind = np.zeros((int(2*self.maxLOtFreq)))
-            self.psd_tilt_wind = np.zeros((int(2*self.maxLOtFreq)))
+            self.psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
+            self.psd_tip_wind = np.zeros((int(5*self.maxLOtFreq)))
+            self.psd_tilt_wind = np.zeros((int(5*self.maxLOtFreq)))
 
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
@@ -330,7 +330,7 @@ class MavisLO(object):
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
         hdul.close()
-        psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
+        psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
         psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
         psd_tilt_wind = np.interp(psd_freq, psd_data[0,:], psd_data[2,:],left=0,right=0)
         return psd_freq, psd_tip_wind, psd_tilt_wind
@@ -1298,7 +1298,7 @@ class MavisLO(object):
 
             var1x = float(cpuArray(var1x) * self.mas2nm**2)
 
-            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            nr = self.computeNoiseResidual(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq), var1x, bias, self.platformlib )
 
             if aNGS_FWHM_DL_mas is not None:
                 # aliasing error in mas RMS
@@ -1406,8 +1406,7 @@ class MavisLO(object):
             Cnoise = 0.4
             var1x = float(cpuArray(var1x) * self.mas2nm**2 * Cnoise**2) # var1x in in nm2
             
-            # noise propagation considering the number of LO sub-apertures is applied in computeFocusNoiseResidual
-            nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
+            nr = self.computeFocusNoiseResidual(0.2, self.maxFocustFreq, int(5*self.maxFocustFreq), var1x, bias, self.platformlib )
 
             self.nrF.append(nr)
 
