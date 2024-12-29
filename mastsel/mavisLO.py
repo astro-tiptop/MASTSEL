@@ -305,9 +305,9 @@ class MavisLO(object):
         else:
             if self.verbose:
                 print('    WARNING: no windPsdFile file is set.')
-            self.psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
-            self.psd_tip_wind = np.zeros((int(2*self.maxLOtFreq)))
-            self.psd_tilt_wind = np.zeros((int(2*self.maxLOtFreq)))
+            self.psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
+            self.psd_tip_wind = np.zeros((int(5*self.maxLOtFreq)))
+            self.psd_tilt_wind = np.zeros((int(5*self.maxLOtFreq)))
 
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
@@ -328,7 +328,7 @@ class MavisLO(object):
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
         hdul.close()
-        psd_freq = np.asarray(np.linspace(0.5, self.maxLOtFreq, int(2*self.maxLOtFreq)))
+        psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
         psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
         psd_tilt_wind = np.interp(psd_freq, psd_data[0,:], psd_data[2,:],left=0,right=0)
         return psd_freq, psd_tip_wind, psd_tilt_wind
@@ -1323,7 +1323,7 @@ class MavisLO(object):
             self.avar.append(avar)
 
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeNoiseResidual
-            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            nr = self.computeNoiseResidual(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq), var1x, bias, self.platformlib )
 
             if aNGS_FWHM_DL_mas is not None:
                 # aliasing error in mas RMS
@@ -1427,11 +1427,15 @@ class MavisLO(object):
             self.amuF.append(amu)
             self.avarF.append(avar)
             
+            # PASSATA
             # noise propagation for focus is 0.4 time the tilt one (linear)
             var1x *= 0.16
+            ## Rigaut Gendron coefficients ratio, 0.0193/0.0712
+            ## noise propagation for focus is 0.271 time the tilt one (quadratic)
+            #var1x *= 0.271
             # noise propagation considering the number of sub-apertures and conversion from mas2 to nm2 is applied in computeFocusNoiseResidual
             # except for the 0.16 factor that is applied above
-            nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
+            nr = self.computeFocusNoiseResidual(0.2, self.maxFocustFreq, int(5*self.maxFocustFreq), var1x, bias, self.platformlib )
 
             self.nrF.append(nr)
 
