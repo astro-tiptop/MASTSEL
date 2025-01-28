@@ -342,7 +342,7 @@ class MavisLO(object):
         apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.TechnicalFoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
-        apIM_func = sp.lambdify((xx, yy), apIM, modules=self.platformlib)
+        apIM_func = sp.lambdify((xx, yy), apIM, modules=cpulib)
         if self.displayEquation:
             print('mavisLO.specializedIM')
             print('    apIM')
@@ -860,7 +860,7 @@ class MavisLO(object):
 
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
         npoints = 99
-        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, self.platformlib)
+        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
 
         if self.plot4debug:
