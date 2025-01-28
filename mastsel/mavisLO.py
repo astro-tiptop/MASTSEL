@@ -337,12 +337,12 @@ class MavisLO(object):
 
 
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
-    def specializedIM(self, alib=cpulib):
+    def specializedIM(self):
         apIM = self.MavisFormulas['interactionMatrixNGS']
         apIM = subsParamsByName(apIM, {'D':self.TelescopeDiameter, 'r_FoV':self.TechnicalFoV*arcsecsToRadians/2.0, 'H_DM':max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = subsParamsByName(apIM, {'x_NGS':xx, 'y_NGS':yy})
-        apIM_func = sp.lambdify((xx, yy), apIM, modules=alib)
+        apIM_func = sp.lambdify((xx, yy), apIM, modules=self.platformlib)
         if self.displayEquation:
             print('mavisLO.specializedIM')
             print('    apIM')
@@ -736,7 +736,7 @@ class MavisLO(object):
         psd_tilt_turb = zplot1*scaleFactor
         return psd_tip_turb, psd_tilt_turb
 
-    def computeFocusPSDs(self, fmin, fmax, freq_samples, alib):    
+    def computeFocusPSDs(self, fmin, fmax, freq_samples):    
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
         scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
@@ -758,7 +758,7 @@ class MavisLO(object):
         psd_freq = xplot1[0]
         psd_focus_turb = zplot1*scaleFactor
         
-        psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], alib)
+        psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], self.platformlib)
         psd_focus_sodium = psd_focus_sodium_lambda1( cp.array(psd_freq)) 
         return psd_focus_turb, psd_focus_sodium
 
@@ -779,7 +779,7 @@ class MavisLO(object):
         else:
             return 1
         
-    def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
+    def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
         npoints = 99
         psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
@@ -800,8 +800,8 @@ class MavisLO(object):
         # must wait till this moment to substitute the noise level
         self.fTipS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
         self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})    
-        self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
-        self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], alib)
+        self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+        self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
         if self.displayEquation:
             print('computeNoiseResidual')
             try:
@@ -812,7 +812,7 @@ class MavisLO(object):
                 display(self.fTiltS1)
             except:
                 print('    no self.fTiltS1')
-        if alib==gpulib and gpuEnabled:
+        if self.platformlib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
             psd_tip_turb = cp.asarray(psd_tip_turb)
@@ -853,14 +853,14 @@ class MavisLO(object):
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
             print('    best tip & tilt gain (noise):', "%.3f" % g0g[minTipIdx[0][0]], "%.3f" % g0g[minTiltIdx[0][0]])
-        if alib==gpulib and gpuEnabled:
+        if self.platformlib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
             return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
-    def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias, alib):
+    def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
         npoints = 99
-        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, alib)
+        psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples, self.platformlib)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
 
         if self.plot4debug:
@@ -878,7 +878,7 @@ class MavisLO(object):
         sigma2Noise =  varX / bias**2 / (Df / df)
         # must wait till this moment to substitute the noise level
         self.fFocusS1 = subsParamsByName(self.fFocusS_LO, {'phi^noise_Tip': sigma2Noise})
-        self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
+        self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
         if self.displayEquation:
             print('computeNoiseResidual')
             try:
@@ -886,7 +886,7 @@ class MavisLO(object):
             except:
                 print('    no self.fFocusS1')
 
-        if alib==gpulib and gpuEnabled:
+        if self.platformlib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
             psd_focus_turb = cp.asarray(psd_focus_turb)
@@ -924,12 +924,12 @@ class MavisLO(object):
         minFocusIdx = xp.where(resultFocus == xp.nanmin(resultFocus))
         if self.verbose:
             print('    best focus gain (noise):',"%.3f" % cpuArray(g0g[minFocusIdx[0][0]]))
-        if alib==gpulib and gpuEnabled:
+        if self.platformlib==gpulib and gpuEnabled:
             return cp.asnumpy(resultFocus[minFocusIdx[0][0]])
         else:
             return (resultFocus[minFocusIdx[0][0]])
 
-    def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias, alib):
+    def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias):
         npoints = 99
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
@@ -968,14 +968,14 @@ class MavisLO(object):
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
             self.fTipS1 = subsParamsByName(self.fTipS, {'phi^noise_Tip': sigma2Noise})
             self.fTiltS1 = subsParamsByName( self.fTiltS, {'phi^noise_Tilt': sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], alib)
-            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'g^Tilt_1', 'f', 'phi^wind_Tilt'], alib)
+            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], self.platformlib)
+            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'g^Tilt_1', 'f', 'phi^wind_Tilt'], self.platformlib)
         else:
             self.fTipS1 = subsParamsByName(self.fTipS_LO, {'phi^noise_Tip': sigma2Noise})
             self.fTiltS1 = subsParamsByName( self.fTiltS_LO, {'phi^noise_Tilt': sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], alib)
-            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], alib)
-        if alib==gpulib and gpuEnabled:
+            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+        if self.platformlib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
             psd_tip_wind = cp.asarray(psd_tip_wind)
@@ -1045,12 +1045,12 @@ class MavisLO(object):
                 print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g[minTipIdx[0][0]]), "%.3f" % cpuArray(g0g[minTiltIdx[0][0]]))
                     
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-            if alib==gpulib and gpuEnabled:
+            if self.platformlib==gpulib and gpuEnabled:
                 return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
             else:
                 return (resultTip[minTipIdx[0][0], minTipIdx[1][0]], resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
         else:
-            if alib==gpulib and gpuEnabled:
+            if self.platformlib==gpulib and gpuEnabled:
                 return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
             else:
                 return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
@@ -1298,7 +1298,7 @@ class MavisLO(object):
 
             var1x = float(cpuArray(var1x) * self.mas2nm**2)
 
-            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias, self.platformlib )
+            nr = self.computeNoiseResidual(0.25, self.maxLOtFreq, int(4*self.maxLOtFreq), var1x, bias )
 
             if aNGS_FWHM_DL_mas is not None:
                 # aliasing error in mas RMS
@@ -1318,7 +1318,7 @@ class MavisLO(object):
 
             # This computation is skipped if no wind shake PSD is present.
             if np.sum(self.psd_tip_wind) > 0 or np.sum(self.psd_tilt_wind) > 0:
-                wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias, self.platformlib )
+                wr = self.computeWindResidual(self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind, var1x, bias )
             else:
                 wr = (0,0)
 
@@ -1407,7 +1407,7 @@ class MavisLO(object):
             var1x = float(cpuArray(var1x) * self.mas2nm**2 * Cnoise**2) # var1x in in nm2
             
             # noise propagation considering the number of LO sub-apertures is applied in computeFocusNoiseResidual
-            nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias, self.platformlib )
+            nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias )
 
             self.nrF.append(nr)
 
