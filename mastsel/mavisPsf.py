@@ -10,8 +10,18 @@ else:
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 
+# TODO this is here because getFWHM is not in MASTSEL
+from p3.aoSystem.FourierUtils import *
+
 fit_window_max_size = 512
 defaultArrayBackend = cp
+
+# TODO this is also in mavisLO
+def cpuArray(v):
+    if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v, float):
+        return v
+    else:
+        return v.get()
 
 def hostData(_data):
     if defaultArrayBackend == cp and gpuEnabled:
@@ -420,3 +430,114 @@ def residualToSpectrum(ellp, wvl, N,  pixel_scale_otf):
     convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), -ellp[0])
 
     return convKernelFFT
+
+def maskSA(nSA, nMask, telPupil):
+    # define a set 2D array with the mask of the sub-aperture of the WFS
+    pupilSidePix = int(telPupil.shape[0])
+    saMask = cp.zeros((pupilSidePix,pupilSidePix))
+    if len(nSA) == nMask:
+        mask = []
+    else:
+        nMask = 1
+    for i in range(nMask):
+        saSidePix = int(pupilSidePix/nSA[i])
+        if nSA[i] == 1:
+            maskI = telPupil
+        else:
+            if nSA[i] == 2:
+                saMask[0:saSidePix,0:saSidePix] = 1
+                saMask *= telPupil
+            elif nSA[i] == 3:
+                saMask[0:saSidePix,int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2)] = 1
+                saMask *= telPupil
+            else:
+                saMask[int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2),\
+                       int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2)] = 1
+            maskI = saMask
+        if nMask > 1:
+            mask.append(maskI)
+        else:
+            mask = maskI
+    return mask
+
+def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range,
+                   dk, npixel, psInMas, wvl, opdMap=None, verbose=False):
+
+    oversampling = N/npixel
+    pixelscale = psInMas*wavelength/wvl
+    scaleFactor = (2*cp.pi*1e-9/wavelength)**2
+
+    # mask
+    maskField = Field(wavelength, N, grid_diameter)
+    if not isinstance(mask, list):
+        maskField.sampling = congrid(mask, [sx, sx])
+        maskField.sampling = zeroPad(maskField.sampling, (N-sx)//2)
+
+    # telescope OTF
+    if opdMap is None:
+         otf_tel = None
+    else:
+        maskOtf = Field(wavelength, N, grid_diameter)
+        phaseStat = (2*cp.pi*1e-9/wavelength) * opdMap
+        phaseStat = congrid(phaseStat, [sx, sx])
+        phaseStat = zeroPad(phaseStat, (N-sx)//2)
+        if mask is None or not isinstance(mask, list):
+            maskOtf.sampling = maskField.sampling*cp.exp(1*complex(0,1)*phaseStat)
+            maskOtf.pupilToOtf()
+            maskOtf.sampling /= maskOtf.sampling.max()
+            otf_tel = maskOtf.sampling
+
+    sources_SR = []
+    psdArray = []
+    psfLongExpArr = []
+    sources_FWHM_mas = []
+
+    i = 0
+    for computedPSD in inputPSDs:
+        # mask
+        if isinstance(mask, list):
+            maskField.sampling = congrid(mask[i], [sx, sx])
+            maskField.sampling = zeroPad(maskField.sampling, (N-sx)//2)
+            # telescope OTF
+            if opdMap is not None:
+                maskOtf.sampling = maskField.sampling*cp.exp(1*complex(0,1)*phaseStat)
+                maskOtf.pupilToOtf()
+                maskOtf.sampling /= maskOtf.sampling.max()
+                otf_tel = maskOtf.sampling
+
+        # Get the PSD at the NGSs positions at the sensing wavelength
+        # computed PSD from fao are given in nm^2, i.e they are multiplied by dk**2 already
+        psd          = Field(wavelength, N, freq_range, 'rad')
+        psd.sampling = computedPSD / dk**2 # the PSD must be provided in m^2.m^2
+        psdArray.append(psd)
+
+        # Get the PSF
+        psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel )
+
+        # It rebins the PSF if oversampling is greater than 1
+        if oversampling > 1:                    # --> TODO this must be update to manage multi-wavelength PSF
+            temp = cp.array(psfLE.sampling)
+            nTemp = int(oversampling)
+            nOut = int(temp.shape[0]/nTemp)
+            psfLE.sampling = temp.reshape((nOut,nTemp,nOut,nTemp)).mean(3).mean(1)
+        # It cuts the PSF if the PSF is larger than the requested dimension
+        if psfLE.sampling.shape[0] > npixel:
+            psfLE.sampling = psfLE.sampling[int(psfLE.sampling.shape[0]/2-npixel/2):int(psfLE.sampling.shape[0]/2+npixel/2),
+                                            int(psfLE.sampling.shape[1]/2-npixel/2):int(psfLE.sampling.shape[1]/2+npixel/2)]
+        psfLongExpArr.append(psfLE)
+        # Get SR and FWHM in mas at the NGSs positions at the sensing wavelength
+        s1           = cpuArray(computedPSD).sum()
+        SR           = cp.exp(-s1*scaleFactor) # Strehl-ratio at the sensing wavelength
+
+        sources_SR.append(SR)
+        FWHMx,FWHMy  = getFWHM( psfLE.sampling, pixelscale, method='contour', nargout=2)
+        FWHM         = np.sqrt(FWHMx*FWHMy) #max(FWHMx, FWHMy) #0.5*(FWHMx+FWHMy) #average over major and minor axes
+
+        # note : the uncertainities on the FWHM seems to create a bug in mavisLO
+        sources_FWHM_mas.append(FWHM)
+        if verbose:
+            print('SR(@',int(wavelength*1e9),'nm)        :', "%.5f" % SR)
+            print('FWHM(@',int(wavelength*1e9),'nm) [mas]:', "%.3f" % FWHM)
+        i += 1
+
+    return sources_SR, psdArray, psfLongExpArr, sources_FWHM_mas
