@@ -10,18 +10,8 @@ else:
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 
-# TODO this is here because getFWHM is not in MASTSEL
-from p3.aoSystem.FourierUtils import *
-
 fit_window_max_size = 512
 defaultArrayBackend = cp
-
-# TODO this is also in mavisLO
-def cpuArray(v):
-    if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v, float):
-        return v
-    else:
-        return v.get()
 
 def hostData(_data):
     if defaultArrayBackend == cp and gpuEnabled:
@@ -461,7 +451,7 @@ def maskSA(nSA, nMask, telPupil):
     return mask
 
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range,
-                   dk, npixel, psInMas, wvl, opdMap=None, verbose=False):
+                   dk, npixel, psInMas, wvl, opdMap=None):
 
     oversampling = N/npixel
     pixelscale = psInMas*wavelength/wvl
@@ -525,19 +515,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range
             psfLE.sampling = psfLE.sampling[int(psfLE.sampling.shape[0]/2-npixel/2):int(psfLE.sampling.shape[0]/2+npixel/2),
                                             int(psfLE.sampling.shape[1]/2-npixel/2):int(psfLE.sampling.shape[1]/2+npixel/2)]
         psfLongExpArr.append(psfLE)
-        # Get SR and FWHM in mas at the NGSs positions at the sensing wavelength
-        s1           = cpuArray(computedPSD).sum()
-        SR           = cp.exp(-s1*scaleFactor) # Strehl-ratio at the sensing wavelength
 
-        sources_SR.append(SR)
-        FWHMx,FWHMy  = getFWHM( psfLE.sampling, pixelscale, method='contour', nargout=2)
-        FWHM         = np.sqrt(FWHMx*FWHMy) #max(FWHMx, FWHMy) #0.5*(FWHMx+FWHMy) #average over major and minor axes
-
-        # note : the uncertainities on the FWHM seems to create a bug in mavisLO
-        sources_FWHM_mas.append(FWHM)
-        if verbose:
-            print('SR(@',int(wavelength*1e9),'nm)        :', "%.5f" % SR)
-            print('FWHM(@',int(wavelength*1e9),'nm) [mas]:', "%.3f" % FWHM)
         i += 1
 
-    return sources_SR, psdArray, psfLongExpArr, sources_FWHM_mas
+    return psdArray, psfLongExpArr
