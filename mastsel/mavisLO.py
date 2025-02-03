@@ -26,7 +26,7 @@ def cpuArray(v):
 
 def maxStableGain(delay):
     d = np.array([0, 1, 2, 3, 4, 10])
-    g = np.array([1.99, 1.99, 0.99, 0.6, 0.4, 0.1])
+    g = np.array([2.0, 2.0, 1.0, 0.6, 0.4, 0.1])
     if delay < 10:
         maxG = np.interp(delay, d, g)
     else:
