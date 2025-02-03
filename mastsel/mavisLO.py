@@ -828,7 +828,8 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            maxG = maxStableGain(self.loopDelaySteps_LO)*0.9
+            maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
+            npoints = int(npoints*maxG/0.8)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
         elif self.LoopGain_LO == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
@@ -902,7 +903,8 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            maxG = maxStableGain(self.loopDelaySteps_Focus)
+            maxG = maxStableGain(self.loopDelaySteps_Focus)*0.8
+            npoints = int(npoints*maxG/0.8)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
         elif self.LoopGain_Focus == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
@@ -994,7 +996,8 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            maxG = maxStableGain(self.loopDelaySteps_LO)*0.9
+            maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
+            npoints = int(npoints*maxG/0.8)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
             g0g, g1g = xp.meshgrid( g0g,g0g )
         elif self.LoopGain_LO == 'test':
