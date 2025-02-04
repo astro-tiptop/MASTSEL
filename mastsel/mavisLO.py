@@ -24,6 +24,15 @@ def cpuArray(v):
     else:
         return v.get()
 
+def maxStableGain(delay):
+    d = np.array([0, 1, 2, 3, 4, 10])
+    g = np.array([2.0, 2.0, 1.0, 0.6, 0.4, 0.1])
+    if delay < 10:
+        maxG = np.interp(delay, d, g)
+    else:
+        maxG = 0.1
+    return maxG
+
 class MavisLO(object):
     
     def check_section_key(self, primary):
@@ -778,7 +787,7 @@ class MavisLO(object):
             return 0
         else:
             return 1
-        
+
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
         npoints = 99
         psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
@@ -823,7 +832,9 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.8, npoints)))
+            maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
+            npoints = int(npoints*maxG/0.8)
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
         elif self.LoopGain_LO == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
@@ -896,7 +907,9 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.99, npoints)))
+            maxG = maxStableGain(self.loopDelaySteps_Focus)*0.8
+            npoints = int(npoints*maxG/0.8)
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
         elif self.LoopGain_Focus == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
         else:
@@ -987,7 +1000,9 @@ class MavisLO(object):
             # add small values of gain to have a good optimization
             # when the noise level is high.
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, 0.8, npoints)))
+            maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
+            npoints = int(npoints*maxG/0.8)
+            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
             g0g, g1g = xp.meshgrid( g0g,g0g )
         elif self.LoopGain_LO == 'test':
             g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
