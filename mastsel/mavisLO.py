@@ -1326,7 +1326,7 @@ class MavisLO(object):
                 # conversion from pixel2 to mas2
                 var1x = avar[0] * self.PixelScale_LO**2
             # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
-            var1x /= NumberLenslets**2
+            var1x /= self.N_sa_tot_LO
 
             self.bias.append(bias)
             self.amu.append(amu)
