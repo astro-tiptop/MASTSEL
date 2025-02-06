@@ -351,7 +351,7 @@ class MavisLO(object):
         apIM = apIM.subs({self.MavisFormulas.symbol_map['D']:self.TelescopeDiameter, self.MavisFormulas.symbol_map['r_FoV']:self.TechnicalFoV*arcsecsToRadians/2.0, self.MavisFormulas.symbol_map['H_DM']:max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
         apIM = apIM.subs({self.MavisFormulas.symbol_map['x_NGS']:xx, self.MavisFormulas.symbol_map['y_NGS']:yy})
-        apIM_func = sp.lambdify((xx, yy), apIM, modules=self.platformlib)
+        apIM_func = sp.lambdify((xx, yy), apIM, modules=cpulib)
         if self.displayEquation:
             print('mavisLO.specializedIM')
             print('    apIM')
