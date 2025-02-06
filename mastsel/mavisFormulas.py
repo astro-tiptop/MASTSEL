@@ -86,6 +86,17 @@ def createMavisFormulary():
 
     _m_symbols_map.update(zip('H_DM D\' r_FoV'.split(), [H_DM, DP, r_FoV]))
 
+    sigma_ron, b, t, nu, F = sp.symbols('sigma_RON b t nu F', real=True)
+    x = sp.symbols('x', real=True)
+    i, i_max = sp.symbols('i i_max', integer=True)
+    ip = sp.symbols('i_p', integer=True, positive=True)
+    mu_k = sp.symbols('mu_k_thr')
+    F, zr = sp.symbols('F z_r', real=True)
+    z_max = sp.symbols('z_max')
+    f_k = sp.symbols('f_k', real=True)
+
+    _m_symbols_map.update(zip('mu_k_thr sigma_RON b t nu F f_k i i_p i_max z_r'.split(), [mu_k, sigma_ron, b, t, nu, F, f_k, i, ip, i_max, zr]))
+
     _m_symbols_map.update(zip('x_NGS y_NGS'.split(), [x_NGS, y_NGS]))
     _m_symbols_map.update(zip('res epsilon_Tip epsilon_Tilt'.split(), [res, e_tip, e_tilt]))
     _m_symbols_map['phi^res_Tip'] = phi_res_tip
@@ -409,21 +420,16 @@ def createMavisFormulary():
         return sp.Eq(dW_phi, _rhs)
 
     def expr_phi():
-        x = sp.symbols('x', real=True)
+
         return (sp.S(1)/sp.sqrt(sp.S(2)*sp.pi)) * sp.exp( - x**2 / 2)
 
     def expr_Phi():
-        x = sp.symbols('x', real=True)
         return (sp.S(1)/sp.S(2)) * (1+sp.erf(x/sp.sqrt(sp.S(2))))
 
     def expr_G():
-        i = sp.symbols('i', integer=True, positive=True)
-        F, z = sp.symbols('F z', real=True)
-        return z ** (i/(F-1) -1 )  * sp.exp(-z/(F-1)) / ( sp.exp(sp.log(F-1)*(i/(F-1))) *  sp.gamma(i/(F-1)) )
+        return zr ** (ip/(F-1) -1 )  * sp.exp(-zr/(F-1)) / ( sp.exp(sp.log(F-1)*(ip/(F-1))) *  sp.gamma(ip/(F-1)) )
 
     def gaussianMean():
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu, F = sp.symbols('sigma_RON b t nu F', real=True)
         sigma_e = sp.sqrt(F*(f_k+b)+sigma_ron*sigma_ron)
         f1 = subsParamsByName( expr_phi(), {'x': (t-f_k)/sigma_e})
         f2 = subsParamsByName( expr_Phi(), {'x': (f_k-t)/sigma_e})
@@ -433,9 +439,6 @@ def createMavisFormulary():
         return _rhs
 
     def gaussianVariance():
-        mu_k = sp.symbols('mu_k_thr')
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu, F = sp.symbols('sigma_RON b t nu F', real=True)
         sigma_e = sp.sqrt(F*(f_k+b)+sigma_ron*sigma_ron)
         f1 = subsParamsByName( expr_phi(), {'x': (t-f_k)/sigma_e})
         f2 = subsParamsByName( expr_Phi(), {'x': (f_k-t)/sigma_e})
@@ -445,28 +448,21 @@ def createMavisFormulary():
         return _rhs
 
     def truncatedMeanBasic():
-        i, i_max = sp.symbols('i i_max', integer=True)
         # f_k = I_k + back, vedi appedice D : back: 0.0
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu = sp.symbols('sigma_RON b t nu', real=True)
-        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** i / sp.factorial(i)
-        f1 = subsParamsByName( expr_phi(), {'x': (t-(i-b))/sigma_ron})
-        f2 = subsParamsByName( expr_Phi(), {'x': (i-b-t)/sigma_ron})
-        f3 = subsParamsByName( expr_Phi(), {'x': (t-(i-b))/sigma_ron})
+        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** ip / sp.factorial(i)
+        f1 = subsParamsByName( expr_phi(), {'x': (t-(ip-b))/sigma_ron})
+        f2 = subsParamsByName( expr_Phi(), {'x': (ip-b-t)/sigma_ron})
+        f3 = subsParamsByName( expr_Phi(), {'x': (t-(ip-b))/sigma_ron})
         fK = expr_K_i
-        _rhs = sp.Sum(fK * ( sigma_ron * f1  + (i-b) * f2 + nu * f3 ) , (i, 0, i_max))
+        _rhs = sp.Sum(fK * ( sigma_ron * f1  + (ip-b) * f2 + nu * f3 ) , (ip, 0, i_max))
         _lhs = sp.symbols('mu_k_thr')
         return sp.Eq(_lhs, _rhs)
 
     def truncatedVarianceBasic():
-        mu_k = sp.symbols('mu_k_thr')
-        i, i_max = sp.symbols('i i_max', integer=True)
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu = sp.symbols('sigma_RON b t nu', real=True)
-        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** i / sp.factorial(i)
-        f1 = subsParamsByName( expr_phi(), {'x': (t-(i-b))/sigma_ron})
-        f2 = subsParamsByName( expr_Phi(), {'x': (i-b-t)/sigma_ron})
-        f3 = subsParamsByName( expr_Phi(), {'x': (t-(i-b))/sigma_ron})
+        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** ip / sp.factorial(ip)
+        f1 = subsParamsByName( expr_phi(), {'x': (t-(ip-b))/sigma_ron})
+        f2 = subsParamsByName( expr_Phi(), {'x': (ip-b-t)/sigma_ron})
+        f3 = subsParamsByName( expr_Phi(), {'x': (t-(ip-b))/sigma_ron})
         fK = expr_K_i
         _rhs = sp.Sum(fK * ( sigma_ron * (t+i-b) * f1 + (sigma_ron**2 + (i-b)**2) * f2 + nu**2 * f3 ) , (i, 0, i_max)) - mu_k**2
         _lhs = sp.symbols('sigma^2_k_thr')
@@ -474,85 +470,64 @@ def createMavisFormulary():
 
 
     def truncatedMeanIntegrand():
-        F, z = sp.symbols('F z', real=True)
-        i = sp.symbols('i', integer=True)
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu = sp.symbols('sigma_RON b t nu', real=True)
-        f4 = subsParamsByName(expr_phi(), {'x': (t-(z-b))/sigma_ron})
-        f5 = subsParamsByName(expr_Phi(), {'x': (z-b-t)/sigma_ron})
-        f6 = subsParamsByName(expr_Phi(), {'x': (t-(z-b))/sigma_ron})
-        _rhs = expr_G() * ( sigma_ron * f4 + (z-b) * f5 + nu * f6 )
+        f4 = subsParamsByName(expr_phi(), {'x': (t-(zr-b))/sigma_ron})
+        f5 = subsParamsByName(expr_Phi(), {'x': (zr-b-t)/sigma_ron})
+        f6 = subsParamsByName(expr_Phi(), {'x': (t-(zr-b))/sigma_ron})
+        _rhs = expr_G() * ( sigma_ron * f4 + (zr-b) * f5 + nu * f6 )
         _lhs = sp.symbols('I_mu_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
     def truncatedVarianceIntegrand():
-        F, z = sp.symbols('F z', real=True)
-        i = sp.symbols('i', integer=True)
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu = sp.symbols('sigma_RON b t nu', real=True)
-        f4 = subsParamsByName(expr_phi(), {'x': (t-(z-b))/sigma_ron})
-        f5 = subsParamsByName(expr_Phi(), {'x': (z-b-t)/sigma_ron})
-        f6 = subsParamsByName(expr_Phi(), {'x': (t-(z-b))/sigma_ron})
-        _rhs = expr_G() * ( sigma_ron * (t+z-b) * f4 + (sigma_ron**2 + (z-b)**2) * f5 + nu**2 * f6 )
+        f4 = subsParamsByName(expr_phi(), {'x': (t-(zr-b))/sigma_ron})
+        f5 = subsParamsByName(expr_Phi(), {'x': (zr-b-t)/sigma_ron})
+        f6 = subsParamsByName(expr_Phi(), {'x': (t-(zr-b))/sigma_ron})
+        _rhs = expr_G() * ( sigma_ron * (t+zr-b) * f4 + (sigma_ron**2 + (zr-b)**2) * f5 + nu**2 * f6 )
         _lhs = sp.symbols('I_sigma_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
     def truncatedMeanComponents(ii):
-        F, z = sp.symbols('F z', real=True)
-        i = sp.symbols('i', integer=True, positive=True)
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu = sp.symbols('sigma_RON b t nu', real=True)
-        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** i / sp.factorial(i)
+        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** ip / sp.factorial(ip)
         f1 = subsParamsByName(expr_phi(), {'x': (t+b)/sigma_ron})
         f2 = subsParamsByName(expr_Phi(), {'x': -(t+b)/sigma_ron})
         f3 = subsParamsByName(expr_Phi(), {'x': (t+b)/sigma_ron})
-        z_max = sp.symbols('z_max')
         expr10 = sp.exp(-(f_k+b)) * ( sigma_ron * f1  - b * f2 + nu * f3 )
-        _integrand = subsParamsByName(truncatedMeanIntegrand().rhs, {'z':z, 'i':i} )        
+        _integrand = subsParamsByName(truncatedMeanIntegrand().rhs, {'z_r':zr, 'i_p':ip} ) 
         if ii==0:
             return expr10
         elif ii==1:
             return expr_K_i
         elif ii==2:
-            return sp.Integral( _integrand, (z, 0.0001, z_max))
+            return sp.Integral( _integrand, (zr, 0.0001, z_max))
 
     def truncatedMean():
         expr10, expr_K_i, integral =  truncatedMeanComponents(0), truncatedMeanComponents(1), truncatedMeanComponents(2)
-        i_max = sp.symbols('i_max', integer=True, positive=True)
-        i = getSymbolByName(expr_K_i, 'i')
-        _rhs = expr10 + sp.Sum( expr_K_i *  integral , (i, 1, i_max) )
+        ip = getSymbolByName(expr_K_i, 'i_p')
+        _rhs = expr10 + sp.Sum( expr_K_i *  integral , (ip, 1, i_max) )
         _lhs = sp.symbols('mu_k_thr')
         return sp.Eq(_lhs, _rhs)
 
 
     def truncatedVarianceComponents(ii):
-        F, z = sp.symbols('F z', real=True)
-        i = sp.symbols('i', integer=True, positive=True)
-        f_k = sp.symbols('f_k', real=True)
-        sigma_ron, b, t, nu = sp.symbols('sigma_RON b t nu', real=True)
-        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** i / sp.factorial(i)
+        expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** ip / sp.factorial(ip)
         f1 = subsParamsByName(expr_phi(), {'x': (t+b)/sigma_ron})
         f2 = subsParamsByName(expr_Phi(), {'x': -(t+b)/sigma_ron})
         f3 = subsParamsByName(expr_Phi(), {'x': (t+b)/sigma_ron})
-        z_max = sp.symbols('z_max')
         expr20 = sp.exp(-(f_k+b)) * (sigma_ron * (t-b) * f1 + (sigma_ron**2 + b**2) * f2 + nu**2 * f3)
-        _integrand = subsParamsByName(truncatedVarianceIntegrand().rhs, {'z':z, 'i':i} )
+        _integrand = subsParamsByName(truncatedVarianceIntegrand().rhs, {'z_r':zr, 'i_p':ip} )
         if ii==0:
             return expr20
         elif ii==1:
             return expr_K_i
         elif ii==2:
-            return sp.Integral( _integrand, (z, 0.0001, z_max))
+            return sp.Integral( _integrand, (zr, 0.0001, z_max))
 
 
     def truncatedVariance():
         expr20, expr_K_i, integral =  truncatedVarianceComponents(0), truncatedVarianceComponents(1), truncatedVarianceComponents(2)
-        i_max = sp.symbols('i_max', integer=True, positive=True)
-        mu_k = sp.symbols('mu_k_thr')
-        i = getSymbolByName(expr_K_i, 'i')
-        _rhs = expr20 + sp.Sum(expr_K_i*integral , (i, 1, i_max)) - mu_k**2
+        ip = getSymbolByName(expr_K_i, 'i_p')
+        _rhs = expr20 + sp.Sum(expr_K_i*integral , (ip, 1, i_max)) - mu_k**2
         _lhs = sp.symbols('sigma^2_k_thr')
         return sp.Eq(_lhs, _rhs)
     

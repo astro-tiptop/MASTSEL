@@ -619,7 +619,7 @@ class MavisLO(object):
     
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, expr1):
         gaussianPoints = gaussianPointsM.flatten()
-        aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i'), 1, int(self.imax)) )
+        aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z_r'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i_p'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
         lh = sp.Function('B')(getSymbolByName(aFunction, 'f_k'))
         xplot1, zplot1 = self.mIt.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints//2, 'linear'), (self.imax, 'linear')], 'raw')
@@ -1326,7 +1326,7 @@ class MavisLO(object):
                 # conversion from pixel2 to mas2
                 var1x = avar[0] * self.PixelScale_LO**2
             # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
-            var1x /= NumberLenslets
+            var1x /= NumberLenslets**2
 
             self.bias.append(bias)
             self.amu.append(amu)
