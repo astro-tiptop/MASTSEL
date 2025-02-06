@@ -51,8 +51,7 @@ def createMavisFormulary():
     H_R_tipz = sp.Function( 'H^R_Tip^z')(z)
     H_R_tiltz = sp.Function( 'H^R_Tilt^z')(z)
     H_N_tipz = sp.Function( 'H^N_Tip^z')(z)
-    H_N_tiltz = sp.Function( 'H^N_Tilt^z')(z)
-    
+    H_N_tiltz = sp.Function( 'H^N_Tilt^z')(z)    
 
     dW_phi = sp.Function('dW_phi')(rho)
     W_phi = sp.Function('W_phi')(rho)
@@ -67,6 +66,49 @@ def createMavisFormulary():
     hMean = sp.symbols('h_mean', positive=True)
     wsMean = sp.symbols('wind_speed_mean', positive=True)
     frHo, fovRadius = sp.symbols('fr_ho fov_radius', positive=True)
+
+    _m_symbols_map = {}
+    _m_symbols_map['rho'] = rho
+    _m_symbols_map['rho'] = rho
+    _m_symbols_map['theta'] = theta
+    _m_symbols_map.update(zip('f f_min f_max f_loop'.split(), [f, f_min, f_max, f_loop]))
+    _m_symbols_map['z'] = z
+    _m_symbols_map['d'] = d
+    _m_symbols_map.update(zip('k k_y k_y_min k_y_max'.split(), [k, k_y, k_y_min, k_y_max]))
+    _m_symbols_map.update(zip('r_0 L_0 k_0 V R'.split(), [r0, L0, k0, V, R]))
+    _m_symbols_map.update(zip('C D N_sa_tot'.split(), [C, D, Nsa]))
+    _m_symbols_map['sigma^2_WCoG'] = sigma_w
+    _m_symbols_map['mu_WCoG'] = mu_w
+    _m_symbols_map['df'] = df
+    _m_symbols_map['Delta_F'] = DF
+    _m_symbols_map['ZenithAngle'] = zA
+
+
+    _m_symbols_map.update(zip('H_DM D\' r_FoV'.split(), [H_DM, DP, r_FoV]))
+
+    _m_symbols_map.update(zip('x_NGS y_NGS'.split(), [x_NGS, y_NGS]))
+    _m_symbols_map.update(zip('res epsilon_Tip epsilon_Tilt'.split(), [res, e_tip, e_tilt]))
+    _m_symbols_map['phi^res_Tip'] = phi_res_tip
+    _m_symbols_map['phi^res_Tilt'] = phi_res_tilt
+    _m_symbols_map['phi^wind_Tip'] = phi_wind_tip
+    _m_symbols_map['phi^wind_Tilt'] = phi_wind_tilt
+    _m_symbols_map['phi^noise_Tip'] = phi_noise_tip
+    _m_symbols_map['phi^noise_Tilt'] = phi_noise_tilt
+    _m_symbols_map['H^R_Tip'] = H_R_tip
+    _m_symbols_map['H^N_Tip'] = H_N_tip
+    _m_symbols_map['H^R_Tilt'] = H_R_tilt
+    _m_symbols_map['H^N_Tilt'] = H_N_tilt
+
+
+    _m_symbols_map.update(zip('g^Tip_0 g^Tip_1'.split(), [g_0_tip, g_1_tip]))
+    _m_symbols_map.update(zip('g^Tilt_0 g^Tilt_1'.split(), [g_0_tilt, g_1_tilt]))
+    _m_symbols_map.update(zip('h z_1 z_2'.split(), [hh, z1, z2]))
+    _m_symbols_map.update(zip('j n_j m_j k n_k m_k'.split(), [jj, nj, mj, kk, nk, mk]))
+    _m_symbols_map.update(zip('R_1 R_2'.split(), [R1, R2]))
+    _m_symbols_map['h_mean'] = hMean
+    _m_symbols_map['wind_speed_mean'] = wsMean    
+    _m_symbols_map.update(zip('fr_ho fov_radius'.split(), [frHo, fovRadius]))
+
 
     def noisePropagationCoefficient():
         expr0 = ((sp.S.Pi/(180*3600*1000) * D / (4*1e-9)))**2/Nsa
@@ -513,8 +555,7 @@ def createMavisFormulary():
         _rhs = expr20 + sp.Sum(expr_K_i*integral , (i, 1, i_max)) - mu_k**2
         _lhs = sp.symbols('sigma^2_k_thr')
         return sp.Eq(_lhs, _rhs)
-
-
+    
     _MavisFormulas = Formulary("MAVIS",
                             ['noisePropagationCoefficient',
                              'noisePSDTip',
@@ -626,7 +667,7 @@ def createMavisFormulary():
                              truncatedVarianceComponents(0),
                              truncatedVarianceComponents(1),
                              truncatedVarianceComponents(2)
-                           ] )
+                           ], symbol_map=_m_symbols_map )
 
     return _MavisFormulas
 
