@@ -104,9 +104,12 @@ class MavisLO(object):
 
         self.NumberLenslets         = self.get_config_value('sensor_LO','NumberLenslets')
 
-        self.N_sa_tot_LO            = self.NumberLenslets[0]**2
-        if self.NumberLenslets[0] > 2:
-            self.N_sa_tot_LO        = int ( np.floor( self.N_sa_tot_LO * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
+        self.N_sa_tot_LO = []
+        for n in self.NumberLenslets:
+            if n > 2:
+                self.N_sa_tot_LO.append(int(np.floor(n**2 * np.pi / 4.0 * (1.0 - self.ObscurationRatio**2))))
+            else:
+                self.N_sa_tot_LO.append(n**2)
 
         self.PixelScale_LO          = self.get_config_value('sensor_LO','PixelScale')
         self.WindowRadiusWCoG_LO    = self.get_config_value('sensor_LO','WindowRadiusWCoG')
@@ -188,9 +191,12 @@ class MavisLO(object):
         else:
             self.loopDelaySteps_Focus  = self.loopDelaySteps_LO
 
-        self.N_sa_tot_Focus            = self.NumberLenslets_Focus[0]**2
-        if self.NumberLenslets_Focus[0] > 2:
-            self.N_sa_tot_Focus        = int ( np.floor( self.N_sa_tot_Focus * np.pi/4.0 * (1.0 - self.ObscurationRatio**2) ) )
+        self.N_sa_tot_Focus = []
+        for n in self.NumberLenslets_Focus:
+            if n > 2:
+                self.N_sa_tot_Focus.append(int(np.floor(n**2 * np.pi / 4.0 * (1.0 - self.ObscurationRatio**2))))
+            else:
+                self.N_sa_tot_Focus.append(n**2)
 
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
@@ -1312,8 +1318,10 @@ class MavisLO(object):
             self.configLOFreq( aNGS_freq[starIndex] )
             if nNaturalGS != len(self.NumberLenslets):
                 NumberLenslets = self.NumberLenslets[0]
+                N_sa_tot_LO = self.N_sa_tot_LO[0]
             else:
                 NumberLenslets = self.NumberLenslets[starIndex]
+                N_sa_tot_LO = self.N_sa_tot_LO[starIndex]
             # one scalar (bias), two tuples of 2 (amu, avar)
             if self.simpleVarianceComputation:
                 bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
@@ -1326,7 +1334,7 @@ class MavisLO(object):
                 # conversion from pixel2 to mas2
                 var1x = avar[0] * self.PixelScale_LO**2
             # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
-            var1x /= self.N_sa_tot_LO
+            var1x /= N_sa_tot_LO
 
             self.bias.append(bias)
             self.amu.append(amu)
@@ -1348,7 +1356,7 @@ class MavisLO(object):
                 # conversion in nm RMS
                 aliasRMS *= self.TelescopeDiameter/(NumberLenslets*4e-6*206264.8)
                 # conversion to nm2 considering the number of sub-apertures
-                ar = (aliasRMS/NumberLenslets)**2
+                ar = aliasRMS**2/N_sa_tot_LO
             else:
                 ar = 0
 
