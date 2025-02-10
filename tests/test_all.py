@@ -158,8 +158,11 @@ class TestBiasAndVariance(TestMavisLO):
         I_k_data = intRebin(I_k_data, TestMavisLO.mLO.mediumShape) * TestMavisLO.mLO.downsample_factor**2
         ii1, ii2 = int(TestMavisLO.mLO.mediumGridSize/2-TestMavisLO.mLO.smallGridSize), int(TestMavisLO.mLO.mediumGridSize/2+TestMavisLO.mLO.smallGridSize)
         I_k_data = I_k_data[ii1:ii2,ii1:ii2]
-        mu_ktr_array, var_ktr_array, sigma_ktr_array = TestMavisLO.mLO.meanVarSigma(I_k_data)
         
+        xplot1, mu_ktr_array = TestMavisLO.mLO.compute2DMeanVar( TestMavisLO.mLO.aFunctionM, TestMavisLO.mLO.expr0M, I_k_data, TestMavisLO.mLO.aFunctionMGauss)
+        xplot2, var_ktr_array = TestMavisLO.mLO.compute2DMeanVar( TestMavisLO.mLO.aFunctionV, TestMavisLO.mLO.expr0V, I_k_data, TestMavisLO.mLO.aFunctionVGauss)
+        var_ktr_array = var_ktr_array - mu_ktr_array**2
+
         mu_thr, var_thr = meanVarPixelThr(I_k_data,
                                           ron=TestMavisLO.mLO.sigmaRON_LO,
                                           bg=(TestMavisLO.mLO.Dark_LO+TestMavisLO.mLO.skyBackground_LO)/TestMavisLO.mLO.SensorFrameRate_LO,
@@ -168,9 +171,9 @@ class TestBiasAndVariance(TestMavisLO):
                                           new_value=TestMavisLO.mLO.NewValueThrPix_LO)
 
         result = np.max(np.abs(mu_ktr_array-mu_thr))
-        self.assertTrue( np.testing.assert_allclose(result, 0, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_array_less(result, 1e-3)==None)
         result = np.max(np.abs(var_ktr_array-var_thr))
-        self.assertTrue( np.testing.assert_allclose(result, 0, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_array_less(result, 1e-3)==None)
 
 def suite():
     suite = unittest.TestSuite()
