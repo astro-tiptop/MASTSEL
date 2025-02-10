@@ -229,6 +229,130 @@ def intRebin(arr, new_shape):
              new_shape[1], arr.shape[1] // new_shape[1])
     return arr.reshape(shape).mean(-1).mean(1)
 
+from scipy.special import erf, gamma
+
+def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nophot=False, npoints=1000, new_value=None):
+    """
+    Calculates the mean and variance of the pixels taking into account the signal flow, 
+    read noise, background and a threshold.
+    
+    Parameters:
+    - flux: NxN array with flux without background (in electrons)
+    - ron: read noise (electrons, default 0)
+    - bg: background (electrons, default 0)
+    - thresh: threshold for pixels (default -inf)
+    - order: iteration order for low intensities (default 30)
+    - excess: excess noise factor (default 1)
+    - nophot: if True, removes photon noise (default False)
+    - npoints: points for numerical integration (default 1000)
+    - new_value: replacement value for pixels below threshold (default = threshold)
+    
+    returns:
+    - mean_thr: NxN matrix of the mean
+    - var_thr: NxN matrix of
+    """
+
+    if new_value is None:
+        new_value = thresh
+
+    if not np.isfinite(thresh):
+        new_value = 0
+        thresh2 = 0  # removes threshold if it is -Inf
+    else:
+        thresh2 = thresh
+
+    if nophot:
+        excess = 0  # removes photon noise
+
+    # Separation between Gaussian approximation and iterative method
+    index_gauss = np.where((flux + bg) >= 10)
+    index_it = np.where((flux + bg) < 10) if not nophot else ([], [])
+
+    # Initializes output arrays
+    mean_thr = np.zeros_like(flux, dtype=np.float64)
+    var_thr = np.zeros_like(flux, dtype=np.float64)
+
+    # ---- Gaussian approximation ----
+    if len(index_gauss[0]) > 0:
+        flux_tmp = flux[index_gauss]
+        sigma_e = np.sqrt(excess * (flux_tmp + bg) + ron**2)
+
+        offset = flux_tmp - thresh + 1e-20
+        z = 0.5 * (1 + erf(offset / (np.sqrt(2) * sigma_e)))  # gaussian CDF at offset
+        phi = np.exp(-offset**2 / (2 * sigma_e**2)) / np.sqrt(2 * np.pi)  # gaussian PDF at offset
+
+        mu_thr_gauss = flux_tmp * z + new_value * (1 - z) + sigma_e * phi
+        var_thr_gauss = (flux_tmp**2 + sigma_e**2) * z + new_value**2 * (1 - z) + (flux_tmp + thresh2) * sigma_e * phi
+        var_thr_gauss -= mu_thr_gauss**2
+
+        mean_thr[index_gauss] = mu_thr_gauss
+        var_thr[index_gauss] = var_thr_gauss
+
+    # ---- Iterative method ----
+    # Iteration on each Dirac from the Poisson distribution until indicated order
+    if len(index_it[0]) > 0:
+        flux_tmp = flux[index_it]
+        flux2 = flux_tmp + bg
+        tab_k = np.arange(order) - bg
+        sigma_e = ron
+    
+        mu_thr_it = np.zeros_like(flux_tmp, dtype=np.float64)
+        var_thr_it = np.zeros_like(flux_tmp, dtype=np.float64)
+
+        if excess > 1:
+            x = np.exp(np.linspace(np.log(order / npoints), np.log(order), npoints - 1))
+            x = np.insert(x, 0, 0)
+            dx = np.diff(x)
+
+            offset = x - bg - thresh + 1e-20
+            z = 0.5 * (1 + erf(offset / (np.sqrt(2) * sigma_e)))
+            phi = np.exp(-offset**2 / (2 * sigma_e**2)) / np.sqrt(2 * np.pi)
+
+            mu_x = sigma_e * phi + (x - bg) * z + new_value * (1 - z)
+            var_x = sigma_e * (x - bg + thresh2) * phi + (sigma_e**2 + (x - bg) ** 2) * z + new_value**2 * (1 - z)
+
+            mu_thr_it = np.exp(-flux2) * mu_x[0]
+            var_thr_it = np.exp(-flux2) * var_x[0]
+
+            for i in range(1, order):
+                k = tab_k[i]
+                k2 = k + bg
+
+                coeff = np.exp(-flux2) * flux2**k2 / gamma(k2 + 1)
+                cur_gamma = (x ** (k2 / (excess - 1) - 1) * np.exp(-x / (excess - 1))) / (
+                    (excess - 1) ** (k2 / (excess - 1)) * gamma(k2 / (excess - 1))
+                )
+
+                if i == (excess - 1):
+                    cur_gamma[0] = 1.0 / (excess - 1)
+                else:
+                    cur_gamma[0] = 0
+
+                cur_mu = cur_gamma * mu_x
+                cur_var = cur_gamma * var_x
+
+                mu_thr_it += coeff * np.sum((cur_mu[1:] + cur_mu[:-1]) / 2 * dx)
+                var_thr_it += coeff * np.sum((cur_var[1:] + cur_var[:-1]) / 2 * dx)
+
+        else:
+            for i in range(order):
+                k = tab_k[i]
+                k2 = k + bg
+
+                offset = k - thresh + 1e-20
+                z = 0.5 * (1 + erf(offset / (np.sqrt(2) * sigma_e)))
+                phi = np.exp(-offset**2 / (2 * sigma_e**2)) / np.sqrt(2 * np.pi)
+
+                coeff = np.exp(-flux2) * flux2**k2 / gamma(k2 + 1)
+                mu_thr_it += coeff * (k * z + new_value * (1 - z) + sigma_e * phi)
+                var_thr_it += coeff * (z * (sigma_e**2 + k**2) + new_value**2 * (1 - z) + (k + thresh2) * sigma_e * phi)
+
+        var_thr_it -= mu_thr_it**2
+
+        mean_thr[index_it] = mu_thr_it
+        var_thr[index_it] = var_thr_it
+
+    return mean_thr, var_thr
     
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse

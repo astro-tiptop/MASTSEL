@@ -328,11 +328,13 @@ class MavisLO(object):
 
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
-        if not self.simpleVarianceComputation:
-            self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
-            self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
-            self.aFunctionMGauss = self.specializedGMeanVarFormulas('GaussianMean')
-            self.aFunctionVGauss = self.specializedGMeanVarFormulas('GaussianVariance')
+
+
+    def configSpecMeanVarFormulas(self):
+        self.aFunctionM, self.expr0M = self.specializedMeanVarFormulas('truncatedMeanComponents')
+        self.aFunctionV, self.expr0V = self.specializedMeanVarFormulas('truncatedVarianceComponents')
+        self.aFunctionMGauss = self.specializedGMeanVarFormulas('GaussianMean')
+        self.aFunctionVGauss = self.specializedGMeanVarFormulas('GaussianVariance')
 
 
     def configFocusFreq(self, frequency):
@@ -640,9 +642,17 @@ class MavisLO(object):
 
     
     def meanVarSigma(self, gaussianPoints):
-        xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints, self.aFunctionMGauss)
-        xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints, self.aFunctionVGauss)
-        var_ktr_array = var_ktr_array - mu_ktr_array**2
+        #xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints, self.aFunctionMGauss)
+        #xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints, self.aFunctionVGauss)
+        #var_ktr_array = var_ktr_array - mu_ktr_array**2
+        
+        mu_ktr_array, var_ktr_array = meanVarPixelThr(gaussianPoints,
+                                                      ron=self.sigmaRON_LO,
+                                                      bg=(self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO,
+                                                      excess=self.ExcessNoiseFactor_LO,
+                                                      thresh=self.ThresholdWCoG_LO,
+                                                      new_value=self.NewValueThrPix_LO)
+        
         sigma_ktr_array = np.sqrt(var_ktr_array.astype(np.float32))
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
@@ -680,6 +690,13 @@ class MavisLO(object):
         sigma_e = np.sqrt( ExcessNoiseFactor * sky_and_back + sigmaRON**2 )
         sigma_ph_fwhm = ExcessNoiseFactor*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
         sigma_ron_fwhm = (np.pi/(32.0*np.log(2.0))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
+        #sigma_ph_fwhm = ExcessNoiseFactor*(np.pi**2/(2.0*np.log(2.0)*aNGS_frameflux)) \
+        #                                 * (N_T/N_D)**2 \
+        #                                 * (N_T**2+N_W**2)**4 \
+        #                                 / ((2*N_T**2+N_W**2)** 2 * N_W**4)
+        #sigma_ron_fwhm = (np.pi**3/(32.0*np.log(2.0))) * (sigma_e/aNGS_frameflux)**2 \
+        #                                            * (N_T**2+N_W**2) ** 4 \
+        #                                            / (N_D**2*N_W**4)
         # in the next lines we approximate that the encircled energy present in 2 times the FWHM
         # of the PSF can be effectively used to compute the centroid
         sigma_ph_ee = (1.0/aNGS_EE) * sigma_ph_fwhm

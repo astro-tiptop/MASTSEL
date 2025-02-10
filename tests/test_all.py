@@ -80,7 +80,7 @@ class TestNoiseResiduals(TestMavisLO):
         """
         Test 
         """ 
-        print("Running Test: TestWindResiduals")
+        print("Running Test: TestNoiseResiduals")
         NGS_flux = [2500, 7500 , 1250]
         NGS_freq = [500, 500 , 500]
         NGS_SR_1650 = [0.4, 0.2, 0.6]
@@ -111,7 +111,7 @@ class TestWindResiduals(TestMavisLO):
         """
         Test 
         """
-        print("Running Test: TestNoiseResiduals")
+        print("Running Test: TestWindResiduals")
         psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('data/windpsd_mavis.fits')
         var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO**2
         bias = 0.4300779971881394
@@ -129,42 +129,48 @@ class TestWindResiduals(TestMavisLO):
 
 
 class TestBiasAndVariance(TestMavisLO):
-    def test_bias_and_vairance(self):
+    def test_bias_and_variance(self):
         """
         Test 
         """
-
-        aNGS_flux_vect = np.array([10000,100000,1000000,10000000,1000000000])
-        aNGS_freq = 100
-        aNGS_EE_LO = 1
-        aNGS_FWHM_mas = 50
-        rad2mas = TestMavisLO.mLO.SensingWavelength_LO * 2000*206264.8/(np.pi*TestMavisLO.mLO.TelescopeDiameter/TestMavisLO.mLO.NumberLenslets[0])
-
         print("Running Test: TestBiasAndVariance")
 
-        TestMavisLO.mLO.simpleVarianceComputation = True
-        TestMavisLO.mLO.configLOFreq(aNGS_freq) 
-        varxS_vect = []
-        for aNGS_flux in aNGS_flux_vect:
-            TestMavisLO.mLO.WindowRadiusWCoG_LO = 0
-            (biasS,(muxS,muyS),(varxS,varyS)) = TestMavisLO.mLO.simplifiedComputeBiasAndVariance(aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas)
-            varxS *= rad2mas**2
-            varxS_vect.append(varxS/biasS)
-
+        aNGS_EE = 1
+        aNGS_flux = 100000
+        aNGS_freq = 100
+        aNGS_FWHM_mas = 2*TestMavisLO.mLO.PixelScale_LO
+        
         TestMavisLO.mLO.simpleVarianceComputation = False
         TestMavisLO.mLO.configLOFreq(aNGS_freq)
-        varx_vect = []
-        for aNGS_flux in aNGS_flux_vect:
-            TestMavisLO.mLO.WindowRadiusWCoG_LO = 0
-            (bias,(mux,muy),(varx,vary)) = TestMavisLO.mLO.computeBiasAndVariance(aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas)
-            varx *= TestMavisLO.mLO.PixelScale_LO**2
-            varx_vect.append(varx/bias)
-            
-        ratio = np.array(varxS_vect)/np.array(varx_vect)
+        TestMavisLO.mLO.configSpecMeanVarFormulas()
+        
+        aNGS_frameflux = aNGS_flux / aNGS_freq
+        asigma = aNGS_FWHM_mas/sigmaToFWHM/TestMavisLO.mLO.mediumPixelScale
+               
+        xCoords = np.asarray(np.linspace(-TestMavisLO.mLO.largeGridSize/2.0+0.5, TestMavisLO.mLO.largeGridSize/2.0-0.5, TestMavisLO.mLO.largeGridSize), dtype=np.float32)
+        yCoords = np.asarray(np.linspace(-TestMavisLO.mLO.largeGridSize/2.0+0.5, TestMavisLO.mLO.largeGridSize/2.0-0.5, TestMavisLO.mLO.largeGridSize), dtype=np.float32)
+        xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
+                
+        g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+        g2d = g2d * 1 / np.sum(g2d)
+        I_k_data = g2d * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
+        I_k_data = I_k_data * aNGS_frameflux     
+        I_k_data = intRebin(I_k_data, TestMavisLO.mLO.mediumShape) * TestMavisLO.mLO.downsample_factor**2
+        ii1, ii2 = int(TestMavisLO.mLO.mediumGridSize/2-TestMavisLO.mLO.smallGridSize), int(TestMavisLO.mLO.mediumGridSize/2+TestMavisLO.mLO.smallGridSize)
+        I_k_data = I_k_data[ii1:ii2,ii1:ii2]
+        mu_ktr_array, var_ktr_array, sigma_ktr_array = TestMavisLO.mLO.meanVarSigma(I_k_data)
+        
+        mu_thr, var_thr = meanVarPixelThr(I_k_data,
+                                          ron=TestMavisLO.mLO.sigmaRON_LO,
+                                          bg=(TestMavisLO.mLO.Dark_LO+TestMavisLO.mLO.skyBackground_LO)/TestMavisLO.mLO.SensorFrameRate_LO,
+                                          excess=TestMavisLO.mLO.ExcessNoiseFactor_LO,
+                                          thresh=TestMavisLO.mLO.ThresholdWCoG_LO,
+                                          new_value=TestMavisLO.mLO.NewValueThrPix_LO)
 
-        result = np.max(ratio)
-
-        self.assertTrue( np.testing.assert_array_less(result, 5)==None)
+        result = np.max(np.abs(mu_ktr_array-mu_thr))
+        self.assertTrue( np.testing.assert_allclose(result, 0, rtol=1e-03, atol=1e-5)==None)
+        result = np.max(np.abs(var_ktr_array-var_thr))
+        self.assertTrue( np.testing.assert_allclose(result, 0, rtol=1e-03, atol=1e-5)==None)
 
 def suite():
     suite = unittest.TestSuite()
@@ -172,7 +178,7 @@ def suite():
     suite.addTest(TestCovMatrices('test_cov_matrices'))
     suite.addTest(TestNoiseResiduals('test_noise_residuals'))
     suite.addTest(TestWindResiduals('test_wind_residuals'))
-    suite.addTest(TestBiasAndVariance('test_bias_and_vairance'))
+    suite.addTest(TestBiasAndVariance('test_bias_and_variance'))
     return suite
 
 
