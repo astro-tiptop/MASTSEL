@@ -28,6 +28,7 @@ jobs:
         run: |  
           python -m pip install .
           pip install pytest coverage
+          pytest --collect-only  # Debug: show tests found
           coverage run -m pytest tests/ -v -s || exit 1
       - name: Generate Coverage Report  
         run: |  
