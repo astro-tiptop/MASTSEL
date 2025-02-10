@@ -28,7 +28,7 @@ jobs:
         run: |  
           python -m pip install .
           pip install pytest coverage
-          coverage run -m pytest -v -s || exit 1
+          coverage run -m pytest tests/ -v -s || exit 1
       - name: Generate Coverage Report  
         run: |  
           coverage report -m
