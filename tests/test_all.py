@@ -145,6 +145,7 @@ class TestBiasAndVariance(TestMavisLO):
         TestMavisLO.mLO.configSpecMeanVarFormulas()
         
         aNGS_frameflux = aNGS_flux / aNGS_freq
+        TestMavisLO.mLO.mediumPixelScale = TestMavisLO.mLO.PixelScale_LO/TestMavisLO.mLO.downsample_factor
         asigma = aNGS_FWHM_mas/sigmaToFWHM/TestMavisLO.mLO.mediumPixelScale
                
         xCoords = np.asarray(np.linspace(-TestMavisLO.mLO.largeGridSize/2.0+0.5, TestMavisLO.mLO.largeGridSize/2.0-0.5, TestMavisLO.mLO.largeGridSize), dtype=np.float32)
