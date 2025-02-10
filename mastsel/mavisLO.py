@@ -201,11 +201,9 @@ class MavisLO(object):
         defaultCompute = 'GPU'
         defaultIntegralDiscretization1 = 1000
         defaultIntegralDiscretization2 = 4000
-        defaultSimpleVarianceComputation = True
         self.computationPlatform = defaultCompute
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
-        self.simpleVarianceComputation = defaultSimpleVarianceComputation
 
         if self.check_section_key('COMPUTATION'):
             if self.check_config_key('COMPUTATION','platform'):
@@ -215,11 +213,9 @@ class MavisLO(object):
             if self.check_config_key('COMPUTATION','integralDiscretization2'):
                 self.integralDiscretization2 = self.get_config_value('COMPUTATION','integralDiscretization2')
             if self.check_config_key('COMPUTATION','simpleVarianceComputation'):
-                self.simpleVarianceComputation = self.get_config_value('COMPUTATION','simpleVarianceComputation')
+                print('simpleVarianceComputation method is deprecated, it will not be used!')
 
-        if self.verbose:
-            print('defaultSimpleVarianceComputation',self.simpleVarianceComputation)
-        
+
         if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
             print('%%%%%%%% ATTENTION %%%%%%%%')
             print('You must provide r0_Value or Seeing value, not both, ')
@@ -277,11 +273,9 @@ class MavisLO(object):
         self.largeGridSize = 200
         self.downsample_factor = 4
         # this is N_W in the simplified variance formulas
-        self.smallGridSize = 2*self.WindowRadiusWCoG_LO
         self.p_offset = 1.0 # 1/4 pixel on medium grid
         self.mediumGridSize = int(self.largeGridSize/self.downsample_factor)
         self.mediumShape = (self.mediumGridSize,self.mediumGridSize)
-        self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
 
         # diffraction limited FWHM - full aperture
         #self.diffNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter)*radiansToArcsecs*1000
@@ -641,15 +635,28 @@ class MavisLO(object):
         return ssx, rr
 
     
-    def meanVarSigma(self, gaussianPoints):
+    def meanVarSigma(self, gaussianPoints, doLO=True):
         #xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints, self.aFunctionMGauss)
         #xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints, self.aFunctionVGauss)
         #var_ktr_array = var_ktr_array - mu_ktr_array**2
+
+        if doLO:
+            Background = (self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO
+            ExcessNoiseFactor = self.ExcessNoiseFactor_LO
+            sigmaRON = self.sigmaRON_LO
+            ThresholdWCoG = self.ThresholdWCoG_LO
+            NewValueThrPix = self.NewValueThrPix_LO
+        else:
+            Background = (self.Dark_Focus+self.skyBackground_Focus)/self.SensorFrameRate_Focus
+            ExcessNoiseFactor = self.ExcessNoiseFactor_Focus
+            sigmaRON = self.sigmaRON_Focus
+            ThresholdWCoG = 0.0
+            NewValueThrPix = 0.0
         
         mu_ktr_array, var_ktr_array = meanVarPixelThr(gaussianPoints,
-                                                      ron=self.sigmaRON_LO,
-                                                      bg=(self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO,
-                                                      excess=self.ExcessNoiseFactor_LO,
+                                                      ron=sigmaRON,
+                                                      bg=Background,
+                                                      excess=ExcessNoiseFactor,
                                                       thresh=self.ThresholdWCoG_LO,
                                                       new_value=self.NewValueThrPix_LO)
         
@@ -657,63 +664,21 @@ class MavisLO(object):
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
 
-    def simplifiedComputeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas, doLO=True):
+    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas, doLO=True):
         if doLO:
             if self.WindowRadiusWCoG_LO == 0:
-                WindowRadiusWCoG = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_LO)), 1)
+                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
             else:
                 WindowRadiusWCoG = self.WindowRadiusWCoG_LO
-            skyBackground = self.skyBackground_LO
-            Dark = self.Dark_LO
-            PixelScale = self.PixelScale_LO
-            ExcessNoiseFactor = self.ExcessNoiseFactor_LO
-            sigmaRON = self.sigmaRON_LO
-            subap_FWHM_mas = self.subapNGS_FWHM_mas
+            self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
         else:
             if self.WindowRadiusWCoG_Focus == 0:
-                WindowRadiusWCoG = max(int(np.round((aNGS_FWHM_mas/2)/self.PixelScale_Focus)), 1)
+                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_Focus)),1)
             else:
                 WindowRadiusWCoG = self.WindowRadiusWCoG_Focus
-            skyBackground = self.skyBackground_Focus
-            Dark = self.Dark_Focus
-            PixelScale = self.PixelScale_Focus
-            ExcessNoiseFactor = self.ExcessNoiseFactor_Focus
-            sigmaRON = self.sigmaRON_Focus
-            subap_FWHM_mas = self.subapFocus_FWHM_mas
+            self.mediumPixelScale = self.PixelScale_Focus/self.downsample_factor
+        self.smallGridSize = 2*WindowRadiusWCoG
 
-        # aNGS_flux is provided in photons/s
-        aNGS_frameflux = aNGS_flux / aNGS_freq
-        sky_and_back = (skyBackground + Dark)/aNGS_freq
-        N_T = aNGS_FWHM_mas/PixelScale
-        N_W = 2*WindowRadiusWCoG
-        N_D = subap_FWHM_mas/PixelScale
-        sigma_e = np.sqrt( ExcessNoiseFactor * sky_and_back + sigmaRON**2 )
-        sigma_ph_fwhm = ExcessNoiseFactor*(1.0/(2.0*np.log(2.0)*aNGS_frameflux)) * ((N_T)*((N_T**2+N_W**2)/(2*N_T**2+N_W**2))) ** 2
-        sigma_ron_fwhm = (np.pi/(32.0*np.log(2.0))) * ( (sigma_e/(aNGS_frameflux)) * (N_T**2+N_W**2) ) ** 2
-        #sigma_ph_fwhm = ExcessNoiseFactor*(np.pi**2/(2.0*np.log(2.0)*aNGS_frameflux)) \
-        #                                 * (N_T/N_D)**2 \
-        #                                 * (N_T**2+N_W**2)**4 \
-        #                                 / ((2*N_T**2+N_W**2)** 2 * N_W**4)
-        #sigma_ron_fwhm = (np.pi**3/(32.0*np.log(2.0))) * (sigma_e/aNGS_frameflux)**2 \
-        #                                            * (N_T**2+N_W**2) ** 4 \
-        #                                            / (N_D**2*N_W**4)
-        # in the next lines we approximate that the encircled energy present in 2 times the FWHM
-        # of the PSF can be effectively used to compute the centroid
-        sigma_ph_ee = (1.0/aNGS_EE) * sigma_ph_fwhm
-        sigma_ron_ee = (1.0/aNGS_EE)**2 * sigma_ron_fwhm
-        sigma_tot = sigma_ph_ee + sigma_ron_ee
-        varx = vary = sigma_tot
-        mux = muy = 0
-        bias = N_W**2/(N_W**2+N_T**2)
-        return (bias,(mux,muy),(varx,vary))
-
-
-    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas):
-        if self.WindowRadiusWCoG_LO == 0:
-            WindowRadiusWCoG_LO = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
-            self.smallGridSize = 2*WindowRadiusWCoG_LO
-        else:
-            WindowRadiusWCoG_LO = self.WindowRadiusWCoG_LO
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
@@ -739,15 +704,15 @@ class MavisLO(object):
         ffx = np.arange(-self.mediumGridSize/2, self.mediumGridSize/2, 1.0) + 0.5
         (fx, fy) = np.meshgrid(ffx, ffx)
         # binary mask
-        W_Mask = np.where( np.logical_or(fx**2 +fy**2 > WindowRadiusWCoG_LO**2, fx**2 + fy**2 < 0**2), 0.0, 1.0)
+        W_Mask = np.where( np.logical_or(fx**2 +fy**2 > WindowRadiusWCoG**2, fx**2 + fy**2 < 0**2), 0.0, 1.0)
         ii1, ii2 = int(self.mediumGridSize/2-self.smallGridSize), int(self.mediumGridSize/2+self.smallGridSize)
         I_k_data = I_k_data[ii1:ii2,ii1:ii2]
         I_k_prime_data = I_k_prime_data[ii1:ii2,ii1:ii2]
         W_Mask = W_Mask[ii1:ii2,ii1:ii2]
         fx = fx[ii1:ii2,ii1:ii2]
         fy = fy[ii1:ii2,ii1:ii2]
-        mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(I_k_data)
-        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(I_k_prime_data)
+        mu_ktr_array, var_ktr_array, sigma_ktr_array = self.meanVarSigma(I_k_data, doLO=doLO)
+        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = self.meanVarSigma(I_k_prime_data, doLO=doLO)
         masked_mu0 = W_Mask * mu_ktr_array
         masked_mu = W_Mask * mu_ktr_prime_array
         masked_sigma = W_Mask**2 * var_ktr_array
@@ -1340,16 +1305,9 @@ class MavisLO(object):
                 NumberLenslets = self.NumberLenslets[starIndex]
                 N_sa_tot_LO = self.N_sa_tot_LO[starIndex]
             # one scalar (bias), two tuples of 2 (amu, avar)
-            if self.simpleVarianceComputation:
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
-                # conversion from rad2 (peak-to-valley) to mas2
-                # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
-                rad2mas = self.SensingWavelength_LO*2000*206264.8/(np.pi*self.TelescopeDiameter/NumberLenslets)
-                var1x = avar[0] * rad2mas**2
-            else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
-                # conversion from pixel2 to mas2
-                var1x = avar[0] * self.PixelScale_LO**2
+            bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
+            # conversion from pixel2 to mas2
+            var1x = avar[0] * self.PixelScale_LO**2
             # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
             var1x /= N_sa_tot_LO
 
@@ -1448,29 +1406,25 @@ class MavisLO(object):
             self.configFocusFreq( aNGS_freq[starIndex] )
             if nNaturalGS != len(self.NumberLenslets_Focus):
                 NumberLenslets = self.NumberLenslets_Focus[0]
+                N_sa_tot_Focus = self.N_sa_tot_Focus[0]
             else:
                 NumberLenslets = self.NumberLenslets_Focus[starIndex]
+                N_sa_tot_Focus = self.N_sa_tot_Focus[starIndex]
             # one scalar (bias), two tuples of 2 (amu, avar)
-            if self.simpleVarianceComputation or self.check_section_key('sensor_Focus'):
-                bias, amu, avar = self.simplifiedComputeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex],
-                                                                        aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
-                # conversion from rad2 (peak-to-valley) to mas2
-                # rad to OPD --> wavelength / (2pi), OPD to arcsec --> 3600*180/pi / D_SA, arcsec to mas --> 1000 and factor 4 from RMS to peak-to-valley
-                rad2mas = self.SensingWavelength_Focus*2000*206264.8/(np.pi*self.TelescopeDiameter/NumberLenslets)
-                var1x = avar[0] * rad2mas**2
-            else:
-                bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
-                # conversion from pixel2 to mas2
-                var1x = avar[0] * self.PixelScale_LO**2
-                
+            bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
+            # conversion from pixel2 to mas2
+            var1x = avar[0] * self.PixelScale_Focus**2
+            # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
+            var1x /= N_sa_tot_Focus
+
             self.biasF.append(bias)
             self.amuF.append(amu)
             self.avarF.append(avar)
 
-            # noise propagation coefficient of focus is 0.4 times the one of tilt
-            Cnoise = 0.4
+            # noise propagation coefficient of focus is 0.52 times the one of tilt
+            Cnoise = 0.52
             var1x = float(cpuArray(var1x) * self.mas2nm**2 * Cnoise**2) # var1x in in nm2
-            
+
             # noise propagation considering the number of LO sub-apertures is applied in computeFocusNoiseResidual
             nr = self.computeFocusNoiseResidual(0.25, self.maxFocustFreq, int(4*self.maxFocustFreq), var1x, bias )
 
