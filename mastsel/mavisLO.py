@@ -271,6 +271,9 @@ class MavisLO(object):
         self.integrationPoints = self.integralDiscretization1
         self.psdIntegrationPoints = self.integralDiscretization2
         self.largeGridSize = 200
+        xCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
+        yCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
+        self.xLargeGrid, self.yLargeGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
         self.downsample_factor = 4
         # this is N_W in the simplified variance formulas
         self.p_offset = 1.0 # 1/4 pixel on medium grid
@@ -682,17 +685,13 @@ class MavisLO(object):
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
-               
-        xCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
-        yCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
-        xGrid, yGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
                 
-        g2d = simple2Dgaussian( xGrid, yGrid, 0, 0, asigma)
+        g2d = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
         I_k_data = g2d * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_data = I_k_data * aNGS_flux/aNGS_freq
             
-        g2d_prime = simple2Dgaussian( xGrid, yGrid, self.p_offset, 0, asigma)
+        g2d_prime = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, self.p_offset, 0, asigma)
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)       
         I_k_prime_data = g2d_prime * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_prime_data = I_k_prime_data * aNGS_flux/aNGS_freq
