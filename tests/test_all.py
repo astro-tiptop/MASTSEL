@@ -59,7 +59,8 @@ class TestCovMatrices(TestMavisLO):
         polarNGSCoords = np.asarray([[30.0,0.0], [50.0,100.0],[10.0,240.0]])
         cartNGSCoords = np.asarray([polarToCartesian(polarNGSCoords[0]), polarToCartesian(polarNGSCoords[1]), polarToCartesian(polarNGSCoords[2])])
         print("Running Test: TestCovMatrices")
-        matCaaValue, matCasValue, matCssValue = TestMavisLO.mLO.computeCovMatrices(cartPointingCoords, cartNGSCoords)        
+        matCaaValue, matCasValue, matCssValue = TestMavisLO.mLO.computeCovMatrices(cartPointingCoords, cartNGSCoords) 
+
         hdul = fits.open('data/Caa.fits')
         Caa_data = np.asarray(hdul[0].data, np.float64)
         hdul.close()
@@ -74,8 +75,8 @@ class TestCovMatrices(TestMavisLO):
         self.assertTrue( np.testing.assert_allclose(Css_data,matCssValue, rtol=1e-03, atol=1e-5)==None)        
 
 
-class TestWindResiduals(TestMavisLO):
-    def test_wind_residuals(self):
+class TestNoiseResiduals(TestMavisLO):
+    def test_noise_residuals(self):
         """
         Test 
         """ 
@@ -85,24 +86,28 @@ class TestWindResiduals(TestMavisLO):
         NGS_SR_1650 = [0.4, 0.2, 0.6]
         NGS_FWHM_mas = [51.677, 81.673, 42.373]
         
+        TestMavisLO.mLO.simpleVarianceComputation = False
         mItGPU = Integrator(cp, cp.float64, '')
+        TestMavisLO.mLO.configLOFreq(NGS_freq[0]) 
         r1 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[0], NGS_freq[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
+        TestMavisLO.mLO.configLOFreq(NGS_freq[1]) 
         r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_freq[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
+        TestMavisLO.mLO.configLOFreq(NGS_freq[2]) 
         r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_freq[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
+        
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.3532540510862264)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.0883135127715566, -2.8275988362257914e-09)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r1[2]), np.array((0.14564300983994172, 0.1456430098399417)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[0]), np.array((0.32539772105091225)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[1]), np.array((0.08134943026272806, 2.1788091530849742e-17)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r2[2]), np.array((0.15495676441587683, 0.154956764415876861)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[0]), np.array((0.30692711822411245)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[1]), np.array((0.07673177955602811, -1.4843916271439003e-09)), rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(np.array(r3[2]), np.array((0.15620390676644558, 0.15620390676644558)), rtol=1e-03, atol=1e-5)==None)
 
-        self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.3305086490286356)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.0826271622571589, 0.0)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r1[2]), np.array((0.12942792320851965, 0.12942792320851965)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r2[0]), np.array((0.3067767436965856)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r2[1]), np.array((0.0766941859241464, 0.0)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r2[2]), np.array((0.1381058202766471, 0.1381058202766471)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r3[0]), np.array((0.28524614382590824)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r3[1]), np.array((0.07131153595647706, 0.0)), rtol=1e-03, atol=1e-5)==None)
-        self.assertTrue( np.testing.assert_allclose(np.array(r3[2]), np.array((0.13778324257626204, 0.13778324257626204)), rtol=1e-03, atol=1e-5)==None)
 
-
-class TestNoiseResiduals(TestMavisLO):
-    def test_noise_residuals(self):
+class TestWindResiduals(TestMavisLO):
+    def test_wind_residuals(self):
         """
         Test 
         """
@@ -110,25 +115,64 @@ class TestNoiseResiduals(TestMavisLO):
         psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('data/windpsd_mavis.fits')
         var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO**2
         bias = 0.4300779971881394
-        nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias, gpulib )
-        wr = TestMavisLO.mLO.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias, gpulib )
+        nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias )
+        wr = TestMavisLO.mLO.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias )
+
         result = nr[0]
-        self.assertTrue( np.testing.assert_allclose(result, 3827.13, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 736.61, rtol=1e-03, atol=1e-5)==None)
         result = nr[1]
-        self.assertTrue( np.testing.assert_allclose(result, 2387.49, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 438.381, rtol=1e-03, atol=1e-5)==None)
         result = wr[0]
-        self.assertTrue( np.testing.assert_allclose(result, 243.63, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 247.04, rtol=1e-03, atol=1e-5)==None)
         result = wr[1]
-        self.assertTrue( np.testing.assert_allclose(result, 173.69, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 176.56, rtol=1e-03, atol=1e-5)==None)
 
 
+class TestBiasAndVariance(TestMavisLO):
+    def test_bias_and_vairance(self):
+        """
+        Test 
+        """
+
+        aNGS_flux_vect = np.array([10000,100000,1000000,10000000,1000000000])
+        aNGS_freq = 100
+        aNGS_EE_LO = 1
+        aNGS_FWHM_mas = 50
+        rad2mas = TestMavisLO.mLO.SensingWavelength_LO * 2000*206264.8/(np.pi*TestMavisLO.mLO.TelescopeDiameter/TestMavisLO.mLO.NumberLenslets[0])
+
+        print("Running Test: TestBiasAndVariance")
+
+        TestMavisLO.mLO.simpleVarianceComputation = True
+        TestMavisLO.mLO.configLOFreq(aNGS_freq) 
+        varxS_vect = []
+        for aNGS_flux in aNGS_flux_vect:
+            TestMavisLO.mLO.WindowRadiusWCoG_LO = 0
+            (biasS,(muxS,muyS),(varxS,varyS)) = TestMavisLO.mLO.simplifiedComputeBiasAndVariance(aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas)
+            varxS *= rad2mas**2
+            varxS_vect.append(varxS/biasS)
+
+        TestMavisLO.mLO.simpleVarianceComputation = False
+        TestMavisLO.mLO.configLOFreq(aNGS_freq)
+        varx_vect = []
+        for aNGS_flux in aNGS_flux_vect:
+            TestMavisLO.mLO.WindowRadiusWCoG_LO = 0
+            (bias,(mux,muy),(varx,vary)) = TestMavisLO.mLO.computeBiasAndVariance(aNGS_flux, aNGS_freq, aNGS_EE_LO, aNGS_FWHM_mas)
+            varx *= TestMavisLO.mLO.PixelScale_LO**2
+            varx_vect.append(varx/bias)
+            
+        ratio = np.array(varxS_vect)/np.array(varx_vect)
+
+        result = np.max(ratio)
+
+        self.assertTrue( np.testing.assert_array_less(result, 5)==None)
 
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(TestReconstructor('test_reconstructor'))
     suite.addTest(TestCovMatrices('test_cov_matrices'))
-    suite.addTest(TestWindResiduals('test_wind_residuals'))
     suite.addTest(TestNoiseResiduals('test_noise_residuals'))
+    suite.addTest(TestWindResiduals('test_wind_residuals'))
+    suite.addTest(TestBiasAndVariance('test_bias_and_vairance'))
     return suite
 
 
