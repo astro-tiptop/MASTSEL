@@ -273,7 +273,7 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
     var_thr = np.zeros_like(flux, dtype=np.float64)
 
     # ---- Gaussian approximation ----
-    if len(index_gauss[0]) > 0:
+    if np.any(index_gauss):
         flux_tmp = flux[index_gauss]
         sigma_e = np.sqrt(excess * (flux_tmp + bg) + ron**2)
 
@@ -290,7 +290,7 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
 
     # ---- Iterative method ----
     # Iteration on each Dirac from the Poisson distribution until indicated order
-    if len(index_it[0]) > 0:
+    if np.any(index_it):
         flux_tmp = flux[index_it]
         flux2 = flux_tmp + bg
         tab_k = np.arange(order) - bg
