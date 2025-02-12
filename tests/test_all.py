@@ -81,6 +81,7 @@ class TestNoiseResiduals(TestMavisLO):
         Test 
         """ 
         print("Running Test: TestNoiseResiduals")
+
         NGS_flux = [2500, 7500 , 1250]
         NGS_freq = [500, 500 , 500]
         NGS_SR_1650 = [0.4, 0.2, 0.6]
@@ -112,6 +113,7 @@ class TestWindResiduals(TestMavisLO):
         Test 
         """
         print("Running Test: TestWindResiduals")
+
         psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('data/windpsd_mavis.fits')
         var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO**2
         bias = 0.4300779971881394
@@ -176,6 +178,7 @@ class TestBiasAndVariance(TestMavisLO):
         self.assertTrue( np.testing.assert_array_less(result, 1e-3)==None)
         result = np.max(np.abs(var_ktr_array-var_thr))
         self.assertTrue( np.testing.assert_array_less(result, 1e-3)==None)
+
 
 def suite():
     suite = unittest.TestSuite()
