@@ -1420,8 +1420,8 @@ class MavisLO(object):
             self.amuF.append(amu)
             self.avarF.append(avar)
 
-            # noise propagation coefficient of focus is 0.52 times the one of tilt
-            Cnoise = 0.52
+            # noise propagation coefficient of focus is 0.4 times the one of tilt
+            Cnoise = 0.4
             var1x = float(cpuArray(var1x) * self.mas2nm**2 * Cnoise**2) # var1x in in nm2
 
             # noise propagation considering the number of LO sub-apertures is applied in computeFocusNoiseResidual
