@@ -450,27 +450,38 @@ def maskSA(nSA, nMask, telPupil):
             mask = maskI
     return mask
 
-def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range,
-                   dk, npixel, psInMas, wvl, opdMap=None):
+def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_range,
+                   dk, NpixPsf, wvlRef, oversampling=None, opdMap=None, padPSD=False):
 
-    oversampling = N/npixel
-    pixelscale = psInMas*wavelength/wvl
-    scaleFactor = (2*cp.pi*1e-9/wavelength)**2
+    if oversampling is None:
+        oversampling = N/NpixPsf
+
+    if padPSD:
+        pixRatio = wvlRef/wavelength
+        oRatio = np.ceil(pixRatio)/pixRatio
+        oversampling *= np.ceil(pixRatio)
+        oversampling = int(oversampling)
+        # ideal number of pixel of the PSF
+        Npad = N *oRatio
+        # actual number of pixel of the PSF
+        Npad = int(np.round(Npad/2)*2)
+    else:
+        Npad = N
 
     # mask
-    maskField = Field(wavelength, N, grid_diameter)
+    maskField = Field(wavelength, Npad, grid_diameter)
     if not isinstance(mask, list):
-        maskField.sampling = congrid(mask, [sx, sx])
-        maskField.sampling = zeroPad(maskField.sampling, (N-sx)//2)
+        maskField.sampling = congrid(mask, [NpixPup, NpixPup])
+        maskField.sampling = zeroPad(maskField.sampling, (Npad-NpixPup)//2)
 
     # telescope OTF
     if opdMap is None:
          otf_tel = None
     else:
-        maskOtf = Field(wavelength, N, grid_diameter)
+        maskOtf = Field(wavelength, Npad, grid_diameter)
         phaseStat = (2*cp.pi*1e-9/wavelength) * opdMap
-        phaseStat = congrid(phaseStat, [sx, sx])
-        phaseStat = zeroPad(phaseStat, (N-sx)//2)
+        phaseStat = congrid(phaseStat, [NpixPup, NpixPup])
+        phaseStat = zeroPad(phaseStat, (Npad-NpixPup)//2)
         if mask is None or not isinstance(mask, list):
             maskOtf.sampling = maskField.sampling*cp.exp(1*complex(0,1)*phaseStat)
             maskOtf.pupilToOtf()
@@ -486,8 +497,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range
     for computedPSD in inputPSDs:
         # mask
         if isinstance(mask, list):
-            maskField.sampling = congrid(mask[i], [sx, sx])
-            maskField.sampling = zeroPad(maskField.sampling, (N-sx)//2)
+            maskField.sampling = congrid(mask[i], [NpixPup, NpixPup])
+            maskField.sampling = zeroPad(maskField.sampling, (N-NpixPup)//2)
             # telescope OTF
             if opdMap is not None:
                 maskOtf.sampling = maskField.sampling*cp.exp(1*complex(0,1)*phaseStat)
@@ -497,7 +508,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range
 
         # Get the PSD at the NGSs positions at the sensing wavelength
         # computed PSD from fao are given in nm^2, i.e they are multiplied by dk**2 already
-        psd          = Field(wavelength, N, freq_range, 'rad')
+        psd          = Field(wavelength, Npad, freq_range, 'rad')
         psd.sampling = computedPSD / dk**2 # the PSD must be provided in m^2.m^2
         psdArray.append(psd)
 
@@ -511,9 +522,10 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, sx, grid_diameter, freq_range
             nOut = int(temp.shape[0]/nTemp)
             psfLE.sampling = temp.reshape((nOut,nTemp,nOut,nTemp)).mean(3).mean(1)
         # It cuts the PSF if the PSF is larger than the requested dimension
-        if psfLE.sampling.shape[0] > npixel:
-            psfLE.sampling = psfLE.sampling[int(psfLE.sampling.shape[0]/2-npixel/2):int(psfLE.sampling.shape[0]/2+npixel/2),
-                                            int(psfLE.sampling.shape[1]/2-npixel/2):int(psfLE.sampling.shape[1]/2+npixel/2)]
+        if psfLE.N > NpixPsf:
+            start_x = (psfLE.N - NpixPsf) // 2
+            start_y = (psfLE.N - NpixPsf) // 2
+            psfLE.sampling = psfLE.sampling[start_x:start_x + NpixPsf, start_y:start_y + NpixPsf]
         psfLongExpArr.append(psfLE)
 
         i += 1
