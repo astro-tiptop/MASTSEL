@@ -463,7 +463,6 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
         if len(oversampling) == 1:
             oversampling = np.full_like(wavelength, oversampling[0], dtype=float)
 
-    psdArray = []
     psfLongExpArr = []
 
     for wvl, ovrsmp in zip(wavelength, oversampling):
@@ -494,6 +493,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
                 maskOtf.sampling /= maskOtf.sampling.max()
                 otf_tel = maskOtf.sampling
 
+        psd = Field(wvl, Npad, freq_range, 'rad')
+
         psfMultiWave = []
 
         for i, computedPSD in enumerate(inputPSDs):
@@ -506,10 +507,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
 
-            psd = Field(wvl, Npad, freq_range, 'rad')
             psd.sampling = computedPSD / dk**2
-            if i == 0:
-                psdArray.append(psd)
 
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
@@ -535,4 +533,4 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
         else:
             psfLongExpArr = psfMultiWave
 
-    return psdArray, psfLongExpArr
+    return psfLongExpArr
