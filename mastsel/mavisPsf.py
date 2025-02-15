@@ -451,17 +451,12 @@ def maskSA(nSA, nMask, telPupil):
     return mask
 
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_range,
-                   dk, NpixPsf, wvlRef, oversampling=None, opdMap=None, padPSD=False):
+                   dk, NpixPsf, wvlRef, opdMap=None, padPSD=False):
 
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
 
-    if oversampling is None:
-        oversampling = np.full_like(wavelength, N/NpixPsf, dtype=float)
-    else:
-        oversampling = np.atleast_1d(oversampling)
-        if len(oversampling) == 1:
-            oversampling = np.full_like(wavelength, oversampling[0], dtype=float)
+    oversampling = np.full_like(wavelength, N/NpixPsf, dtype=float)
 
     psfLongExpArr = []
 
@@ -475,7 +470,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
         else:
             Npad = N
 
-        maskField = Field(wvl, Npad, grid_diameter)
+        maskField = Field(wvl, N, grid_diameter)
         if not isinstance(mask, list):
             maskField.sampling = congrid(mask, [NpixPup, NpixPup])
             maskField.sampling = zeroPad(maskField.sampling, (Npad - NpixPup) // 2)
@@ -493,21 +488,22 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
                 maskOtf.sampling /= maskOtf.sampling.max()
                 otf_tel = maskOtf.sampling
 
-        psd = Field(wvl, Npad, freq_range, 'rad')
-
         psfMultiWave = []
 
         for i, computedPSD in enumerate(inputPSDs):
             if isinstance(mask, list):
                 maskField.sampling = congrid(mask[i], [NpixPup, NpixPup])
-                maskField.sampling = zeroPad(maskField.sampling, (N - NpixPup) // 2)
+                maskField.sampling = zeroPad(maskField.sampling, (Npad - NpixPup) // 2)
                 if opdMap is not None:
                     maskOtf.sampling = maskField.sampling * cp.exp(1j * phaseStat)
                     maskOtf.pupilToOtf()
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
 
+            psd = Field(wvl, N, freq_range, 'rad')
             psd.sampling = computedPSD / dk**2
+            if Npad>N:
+                psd.sampling = zeroPad(psd.sampling, (Npad-N)//2)
 
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
@@ -526,6 +522,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
                 start_x = (psfLE.N - NpixPsf) // 2
                 start_y = (psfLE.N - NpixPsf) // 2
                 psfLE.sampling = psfLE.sampling[start_x:start_x + NpixPsf, start_y:start_y + NpixPsf]
+
             psfMultiWave.append(psfLE)
 
         if multi_wave:
