@@ -451,12 +451,14 @@ def maskSA(nSA, nMask, telPupil):
     return mask
 
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_range,
-                   dk, NpixPsf, wvlRef, opdMap=None, padPSD=False):
+                   dk, NpixPsf, wvlRef, oversampling, opdMap=None, padPSD=False):
 
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
 
-    oversampling = np.full_like(wavelength, N/NpixPsf, dtype=float)
+    oversampling = np.atleast_1d(oversampling)
+    if len(oversampling) == 1:
+        oversampling = np.full_like(wavelength, oversampling[0], dtype=float)
 
     psfLongExpArr = []
 
@@ -508,15 +510,14 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
             # enlarge the PSF to get a side multiple of ovrsmp
-            Nbig = int(np.ceil(psfLE.N/ovrsmp)*ovrsmp)
+            Nbig = int(np.ceil(psfLE.N/ovrsmp/2)*ovrsmp*2)
             if Nbig > psfLE.N:
                 psfLE.sampling = zeroPad(cp.array(psfLE.sampling), (Nbig-psfLE.N)//2)
             # resample the PSF to get the not oversampled pixel scale
             if ovrsmp > 1:
-                temp = cp.array(psfLE.sampling)
-                nTemp = int(ovrsmp)
-                nOut = int(temp.shape[0] / nTemp)
-                psfLE.sampling = temp.reshape((nOut, nTemp, nOut, nTemp)).mean(3).mean(1)
+                nOvr = int(ovrsmp)
+                nOut = int(psfLE.sampling.shape[0] / nOvr)
+                psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr, nOut, nOvr)).mean(3).mean(1)
             # cut the PSF to get the desired size
             if psfLE.N > NpixPsf:
                 start_x = (psfLE.N - NpixPsf) // 2
