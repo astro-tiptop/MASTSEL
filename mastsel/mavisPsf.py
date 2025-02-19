@@ -450,8 +450,8 @@ def maskSA(nSA, nMask, telPupil):
             mask = maskI
     return mask
 
-def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_range,
-                   dk, NpixPsf, wvlRef, oversampling, opdMap=None, padPSD=False):
+def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_range,
+                   dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False):
 
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
@@ -468,22 +468,22 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
             oRatio = np.ceil(pixRatio) / pixRatio
             ovrsmp *= np.ceil(pixRatio)
             ovrsmp = int(ovrsmp)
-            Npad = int(np.round(N * oRatio / 2) * 2)
+            nPad = int(np.round(N * oRatio / 2) * 2)
         else:
-            Npad = N
+            nPad = N
 
         maskField = Field(wvl, N, grid_diameter)
         if not isinstance(mask, list):
-            maskField.sampling = congrid(mask, [NpixPup, NpixPup])
-            maskField.sampling = zeroPad(maskField.sampling, (Npad - NpixPup) // 2)
+            maskField.sampling = congrid(mask, [nPixPup, nPixPup])
+            maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
 
         if opdMap is None:
             otf_tel = None
         else:
-            maskOtf = Field(wvl, Npad, grid_diameter)
+            maskOtf = Field(wvl, nPad, grid_diameter)
             phaseStat = (2 * cp.pi * 1e-9 / wvl) * opdMap
-            phaseStat = congrid(phaseStat, [NpixPup, NpixPup])
-            phaseStat = zeroPad(phaseStat, (Npad - NpixPup) // 2)
+            phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
+            phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             if mask is None or not isinstance(mask, list):
                 maskOtf.sampling = maskField.sampling * cp.exp(1j * phaseStat)
                 maskOtf.pupilToOtf()
@@ -494,8 +494,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
 
         for i, computedPSD in enumerate(inputPSDs):
             if isinstance(mask, list):
-                maskField.sampling = congrid(mask[i], [NpixPup, NpixPup])
-                maskField.sampling = zeroPad(maskField.sampling, (Npad - NpixPup) // 2)
+                maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
+                maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
                 if opdMap is not None:
                     maskOtf.sampling = maskField.sampling * cp.exp(1j * phaseStat)
                     maskOtf.pupilToOtf()
@@ -504,25 +504,25 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, NpixPup, grid_diameter, freq_
 
             psd = Field(wvl, N, freq_range, 'rad')
             psd.sampling = computedPSD / dk**2
-            if Npad>N:
-                psd.sampling = zeroPad(psd.sampling, (Npad-N)//2)
+            if nPad>N:
+                psd.sampling = zeroPad(psd.sampling, (nPad-N)//2)
 
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
             # enlarge the PSF to get a side multiple of ovrsmp
-            Nbig = int(np.ceil(psfLE.N/ovrsmp/2)*ovrsmp*2)
-            if Nbig > psfLE.N:
-                psfLE.sampling = zeroPad(cp.array(psfLE.sampling), (Nbig-psfLE.N)//2)
+            nBig = int(np.ceil(psfLE.N/ovrsmp/2)*ovrsmp*2)
+            if nBig > psfLE.N:
+                psfLE.sampling = zeroPad(cp.array(psfLE.sampling), (nBig-psfLE.N)//2)
             # resample the PSF to get the not oversampled pixel scale
             if ovrsmp > 1:
                 nOvr = int(ovrsmp)
                 nOut = int(psfLE.sampling.shape[0] / nOvr)
                 psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr, nOut, nOvr)).mean(3).mean(1)
             # cut the PSF to get the desired size
-            if psfLE.N > NpixPsf:
-                start_x = (psfLE.N - NpixPsf) // 2
-                start_y = (psfLE.N - NpixPsf) // 2
-                psfLE.sampling = psfLE.sampling[start_x:start_x + NpixPsf, start_y:start_y + NpixPsf]
+            if psfLE.N > nPixPsf:
+                start_x = (psfLE.N - nPixPsf) // 2
+                start_y = (psfLE.N - nPixPsf) // 2
+                psfLE.sampling = psfLE.sampling[start_x:start_x + nPixPsf, start_y:start_y + nPixPsf]
 
             psfMultiWave.append(psfLE)
 
