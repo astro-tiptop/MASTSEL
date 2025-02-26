@@ -437,9 +437,15 @@ def maskSA(nSA, nMask, telPupil):
             if nSA[i] == 2:
                 saMask[0:saSidePix,0:saSidePix] = 1
                 saMask *= telPupil
+                if np.sum(saMask) < saSidePix**2/3:
+                    saMask[int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2),\
+                           int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2)] = 1
             elif nSA[i] == 3:
                 saMask[0:saSidePix,int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2)] = 1
                 saMask *= telPupil
+                if np.sum(saMask) == 0 < saSidePix**2/3:
+                    saMask[int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2),\
+                           int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2)] = 1
             else:
                 saMask[int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2),\
                        int(pupilSidePix/2-saSidePix/2):int(pupilSidePix/2+saSidePix/2)] = 1
