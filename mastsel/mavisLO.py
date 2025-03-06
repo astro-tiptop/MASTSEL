@@ -56,7 +56,7 @@ class MavisLO(object):
         elif self.configType == 'yml':
             return self.my_yaml_dict[primary][secondary]
 
-    def __init__(self, path, parametersFile, verbose=False):
+    def __init__(self, path, parametersFile, covValue_integrationLimits=None, verbose=False):
 
         self.verbose = verbose
         self.plot4debug = False
@@ -301,6 +301,10 @@ class MavisLO(object):
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
+        if covValue_integrationLimits is None:
+            self.covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
+        else:
+            self.covValue_integrationLimits = covValue_integrationLimits
         self.specializedCovExprs = self.buildSpecializedCovFunctions()
 
         # this is not used for now, as the frequencies of the LO loop are passed as parameters when needed
@@ -530,7 +534,7 @@ class MavisLO(object):
     
     
     def buildSpecializedCovFunctions(self):
-        covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
+        covValue_integrationLimits = self.covValue_integrationLimits
         p = sp.symbols('p', real=False)
         cov_expr={}
         if self.filtZernikeCov:
@@ -795,7 +799,7 @@ class MavisLO(object):
             return 1
 
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
-        npoints = 99
+        npoints = 10
         psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
         
@@ -812,11 +816,13 @@ class MavisLO(object):
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
         sigma2Noise =  varX / bias**2 / (Df / df)
+
         # must wait till this moment to substitute the noise level
         self.fTipS1 = self.fTipS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
         self.fTiltS1 = self.fTiltS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
         self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
         self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+
         if self.displayEquation:
             print('computeNoiseResidual')
             try:
@@ -827,6 +833,7 @@ class MavisLO(object):
                 display(self.fTiltS1)
             except:
                 print('    no self.fTiltS1')
+
         if self.platformlib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
@@ -834,25 +841,60 @@ class MavisLO(object):
             psd_tilt_turb = cp.asarray(psd_tilt_turb)        
         else:
             xp = np
+
         if self.LoopGain_LO == 'optimize':
-            # add small values of gain to have a good optimization
-            # when the noise level is high.
+            # Step 1: Initial coarse search
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
-            npoints = int(npoints*maxG/0.8)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
-        elif self.LoopGain_LO == 'test':
-            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+            g0g_coarse = xp.concatenate((xp.asarray(g0), xp.linspace(0.01, maxG, npoints)))
+            
+            e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+            e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
+            e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
+            e4 = g0g_coarse.reshape((g0g_coarse.shape[0], 1))
+            psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+            
+            resultTip_coarse = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1))))
+            resultTilt_coarse = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1))))
+            
+            minTipIdx_coarse = xp.where(resultTip_coarse == xp.nanmin(resultTip_coarse))
+            minTiltIdx_coarse = xp.where(resultTilt_coarse == xp.nanmin(resultTilt_coarse))
+            
+            bestTipGain_coarse = g0g_coarse[minTipIdx_coarse[0][0]]
+            bestTiltGain_coarse = g0g_coarse[minTiltIdx_coarse[0][0]]
+            
+            # Step 2: Fine search around the coarse minimum
+            fine_range = 0.1 * maxG
+            g0g_tip = xp.linspace(max(0, bestTipGain_coarse - fine_range), min(maxG, bestTipGain_coarse + fine_range), npoints)
+            g0g_tilt = xp.linspace(max(0, bestTiltGain_coarse - fine_range), min(maxG, bestTiltGain_coarse + fine_range), npoints)
+            
+            e4_tip = g0g_tip.reshape((g0g_tip.shape[0], 1))
+            e4_tilt = g0g_tilt.reshape((g0g_tilt.shape[0], 1))
+            
+            psd_tip_freq_ext, psd_tip_turb_ext, g0g_ext_tip = xp.broadcast_arrays(e1, e2, e4_tip)
+            psd_tilt_freq_ext, psd_tilt_turb_ext, g0g_ext_tilt = xp.broadcast_arrays(e1, e3, e4_tilt)
+            
+            resultTip = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext_tip, psd_tip_freq_ext, psd_tip_turb_ext), axis=(1))))
+            resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext_tilt, psd_tilt_freq_ext, psd_tilt_turb_ext), axis=(1))))
         else:
-            # if gain is set no optimization is done and bias is not compensated
-            g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
-            g0g = xp.asarray(g0)
+            if self.LoopGain_LO == 'test':
+                g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+            else:
+                # if gain is set no optimization is done and bias is not compensated
+                g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
+                g0g = xp.asarray(g0)
+            
+            g0g_tip = g0g
+            g0g_tilt = g0g
         
-        e1 = psd_freq.reshape((1,psd_freq.shape[0]))
-        e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
-        e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
-        e4 = g0g.reshape((g0g.shape[0], 1))
-        psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+            e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+            e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
+            e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
+            e4 = g0g.reshape((g0g.shape[0], 1))
+            psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+            
+            resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1)) ) )
+            resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
                
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
@@ -863,20 +905,18 @@ class MavisLO(object):
             ax2.set_title('residual turb. PSD', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Power')
-        
-        resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1)) ) )
-        resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
+
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         if self.verbose:
-            print('    best tip & tilt gain (noise):', "%.3f" % g0g[minTipIdx[0][0]], "%.3f" % g0g[minTiltIdx[0][0]])
+            print('    best tip & tilt gain (noise):', "%.3f" % g0g_tip[minTipIdx[0][0]], "%.3f" % g0g_tilt[minTiltIdx[0][0]])
         if self.platformlib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
             return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
-        npoints = 99
+        npoints = 10
         psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
 
@@ -893,9 +933,11 @@ class MavisLO(object):
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
         sigma2Noise =  varX / bias**2 / (Df / df)
+
         # must wait till this moment to substitute the noise level
         self.fFocusS1 = self.fFocusS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
         self.fFocusS_lambda1 = lambdifyByName( self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+
         if self.displayEquation:
             print('computeNoiseResidual')
             try:
@@ -909,6 +951,7 @@ class MavisLO(object):
             psd_focus_turb = cp.asarray(psd_focus_turb)
         else:
             xp = np
+
         if self.LoopGain_Focus == 'optimize':
             # add small values of gain to have a good optimization
             # when the noise level is high.
@@ -916,17 +959,40 @@ class MavisLO(object):
             maxG = maxStableGain(self.loopDelaySteps_Focus)*0.8
             npoints = int(npoints*maxG/0.8)
             g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
-        elif self.LoopGain_Focus == 'test':
-            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
-        else:
-            # if gain is set no optimization is done and bias is not compensated
-            g0 = (bias*self.LoopGain_Focus,bias*self.LoopGain_Focus)
-            g0g = xp.asarray(g0)
 
-        e1 = psd_freq.reshape((1,psd_freq.shape[0]))
-        e2 = psd_focus_turb.reshape((1,psd_focus_turb.shape[0]))
-        e3 = g0g.reshape((g0g.shape[0], 1))
-        psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3)
+            # Step 1: Initial coarse search
+            g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
+            maxG = maxStableGain(self.loopDelaySteps_Focus)*0.8
+            g0g_coarse = xp.concatenate((xp.asarray(g0), xp.linspace(0.01, maxG, npoints)))
+
+            e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+            e2 = psd_focus_turb.reshape((1,psd_focus_turb.shape[0]))
+            e3 = g0g_coarse.reshape((g0g_coarse.shape[0], 1))
+            psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3)
+
+            resultFocus_coarse = xp.absolute((xp.sum(self.fFocusS_lambda1(g0g_ext, psd_freq_ext, psd_focus_turb_ext), axis=(1))))
+
+            minFocusIdx_coarse = xp.where(resultFocus_coarse == xp.nanmin(resultFocus_coarse))
+            bestFocusGain_coarse = g0g_coarse[minFocusIdx_coarse[0][0]]
+
+            # Step 2: Fine search around the coarse minimum
+            fine_range = 0.1 * maxG
+            g0g = xp.linspace(max(0, bestFocusGain_coarse - fine_range), min(maxG, bestFocusGain_coarse + fine_range), npoints)
+
+            e3_fine = g0g.reshape((g0g.shape[0], 1))
+            psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3_fine)
+        else:   
+            if self.LoopGain_Focus == 'test':
+                g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+            else:
+                # if gain is set no optimization is done and bias is not compensated
+                g0 = (bias*self.LoopGain_Focus,bias*self.LoopGain_Focus)
+                g0g = xp.asarray(g0)
+
+            e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+            e2 = psd_focus_turb.reshape((1,psd_focus_turb.shape[0]))
+            e3 = g0g.reshape((g0g.shape[0], 1))
+            psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3)
 
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
@@ -949,7 +1015,7 @@ class MavisLO(object):
             return (resultFocus[minFocusIdx[0][0]])
 
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias):
-        npoints = 99
+        npoints = 10
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
         psd_tip_wind = psd_tip_wind0 * df
@@ -971,8 +1037,8 @@ class MavisLO(object):
             dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
             RTFwind = self.fTipS1tfW.subs(dict1)
             NTFwind = self.fTipS1tfN.subs(dict1)
-            RTFwind_lambda1 = lambdifyByName( RTFwind, ['g^Tip_0', 'g^Tip_1', 'f'], cpulib)
-            NTFwind_lambda1 = lambdifyByName( NTFwind, ['g^Tip_0', 'g^Tip_1', 'f'], cpulib)
+            RTFwind_lambda1 = lambdifyByName( RTFwind, ['g^Tip_0', 'f'], cpulib)
+            NTFwind_lambda1 = lambdifyByName( NTFwind, ['g^Tip_0', 'f'], cpulib)
             RTFwindL1 = RTFwind_lambda1( 0.25, 1.0, psd_freq)
             NTFwindL1 = NTFwind_lambda1( 0.25, 1.0, psd_freq)
 
@@ -984,16 +1050,20 @@ class MavisLO(object):
             ax2.set_title('TF', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Amplitude')
+
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
+            # control TF for optimize or test is a 2nd order system
             self.fTipS1 = self.fTipS.subs({self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
             self.fTiltS1 = self.fTiltS.subs({self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'g^Tip_1', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'g^Tilt_1', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
         else:
+            # control TF in the other cases is an integrator
             self.fTipS1 = self.fTipS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
             self.fTiltS1 = self.fTiltS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
             self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
             self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+
         if self.platformlib==gpulib and gpuEnabled:
             xp = cp
             psd_freq = cp.asarray(psd_freq)
@@ -1003,80 +1073,80 @@ class MavisLO(object):
             xp = np
         
         if self.LoopGain_LO == 'optimize':
-            # add small values of gain to have a good optimization
-            # when the noise level is high.
+            # Step 1: Initial coarse search
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
-            npoints = int(npoints*maxG/0.8)
-            g0g = xp.concatenate((xp.asarray( g0),xp.linspace(0.01, maxG, npoints)))
-            g0g, g1g = xp.meshgrid( g0g,g0g )
-        elif self.LoopGain_LO == 'test':
-            g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
-            g0g, g1g = xp.meshgrid( g0g,g0g )
+            g0g_coarse = xp.concatenate((xp.asarray(g0), xp.linspace(0.01, maxG, npoints)))
+            
+            e1 = psd_freq.reshape((1,psd_freq.shape[0]))
+            e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
+            e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
+            e4 = g0g_coarse.reshape((g0g_coarse.shape[0], 1))
+            psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+            
+            resultTip_coarse = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1))))
+            resultTilt_coarse = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1))))
+            
+            minTipIdx_coarse = xp.where(resultTip_coarse == xp.nanmin(resultTip_coarse))
+            minTiltIdx_coarse = xp.where(resultTilt_coarse == xp.nanmin(resultTilt_coarse))
+            
+            bestTipGain_coarse = g0g_coarse[minTipIdx_coarse[0][0]]
+            bestTiltGain_coarse = g0g_coarse[minTiltIdx_coarse[0][0]]
+            
+            # Step 2: Fine search around the coarse minimum
+            fine_range = 0.1 * maxG
+            g0g_tip = xp.linspace(max(0, bestTipGain_coarse - fine_range), min(maxG, bestTipGain_coarse + fine_range), npoints)
+            g0g_tilt = xp.linspace(max(0, bestTiltGain_coarse - fine_range), min(maxG, bestTiltGain_coarse + fine_range), npoints)
+            
+            e4_tip = g0g_tip.reshape((g0g_tip.shape[0], 1))
+            e4_tilt = g0g_tilt.reshape((g0g_tilt.shape[0], 1))
+            
+            psd_tip_freq_ext, psd_tip_wind_ext, g0g_ext_tip = xp.broadcast_arrays(e1, e2, e4_tip)
+            psd_tilt_freq_ext, psd_tilt_wind_ext, g0g_ext_tilt = xp.broadcast_arrays(e1, e3, e4_tilt)
+            
+            resultTip = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext_tip, psd_tip_freq_ext, psd_tip_wind_ext), axis=(1))))
+            resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext_tilt, psd_tilt_freq_ext, psd_tilt_wind_ext), axis=(1))))            
         else:
-            # if gain is set no optimization is done and bias is not compensated
-            g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
-            g0g = xp.asarray(g0)
+            if self.LoopGain_LO == 'test':
+                g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+            else:
+                # if gain is set no optimization is done and bias is not compensated
+                g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
+                g0g = xp.asarray(g0)
+            
+            g0g_tip = g0g
+            g0g_tilt = g0g
         
-        if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-            e1 = psd_freq.reshape((1,1,psd_freq.shape[0]))
-            e2 = psd_tip_wind.reshape((1,1,psd_tip_wind.shape[0]))
-            e3 = psd_tilt_wind.reshape((1,1,psd_tilt_wind.shape[0]))
-            e4 = g0g.reshape((g0g.shape[0],g0g.shape[1],1))
-            e5 = g1g.reshape((g1g.shape[0],g1g.shape[1],1))
-            psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext, g1g_ext  = xp.broadcast_arrays(e1, e2, e3, e4, e5)
-            resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(2)) ) )
-            resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(2)) ) )
-            if self.plot4debug:
-                fig, ax2 = plt.subplots(1,1)
-                for x in range(g0g.shape[0]):
-                    im = ax2.plot(cpuArray(psd_freq),\
-                        (self.fTipS_lambda1( g0g_ext, g1g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,int(npoints/2),:]) 
-                ax2.set_xscale('log')
-                ax2.set_yscale('log')
-                ax2.set_title('residual wind PSD', color='black')
-                ax2.set_xlabel('frequency [Hz]')
-                ax2.set_ylabel('Power')
-        else:
             e1 = psd_freq.reshape((1,psd_freq.shape[0]))
             e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
             e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
             e4 = g0g.reshape((g0g.shape[0], 1))
-            psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext  = xp.broadcast_arrays(e1, e2, e3, e4)
+            psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
+            
             resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
-            if self.plot4debug:
-                fig, ax2 = plt.subplots(1,1)
-                for x in range(g0g.shape[0]):
-                    im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
-                ax2.set_xscale('log')
-                ax2.set_yscale('log')
-                ax2.set_title('residual wind PSD', color='black')
-                ax2.set_xlabel('frequency [Hz]')
-                ax2.set_ylabel('Power')
+
+        if self.plot4debug:
+            fig, ax2 = plt.subplots(1,1)
+            for x in range(g0g.shape[0]):
+                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+            ax2.set_xscale('log')
+            ax2.set_yscale('log')
+            ax2.set_title('residual wind PSD', color='black')
+            ax2.set_xlabel('frequency [Hz]')
+            ax2.set_ylabel('Power')
                 
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
         
         if self.verbose:
-            if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-                print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g[minTipIdx[0][0],minTipIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]]),\
-                                                        "%.3f" % cpuArray(g0g[minTiltIdx[0][0],minTiltIdx[1][0]]*g1g[minTipIdx[0][0],minTipIdx[1][0]]))
-            else:
-                print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g[minTipIdx[0][0]]), "%.3f" % cpuArray(g0g[minTiltIdx[0][0]]))
+            print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g_tip[minTipIdx[0][0]]), "%.3f" % cpuArray(g0g_tilt[minTiltIdx[0][0]]))
                     
-        if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
-            if self.platformlib==gpulib and gpuEnabled:
-                return cp.asnumpy(resultTip[minTipIdx[0][0], minTipIdx[1][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
-            else:
-                return (resultTip[minTipIdx[0][0], minTipIdx[1][0]], resultTilt[minTiltIdx[0][0], minTiltIdx[1][0]])
+        if self.platformlib==gpulib and gpuEnabled:
+            return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
-            if self.platformlib==gpulib and gpuEnabled:
-                return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
-            else:
-                return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
+            return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
 
-        
     def covValue(self, ii,jj, pp, hh):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
@@ -1089,7 +1159,7 @@ class MavisLO(object):
 
         return np.real(np.asarray(zplot1))
 
-        
+
     def computeCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
         points = aCartPointingCoords.shape[0]
         nstars = aCartNGSCoords.shape[0]        
