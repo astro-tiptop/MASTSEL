@@ -56,8 +56,8 @@ def createMavisFormulary():
     dW_phi = sp.Function('dW_phi')(rho)
     W_phi = sp.Function('W_phi')(rho)
 
-    g_0_tip, g_1_tip = sp.symbols('g^Tip_0 g^Tip_1', real=True)
-    g_0_tilt, g_1_tilt = sp.symbols('g^Tilt_0 g^Tilt_1', real=True)
+    g_0_tip = sp.symbols('g^Tip_0', real=True)
+    g_0_tilt = sp.symbols('g^Tilt_0', real=True)
     
     hh, z1, z2 = sp.symbols('h z_1 z_2', positive=True)
     jj, nj, mj, kk, nk, mk = sp.symbols('j n_j m_j k n_k m_k', integer=True)
@@ -111,8 +111,8 @@ def createMavisFormulary():
     _m_symbols_map['H^N_Tilt'] = H_N_tilt
 
 
-    _m_symbols_map.update(zip('g^Tip_0 g^Tip_1'.split(), [g_0_tip, g_1_tip]))
-    _m_symbols_map.update(zip('g^Tilt_0 g^Tilt_1'.split(), [g_0_tilt, g_1_tilt]))
+    _m_symbols_map['g^Tip_0'] = g_0_tip
+    _m_symbols_map['g^Tilt_0'] = g_0_tilt
     _m_symbols_map.update(zip('h z_1 z_2'.split(), [hh, z1, z2]))
     _m_symbols_map.update(zip('j n_j m_j k n_k m_k'.split(), [jj, nj, mj, kk, nk, mk]))
     _m_symbols_map.update(zip('R_1 R_2'.split(), [R1, R2]))
@@ -234,19 +234,19 @@ def createMavisFormulary():
     # 4 tf in z with 2 gains each to tune
     def ztfTipWind():
         return sp.Eq( H_R_tipz, (1-1.9995*z**-1+0.9995*z**-2)/ \
-                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tip*g_1_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
+                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
 
     def ztfTiltWind():
         return sp.Eq( H_R_tiltz, (1-1.9995*z**-1+0.9995*z**-2)/ \
-                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tilt*g_1_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
+                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
 
     def ztfTipNoise():
-        return sp.Eq( H_N_tipz, (g_0_tip*g_1_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
-                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tip*g_1_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
+        return sp.Eq( H_N_tipz, (g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
+                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
 
     def ztfTiltNoise():
-        return sp.Eq( H_N_tiltz, (g_0_tilt*g_1_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
-                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tilt*g_1_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
+        return sp.Eq( H_N_tiltz, (g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
+                     ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
     # end
 
     # 4 tf in f obtained from corresponding tf in z

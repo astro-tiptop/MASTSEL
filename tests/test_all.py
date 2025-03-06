@@ -125,9 +125,9 @@ class TestWindResiduals(TestMavisLO):
         result = nr[1]
         self.assertTrue( np.testing.assert_allclose(result, 438.381, rtol=1e-03, atol=1e-5)==None)
         result = wr[0]
-        self.assertTrue( np.testing.assert_allclose(result, 247.04, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 249.53, rtol=1e-03, atol=1e-5)==None)
         result = wr[1]
-        self.assertTrue( np.testing.assert_allclose(result, 176.56, rtol=1e-03, atol=1e-5)==None)
+        self.assertTrue( np.testing.assert_allclose(result, 179.12, rtol=1e-03, atol=1e-5)==None)
 
 
 class TestBiasAndVariance(TestMavisLO):
