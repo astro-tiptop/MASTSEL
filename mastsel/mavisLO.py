@@ -874,7 +874,7 @@ class MavisLO(object):
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext_tilt, psd_tilt_freq_ext, psd_tilt_turb_ext), axis=(1))))
         else:
             if self.LoopGain_LO == 'test':
-                g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+                g0g = xp.asarray( xp.linspace(0.01, 0.99, 99) )
             else:
                 # if gain is set no optimization is done and bias is not compensated
                 g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
@@ -979,7 +979,7 @@ class MavisLO(object):
             psd_freq_ext, psd_focus_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3_fine)
         else:   
             if self.LoopGain_Focus == 'test':
-                g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+                g0g = xp.asarray( xp.linspace(0.01, 0.99, 99) )
             else:
                 # if gain is set no optimization is done and bias is not compensated
                 g0 = (bias*self.LoopGain_Focus,bias*self.LoopGain_Focus)
@@ -1104,7 +1104,7 @@ class MavisLO(object):
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext_tilt, psd_tilt_freq_ext, psd_tilt_wind_ext), axis=(1))))            
         else:
             if self.LoopGain_LO == 'test':
-                g0g = xp.asarray( xp.linspace(0.01, 0.99, npoints) )
+                g0g = xp.asarray( xp.linspace(0.0001, 0.98, 99) )
             else:
                 # if gain is set no optimization is done and bias is not compensated
                 g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
