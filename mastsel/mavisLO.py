@@ -56,7 +56,7 @@ class MavisLO(object):
         elif self.configType == 'yml':
             return self.my_yaml_dict[primary][secondary]
 
-    def __init__(self, path, parametersFile, covValue_integrationLimits=None, verbose=False):
+    def __init__(self, path, parametersFile, verbose=False):
 
         self.verbose = verbose
         self.plot4debug = False
@@ -301,10 +301,6 @@ class MavisLO(object):
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
         self.sTurbPSDTip, self.sTurbPSDTilt = self.specializedTurbFuncs()
         self.sTurbPSDFocus, self.sSodiumPSDFocus = self.specializedFocusFuncs()
-        if covValue_integrationLimits is None:
-            self.covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
-        else:
-            self.covValue_integrationLimits = covValue_integrationLimits
         self.specializedCovExprs = self.buildSpecializedCovFunctions()
 
         # this is not used for now, as the frequencies of the LO loop are passed as parameters when needed
@@ -534,7 +530,7 @@ class MavisLO(object):
     
     
     def buildSpecializedCovFunctions(self):
-        covValue_integrationLimits = self.covValue_integrationLimits
+        covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
         p = sp.symbols('p', real=False)
         cov_expr={}
         if self.filtZernikeCov:
