@@ -498,7 +498,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             if mask is None or not isinstance(mask, list):
-                maskOtf.sampling = maskField.sampling * maskField.xp.exp(1j * phaseStat)
+                maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
                 maskOtf.pupilToOtf()
                 maskOtf.sampling /= maskOtf.sampling.max()
                 otf_tel = maskOtf.sampling
@@ -510,7 +510,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
                 maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
                 if opdMap is not None:
-                    maskOtf.sampling = maskField.sampling * maskField.xp.exp(1j * phaseStat)
+                    maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
                     maskOtf.pupilToOtf()
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
