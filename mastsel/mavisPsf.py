@@ -485,7 +485,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 
         if xp is None:
             xp = maskField.xp
-            if xp == cp:
+            if xp == cp and gpuEnabled:
                 from cupyx.scipy.ndimage import shift as a_shift
             else:
                 from scipy.ndimage import shift as a_shift
