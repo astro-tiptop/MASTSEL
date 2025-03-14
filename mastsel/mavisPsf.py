@@ -409,9 +409,7 @@ def longExposurePsf(mask, psd, otf_tel = None):
 
     # step 5 : system otf to system psf
     result.sampling = xp.real(ft_ft2(otf_system))
-    if xp.__name__=='cupy':
-        result.sampling =  xp.asnumpy(result.sampling)
-        
+
     return result
 
 
@@ -424,7 +422,7 @@ def residualToSpectrum(ellp, wvl, N,  pixel_scale_otf):
 def maskSA(nSA, nMask, telPupil):
     # define a set 2D array with the mask of the sub-aperture of the WFS
     pupilSidePix = int(telPupil.shape[0])
-    saMask = cp.zeros((pupilSidePix,pupilSidePix))
+    saMask = telPupil * 0
     if len(nSA) == nMask:
         mask = []
     else:
@@ -468,6 +466,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 
     psfLongExpArr = []
 
+    xp = None
+
     for wvl, ovrsmp in zip(wavelength, oversampling):
         if padPSD:
             pixRatio = wvlRef / wvl
@@ -483,15 +483,22 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             maskField.sampling = congrid(mask, [nPixPup, nPixPup])
             maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
 
+        if xp is None:
+            xp = maskField.xp
+            if xp == cp and gpuEnabled:
+                from cupyx.scipy.ndimage import shift as a_shift
+            else:
+                from scipy.ndimage import shift as a_shift
+
         if opdMap is None:
             otf_tel = None
         else:
             maskOtf = Field(wvl, nPad, grid_diameter)
-            phaseStat = (2 * cp.pi * 1e-9 / wvl) * opdMap
+            phaseStat = (2 * np.pi * 1e-9 / wvl) * opdMap
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             if mask is None or not isinstance(mask, list):
-                maskOtf.sampling = maskField.sampling * cp.exp(1j * phaseStat)
+                maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
                 maskOtf.pupilToOtf()
                 maskOtf.sampling /= maskOtf.sampling.max()
                 otf_tel = maskOtf.sampling
@@ -503,7 +510,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
                 maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
                 if opdMap is not None:
-                    maskOtf.sampling = maskField.sampling * cp.exp(1j * phaseStat)
+                    maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
                     maskOtf.pupilToOtf()
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
@@ -518,11 +525,22 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             # enlarge the PSF to get a side multiple of ovrsmp
             nBig = int(np.ceil(psfLE.N/ovrsmp/2)*ovrsmp*2)
             if nBig > psfLE.N:
-                psfLE.sampling = zeroPad(cp.array(psfLE.sampling), (nBig-psfLE.N)//2)
+                psfLE.sampling = zeroPad(psfLE.sampling, (nBig-psfLE.N)//2)
             # resample the PSF to get the not oversampled pixel scale
             if ovrsmp > 1:
                 nOvr = int(ovrsmp)
                 nOut = int(psfLE.sampling.shape[0] / nOvr)
+
+                # shift the PSF to get it centered on one pixel
+                delta = (ovrsmp-1)/2
+                if ovrsmp % 2:
+                    # integer shifts
+                    psfLE.sampling = xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
+                else:
+                    # non integer shifts
+                    psfLE.sampling = a_shift(psfLE.sampling, (delta, delta), order=3, mode='constant')
+
+                # rebin the PSF
                 psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr, nOut, nOvr)).mean(3).mean(1)
             # cut the PSF to get the desired size
             if psfLE.N > nPixPsf:
