@@ -535,7 +535,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 delta = (ovrsmp-1)/2
                 if ovrsmp % 2:
                     # integer shifts
-                    psfLE.sampling = psfLE.xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
+                    psfLE.sampling = xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
                 else:
                     # non integer shifts
                     psfLE.sampling = a_shift(psfLE.sampling, (delta, delta), order=3, mode='constant')
