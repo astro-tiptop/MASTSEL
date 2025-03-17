@@ -478,7 +478,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         else:
             nPad = N
 
-        maskField = Field(wvl, N, grid_diameter)
+        maskField = Field(wvl, nPad, grid_diameter)
         if not isinstance(mask, list):
             maskField.sampling = congrid(mask, [nPixPup, nPixPup])
             maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
@@ -519,6 +519,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             psd.sampling = computedPSD / dk**2
             if nPad>N:
                 psd.sampling = zeroPad(psd.sampling, (nPad-N)//2)
+                psd.width = psd.width * nPad/N
 
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
