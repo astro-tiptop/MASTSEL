@@ -19,6 +19,31 @@ from configparser import ConfigParser
 import yaml
 import os
 
+def method_lru_cache(maxsize=None,verbose=False):
+    """Decorator that works like lru_cache but ignores the self parameter."""
+    def decorator(func):
+        cache = {}
+        
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            # Crea una chiave basata solo sugli argomenti (non su self)
+            key = (args, tuple(sorted(kwargs.items())))
+            
+            if key in cache:
+                if verbose:
+                    print(f"Cache hit!")
+                return cache[key]
+            
+            result = func(self, *args, **kwargs)
+            cache[key] = result
+            return result
+        
+        wrapper.cache_clear = cache.clear
+        wrapper.cache_info = lambda: f"Cache size: {len(cache)}"
+        return wrapper
+    
+    return decorator
+
 def cpuArray(v):
     if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v, float):
         return v
@@ -726,7 +751,7 @@ class MavisLO(object):
 
         return (bias,(mux,muy),(varx,vary))
 
-    @lru_cache(maxsize=None)
+    @method_lru_cache(maxsize=None)
     def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
@@ -740,14 +765,18 @@ class MavisLO(object):
 
         return psd_tip_turb, psd_tilt_turb
 
-    def computeTurbPSDs(self, fmin, fmax, freq_samples):
+    def computeTurbPSDs(self, fmin, fmax, freq_samples):        
+        wind_speed = float(np.round(self.WindSpeed, 3))
+        telescope_diameter = float(np.round(self.TelescopeDiameter, 3))
+        r0_value = float(np.round(self.r0_Value, 6))
+        l0 = float(np.round(self.L0, 3))
+
         # Pass the parameters to the cached function
         return self._compute_turb_psds_cached(
-            fmin, fmax, freq_samples,
-            self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0
+            fmin, fmax, int(freq_samples), wind_speed, telescope_diameter, r0_value, l0
         )
 
-    @lru_cache(maxsize=None)
+    @method_lru_cache(maxsize=None)
     def _compute_focus_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0, zenith_angle):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
@@ -762,10 +791,15 @@ class MavisLO(object):
         return psd_focus_turb, psd_focus_sodium
 
     def computeFocusPSDs(self, fmin, fmax, freq_samples):
+        wind_speed = float(np.round(self.WindSpeed, 3))
+        telescope_diameter = float(np.round(self.TelescopeDiameter, 3))
+        r0_value = float(np.round(self.r0_Value, 6))
+        l0 = float(np.round(self.L0, 3))
+        zenith_angle = float(np.round(self.ZenithAngle, 3))
+
         # Pass the parameters to the cached function
         return self._compute_focus_psds_cached(
-            fmin, fmax, freq_samples,
-            self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0, self.ZenithAngle
+            fmin, fmax, int(freq_samples), wind_speed, telescope_diameter, r0_value, l0, zenith_angle
         )
 
     def checkStability(self,keys,values,TFeq):
