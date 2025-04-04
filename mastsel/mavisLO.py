@@ -1,4 +1,5 @@
 import numpy as np
+from functools import lru_cache
 
 from . import gpuEnabled
 
@@ -34,9 +35,6 @@ def maxStableGain(delay):
     return maxG
 
 class MavisLO(object):
-    # Cache shared between all instances
-    turb_psd_cache = {}
-    focus_psd_cache = {}
 
     def check_section_key(self, primary):
         if self.configType == 'ini':
@@ -640,7 +638,7 @@ class MavisLO(object):
         rr = rr.reshape(gaussianPointsM.shape)
         return ssx, rr
 
-    
+
     def meanVarSigma(self, gaussianPoints, doLO=True):
         #xplot1, mu_ktr_array = self.compute2DMeanVar( self.aFunctionM, self.expr0M, gaussianPoints, self.aFunctionMGauss)
         #xplot2, var_ktr_array = self.compute2DMeanVar( self.aFunctionV, self.expr0V, gaussianPoints, self.aFunctionVGauss)
@@ -658,14 +656,14 @@ class MavisLO(object):
             sigmaRON = self.sigmaRON_Focus
             ThresholdWCoG = 0.0
             NewValueThrPix = 0.0
-        
+
         mu_ktr_array, var_ktr_array = meanVarPixelThr(gaussianPoints,
                                                       ron=sigmaRON,
                                                       bg=Background,
                                                       excess=ExcessNoiseFactor,
                                                       thresh=self.ThresholdWCoG_LO,
                                                       new_value=self.NewValueThrPix_LO)
-        
+
         sigma_ktr_array = np.sqrt(var_ktr_array.astype(np.float32))
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
@@ -688,17 +686,17 @@ class MavisLO(object):
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
-                
+  
         g2d = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
         I_k_data = g2d * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_data = I_k_data * aNGS_flux/aNGS_freq
-            
+
         g2d_prime = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, self.p_offset, 0, asigma)
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)       
         I_k_prime_data = g2d_prime * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
         I_k_prime_data = I_k_prime_data * aNGS_flux/aNGS_freq
-        
+
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
         I_k_prime_data = intRebin(I_k_prime_data,self.mediumShape) * self.downsample_factor**2
         W_Mask = np.zeros(self.mediumShape)
@@ -723,62 +721,52 @@ class MavisLO(object):
         muy = np.sum(masked_mu*fy)/np.sum(masked_mu)
         varx = np.sum(masked_sigma*fx**2)/(np.sum(masked_mu0)**2)
         vary = np.sum(masked_sigma*fy**2)/(np.sum(masked_mu0)**2)
-        
+
         bias = mux/(self.p_offset/self.downsample_factor)
 
         return (bias,(mux,muy),(varx,vary))
 
-    
+    @lru_cache(maxsize=None)
+    def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0):
+        paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
+        scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
+
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        psd_freq = xplot1[0]
+        psd_tip_turb = zplot1 * scaleFactor
+
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        psd_tilt_turb = zplot1 * scaleFactor
+
+        return psd_tip_turb, psd_tilt_turb
+
     def computeTurbPSDs(self, fmin, fmax, freq_samples):
-        # Calculates the relevant parameters for the cache
-        cache_key = (
+        # Pass the parameters to the cached function
+        return self._compute_turb_psds_cached(
             fmin, fmax, freq_samples,
             self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0
         )
 
-        # Check if the result is already in the cache
-        if cache_key in MavisLO.turb_psd_cache:
-            return MavisLO.turb_psd_cache[cache_key]
-
-        paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
-        scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
-
-        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
-        psd_freq = xplot1[0]
-        psd_tip_turb = zplot1*scaleFactor
-        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
-        psd_tilt_turb = zplot1*scaleFactor
-
-        # Save result to shared cache
-        MavisLO.turb_psd_cache[cache_key] = (psd_tip_turb, psd_tilt_turb)
-        
-        return psd_tip_turb, psd_tilt_turb
-
-    def computeFocusPSDs(self, fmin, fmax, freq_samples):
-        # Calculates the relevant parameters for the cache
-        cache_key = (
-            fmin, fmax, freq_samples,
-            self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0, self.ZenithAngle
-        )
-
-        # Check if the result is already in the cache
-        if cache_key in MavisLO.focus_psd_cache:
-            return MavisLO.focus_psd_cache[cache_key]
-
-        paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
-        scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
+    @lru_cache(maxsize=None)
+    def _compute_focus_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0, zenith_angle):
+        paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
+        scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
 
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
-        psd_focus_turb = zplot1*scaleFactor
-        
-        psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], self.platformlib)
-        psd_focus_sodium = psd_focus_sodium_lambda1( cp.array(psd_freq))
-        
-        # saves the result in the shared cache
-        MavisLO.focus_psd_cache[cache_key] = (psd_focus_turb, psd_focus_sodium)
+        psd_focus_turb = zplot1 * scaleFactor
+
+        psd_focus_sodium_lambda1 = lambdifyByName(self.sSodiumPSDFocus.rhs, ['f'], self.platformlib)
+        psd_focus_sodium = psd_focus_sodium_lambda1(cp.array(psd_freq))
 
         return psd_focus_turb, psd_focus_sodium
+
+    def computeFocusPSDs(self, fmin, fmax, freq_samples):
+        # Pass the parameters to the cached function
+        return self._compute_focus_psds_cached(
+            fmin, fmax, freq_samples,
+            self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0, self.ZenithAngle
+        )
 
     def checkStability(self,keys,values,TFeq):
         # substitute values in sympy expression
@@ -801,7 +789,7 @@ class MavisLO(object):
         npoints = 10
         psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples))
-        
+
         if self.plot4debug:
             fig, ax1 = plt.subplots(1,1)
             im = ax1.plot(psd_freq,psd_tip_turb) 
@@ -811,7 +799,7 @@ class MavisLO(object):
             ax1.set_title('Turbulence PSD', color='black')
             ax1.set_xlabel('frequency [Hz]')
             ax1.set_ylabel('Power')
-        
+
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
         sigma2Noise =  varX / bias**2 / (Df / df)
@@ -846,7 +834,7 @@ class MavisLO(object):
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
             g0g_coarse = xp.concatenate((xp.asarray(g0), xp.linspace(0.01, maxG, npoints)))
-            
+
             e1 = psd_freq.reshape((1,psd_freq.shape[0]))
             e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
             e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
@@ -855,24 +843,24 @@ class MavisLO(object):
             
             resultTip_coarse = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1))))
             resultTilt_coarse = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1))))
-            
+
             minTipIdx_coarse = xp.where(resultTip_coarse == xp.nanmin(resultTip_coarse))
             minTiltIdx_coarse = xp.where(resultTilt_coarse == xp.nanmin(resultTilt_coarse))
-            
+
             bestTipGain_coarse = g0g_coarse[minTipIdx_coarse[0][0]]
             bestTiltGain_coarse = g0g_coarse[minTiltIdx_coarse[0][0]]
-            
+
             # Step 2: Fine search around the coarse minimum
             fine_range = 0.1 * maxG
             g0g_tip = xp.linspace(max(0, bestTipGain_coarse - fine_range), min(maxG, bestTipGain_coarse + fine_range), npoints)
             g0g_tilt = xp.linspace(max(0, bestTiltGain_coarse - fine_range), min(maxG, bestTiltGain_coarse + fine_range), npoints)
-            
+
             e4_tip = g0g_tip.reshape((g0g_tip.shape[0], 1))
             e4_tilt = g0g_tilt.reshape((g0g_tilt.shape[0], 1))
-            
+
             psd_tip_freq_ext, psd_tip_turb_ext, g0g_ext_tip = xp.broadcast_arrays(e1, e2, e4_tip)
             psd_tilt_freq_ext, psd_tilt_turb_ext, g0g_ext_tilt = xp.broadcast_arrays(e1, e3, e4_tilt)
-            
+
             resultTip = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext_tip, psd_tip_freq_ext, psd_tip_turb_ext), axis=(1))))
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext_tilt, psd_tilt_freq_ext, psd_tilt_turb_ext), axis=(1))))
         else:
