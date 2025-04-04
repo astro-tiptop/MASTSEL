@@ -34,7 +34,10 @@ def maxStableGain(delay):
     return maxG
 
 class MavisLO(object):
-    
+    # Cache shared between all instances
+    turb_psd_cache = {}
+    focus_psd_cache = {}
+
     def check_section_key(self, primary):
         if self.configType == 'ini':
             return self.config.has_section(primary)
@@ -726,55 +729,55 @@ class MavisLO(object):
         return (bias,(mux,muy),(varx,vary))
 
     
-    def computeTurbPSDs(self, fmin, fmax, freq_samples):    
+    def computeTurbPSDs(self, fmin, fmax, freq_samples):
+        # Calculates the relevant parameters for the cache
+        cache_key = (
+            fmin, fmax, freq_samples,
+            self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0
+        )
+
+        # Check if the result is already in the cache
+        if cache_key in MavisLO.turb_psd_cache:
+            return MavisLO.turb_psd_cache[cache_key]
+
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
         scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
-        if self.computationPlatform=='GPU':
-            xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
-        else:
-            pool_size = int( min( mp.cpu_count(), freq_samples) )
-            pool = mp.Pool(processes=pool_size)
-            fx = np.linspace(fmin, fmax, freq_samples)
-            paramsAndRangesG = [( 'f', fxx, 0.0, 0.0, 'provided' ) for fxx in fx]
-            pool_outputs = pool.map(functools.partial(self.mIt.IntegralEvalE, eq=self.sTurbPSDTip, integrationVarsSamplingSchemes=[(self.psdIntegrationPoints, 'linear')], method='rect') , [paramAndRange])
-            pool.close()
-            pool.join()
-            for rr in pool_outputs:
-                xplot1.append(rr[0])
-                zplot1.append(rr[1])
-
-        #print('x,z:', len(xplot1), len(zplot1))
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
         psd_tip_turb = zplot1*scaleFactor
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_tilt_turb = zplot1*scaleFactor
+
+        # Save result to shared cache
+        MavisLO.turb_psd_cache[cache_key] = (psd_tip_turb, psd_tilt_turb)
+        
         return psd_tip_turb, psd_tilt_turb
 
-    def computeFocusPSDs(self, fmin, fmax, freq_samples):    
+    def computeFocusPSDs(self, fmin, fmax, freq_samples):
+        # Calculates the relevant parameters for the cache
+        cache_key = (
+            fmin, fmax, freq_samples,
+            self.WindSpeed, self.TelescopeDiameter, self.r0_Value, self.L0, self.ZenithAngle
+        )
+
+        # Check if the result is already in the cache
+        if cache_key in MavisLO.focus_psd_cache:
+            return MavisLO.focus_psd_cache[cache_key]
+
         paramAndRange = ( 'f', fmin, fmax, freq_samples, 'linear' )
         scaleFactor = (500/2.0/np.pi)**2 # from rad**2 to nm**2
 
-        if self.computationPlatform=='GPU':
-            xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
-        else:
-            pool_size = int( min( mp.cpu_count(), freq_samples) )
-            pool = mp.Pool(processes=pool_size)
-            fx = np.linspace(fmin, fmax, freq_samples)
-            paramsAndRangesG = [( 'f', fxx, 0.0, 0.0, 'provided' ) for fxx in fx]
-            pool_outputs = pool.map(functools.partial(self.mIt.IntegralEvalE, eq=self.sTurbPSDFocus, integrationVarsSamplingSchemes=[(self.psdIntegrationPoints, 'linear')], method='rect') , [paramAndRange])
-            pool.close()
-            pool.join()
-            for rr in pool_outputs:
-                xplot1.append(rr[0])
-                zplot1.append(rr[1])
-
-        #print('x,z:', len(xplot1), len(zplot1))
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
         psd_focus_turb = zplot1*scaleFactor
         
         psd_focus_sodium_lambda1 = lambdifyByName( self.sSodiumPSDFocus.rhs, ['f'], self.platformlib)
-        psd_focus_sodium = psd_focus_sodium_lambda1( cp.array(psd_freq)) 
+        psd_focus_sodium = psd_focus_sodium_lambda1( cp.array(psd_freq))
+        
+        # saves the result in the shared cache
+        MavisLO.focus_psd_cache[cache_key] = (psd_focus_turb, psd_focus_sodium)
+
         return psd_focus_turb, psd_focus_sodium
 
     def checkStability(self,keys,values,TFeq):
