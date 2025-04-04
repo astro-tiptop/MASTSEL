@@ -19,7 +19,7 @@ from configparser import ConfigParser
 import yaml
 import os
 
-def method_lru_cache(maxsize=None):
+def method_lru_cache(maxsize=None,verbose=False):
     """Decorator that works like lru_cache but ignores the self parameter."""
     def decorator(func):
         cache = {}
@@ -30,7 +30,8 @@ def method_lru_cache(maxsize=None):
             key = (args, tuple(sorted(kwargs.items())))
             
             if key in cache:
-                print(f"Cache hit!")
+                if verbose:
+                    print(f"Cache hit!")
                 return cache[key]
             
             result = func(self, *args, **kwargs)
