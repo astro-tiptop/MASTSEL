@@ -556,7 +556,9 @@ class MavisLO(object):
     
     
     def buildSpecializedCovFunctions(self):
-        covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, 10.0)
+        # maximum spatial frequency for the covariance function
+        self.max_freq_cov = max(1.0, 1/self.L0, 1/self.TelescopeDiameter)
+        covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, self.max_freq_cov)
         p = sp.symbols('p', real=False)
         cov_expr={}
         if self.filtZernikeCov:
@@ -755,12 +757,14 @@ class MavisLO(object):
     def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
+        # scale the integration points with the number of points in the frequency range
+        psdIntegrationPoints = round(freq_samples*self.psdIntegrationPoints/4000)
 
-        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
         psd_tip_turb = zplot1 * scaleFactor
 
-        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
         psd_tilt_turb = zplot1 * scaleFactor
 
         return psd_tip_turb, psd_tilt_turb
@@ -780,8 +784,10 @@ class MavisLO(object):
     def _compute_focus_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0, zenith_angle):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
+        # scale the integration points with the number of points in the frequency range
+        psdIntegrationPoints = round(freq_samples*self.psdIntegrationPoints/4000)
 
-        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(self.psdIntegrationPoints, 'linear')], 'rect')
+        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
         psd_focus_turb = zplot1 * scaleFactor
 
@@ -1171,11 +1177,13 @@ class MavisLO(object):
     def covValue(self, ii,jj, pp, hh):
         p =sp.symbols('p', real=False)
         h =sp.symbols('h', positive=True)
+        # scale integration points with the max spatial frequency value
+        integrationPoints = round(self.max_freq_cov/10*self.integrationPoints)
         #    with self.mutex:
         xplot1, zplot1 = self.mItcomplex.IntegralEval(sp.Function('C_v')(p, h),
                                                       self.specializedCovExprs[ii+10*jj],
                                                       [('p', pp , 0, 0, 'provided'), ('h', hh , 0, 0, 'provided')],
-                                                      [(self.integrationPoints, 'linear')],
+                                                      [(integrationPoints, 'linear')],
                                                       method='raw')
 
         return np.real(np.asarray(zplot1))
@@ -1304,7 +1312,7 @@ class MavisLO(object):
         
     def CMatAssemble(self, aCartPointingCoordsV, aCartNGSCoords, aCnn, aC1):
         R, RT = self.buildReconstuctor2(np.asarray(aCartPointingCoordsV), aCartNGSCoords)
-        Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aCartNGSCoords)        
+        Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aCartNGSCoords)
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(aCnn, RT))
         # sum tomography (C2), noise (C3), wind (aC1) errors
