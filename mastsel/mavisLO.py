@@ -321,6 +321,12 @@ class MavisLO(object):
             self.mItcomplex = Integrator(np, complex, '')
             self.platformlib = cpulib
 
+        # minimum and maximum spatial frequency for the covariance function and turbulence PSDs
+        self.min_freq_cov = 1e-3
+        self.max_freq_cov = max(1.0, 1/self.L0, 2/self.TelescopeDiameter)
+        self.min_freq_turb = 1e-4
+        self.max_freq_turb = self.max_freq_cov
+
         self.MavisFormulas = _mavisFormulas
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_rh1_filt = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceDfiltered')
@@ -442,8 +448,18 @@ class MavisLO(object):
         return expr0
 
     def specializedTurbFuncs(self):
-        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed, self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0, self.MavisFormulas.symbol_map['r_0']:self.r0_Value, self.MavisFormulas.symbol_map['L_0']:self.L0, self.MavisFormulas.symbol_map['k_y_min']:0.0001, self.MavisFormulas.symbol_map['k_y_max']:100})
-        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed, self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0, self.MavisFormulas.symbol_map['r_0']:self.r0_Value, self.MavisFormulas.symbol_map['L_0']:self.L0, self.MavisFormulas.symbol_map['k_y_min']:0.0001, self.MavisFormulas.symbol_map['k_y_max']:100})
+        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed,
+                                                             self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
+                                                             self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
+                                                             self.MavisFormulas.symbol_map['L_0']:self.L0,
+                                                             self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
+                                                             self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
+        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed,
+                                                               self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
+                                                               self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
+                                                               self.MavisFormulas.symbol_map['L_0']:self.L0,
+                                                               self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
+                                                               self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
         if self.displayEquation:
             print('mavisLO.specializedTurbFuncs')
             print('    aTurbPSDTip')
@@ -459,8 +475,13 @@ class MavisLO(object):
         return aTurbPSDTip, aTurbPSDTilt
 
     def specializedFocusFuncs(self):
-        aTurbPSDFocus = self.MavisFormulas['turbPSDFocus'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed, self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0, self.MavisFormulas.symbol_map['r_0']:self.r0_Value, self.MavisFormulas.symbol_map['L_0']:self.L0, self.MavisFormulas.symbol_map['k_y_min']:0.0001, self.MavisFormulas.symbol_map['k_y_max']:100})
-        aSodiumPSDFocus = self.MavisFormulas['sodiumPSDFocus'].subs({self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0, self.MavisFormulas.symbol_map['ZenithAngle']:self.ZenithAngle})
+        aTurbPSDFocus = self.MavisFormulas['turbPSDFocus'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed,
+                                                                 self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
+                                                                 self.MavisFormulas.symbol_map['r_0']:self.r0_Value, self.MavisFormulas.symbol_map['L_0']:self.L0,
+                                                                 self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
+                                                                 self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
+        aSodiumPSDFocus = self.MavisFormulas['sodiumPSDFocus'].subs({self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
+                                                                     self.MavisFormulas.symbol_map['ZenithAngle']:self.ZenithAngle})
         if self.displayEquation:
             print('mavisLO.specializedFocusFuncs')
             print('    aTurbPSDFocus')
@@ -556,9 +577,7 @@ class MavisLO(object):
     
     
     def buildSpecializedCovFunctions(self):
-        # maximum spatial frequency for the covariance function
-        self.max_freq_cov = max(1.0, 1/self.L0, 1/self.TelescopeDiameter)
-        covValue_integrationLimits = (sp.symbols('f', positive=True), 1e-3, self.max_freq_cov)
+        covValue_integrationLimits = (sp.symbols('f', positive=True), self.min_freq_cov, self.max_freq_cov)
         p = sp.symbols('p', real=False)
         cov_expr={}
         if self.filtZernikeCov:
@@ -758,7 +777,7 @@ class MavisLO(object):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
-        psdIntegrationPoints = round(freq_samples*self.psdIntegrationPoints/4000)
+        psdIntegrationPoints = round(self.max_freq_turb/100*self.psdIntegrationPoints)
 
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
@@ -785,7 +804,7 @@ class MavisLO(object):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
-        psdIntegrationPoints = round(freq_samples*self.psdIntegrationPoints/4000)
+        psdIntegrationPoints = round(self.max_freq_turb/100*self.psdIntegrationPoints)
 
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDFocus, [paramAndRange], [(psdIntegrationPoints, 'linear')], 'rect')
         psd_freq = xplot1[0]
