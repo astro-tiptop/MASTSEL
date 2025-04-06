@@ -323,7 +323,8 @@ class MavisLO(object):
 
         # minimum and maximum spatial frequency for the covariance function and turbulence PSDs
         self.min_freq_cov = 1e-3
-        self.max_freq_cov = max(1.0, 1/self.L0, 2/self.TelescopeDiameter)
+        # here we consider that the cut off frequency is approximately 1/L0
+        self.max_freq_cov = max(1.0, 5/self.L0, 2/self.TelescopeDiameter)
         self.min_freq_turb = 1e-4
         self.max_freq_turb = self.max_freq_cov
 
@@ -477,7 +478,8 @@ class MavisLO(object):
     def specializedFocusFuncs(self):
         aTurbPSDFocus = self.MavisFormulas['turbPSDFocus'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed,
                                                                  self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
-                                                                 self.MavisFormulas.symbol_map['r_0']:self.r0_Value, self.MavisFormulas.symbol_map['L_0']:self.L0,
+                                                                 self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
+                                                                 self.MavisFormulas.symbol_map['L_0']:self.L0,
                                                                  self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
                                                                  self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
         aSodiumPSDFocus = self.MavisFormulas['sodiumPSDFocus'].subs({self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
