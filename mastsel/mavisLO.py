@@ -225,8 +225,8 @@ class MavisLO(object):
                 self.N_sa_tot_Focus.append(n**2)
 
         defaultCompute = 'GPU'
-        defaultIntegralDiscretization1 = 50
-        defaultIntegralDiscretization2 = 500
+        defaultIntegralDiscretization1 = 250
+        defaultIntegralDiscretization2 = 1000
         self.computationPlatform = defaultCompute
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
@@ -322,9 +322,9 @@ class MavisLO(object):
             self.platformlib = cpulib
 
         self.min_freq_cov = 1e-3
-        self.max_freq_cov = 10
+        self.max_freq_cov = 100
         self.min_freq_turb = 1e-4
-        self.max_freq_turb = 100
+        self.max_freq_turb = 1000
 
         self.MavisFormulas = _mavisFormulas
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
