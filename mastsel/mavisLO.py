@@ -1437,6 +1437,9 @@ class MavisLO(object):
             else:
                 NumberLenslets = self.NumberLenslets[starIndex]
                 N_sa_tot_LO = self.N_sa_tot_LO[starIndex]
+            if self.verbose:
+                print('star number:', starIndex+1, 'over', nNaturalGS)
+                print('    Number of SA:', N_sa_tot_LO)
             # one scalar (bias), two tuples of 2 (amu, avar)
             bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
             # conversion from pixel2 to mas2
@@ -1457,8 +1460,12 @@ class MavisLO(object):
                 #   empirical expression:
                 #   aliasing on TT is 4 times the linear increase of the difference
                 #   between FWHM of the PSF and the FWHM of the DL PSF
-                if aNGS_FWHM_mas[starIndex]-aNGS_FWHM_DL_mas > 0:
-                    aliasRMS = 4*(aNGS_FWHM_mas[starIndex]-aNGS_FWHM_DL_mas)
+                if isinstance(aNGS_FWHM_DL_mas, (list, tuple)):
+                    FWHM_DL_mas = aNGS_FWHM_DL_mas[starIndex]
+                else:
+                    FWHM_DL_mas = aNGS_FWHM_DL_mas
+                if aNGS_FWHM_mas[starIndex]-FWHM_DL_mas > 0:
+                    aliasRMS = 4*(aNGS_FWHM_mas[starIndex]-FWHM_DL_mas)
                 else:
                     aliasRMS = 0.1
                 # conversion in nm RMS
