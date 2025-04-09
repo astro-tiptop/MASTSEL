@@ -1432,6 +1432,7 @@ class MavisLO(object):
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
             if nNaturalGS != len(self.NumberLenslets):
+                # this is required for the case of asterism selection
                 NumberLenslets = self.NumberLenslets[0]
                 N_sa_tot_LO = self.N_sa_tot_LO[0]
             else:
@@ -1461,7 +1462,11 @@ class MavisLO(object):
                 #   aliasing on TT is 4 times the linear increase of the difference
                 #   between FWHM of the PSF and the FWHM of the DL PSF
                 if isinstance(aNGS_FWHM_DL_mas, (list, tuple)):
-                    FWHM_DL_mas = aNGS_FWHM_DL_mas[starIndex]
+                    if nNaturalGS != len(self.NumberLenslets):
+                        # this is required for the case of asterism selection
+                        FWHM_DL_mas = aNGS_FWHM_DL_mas[0]
+                    else:
+                        FWHM_DL_mas = aNGS_FWHM_DL_mas[starIndex]
                 else:
                     FWHM_DL_mas = aNGS_FWHM_DL_mas
                 if aNGS_FWHM_mas[starIndex]-FWHM_DL_mas > 0:
