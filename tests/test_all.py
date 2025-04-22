@@ -89,12 +89,13 @@ class TestNoiseResiduals(TestMavisLO):
         
         TestMavisLO.mLO.simpleVarianceComputation = False
         mItGPU = Integrator(cp, cp.float64, '')
+        PixelScale = TestMavisLO.mLO.PixelScale_LO[0]
         TestMavisLO.mLO.configLOFreq(NGS_freq[0]) 
-        r1 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[0], NGS_freq[0], NGS_SR_1650[0], NGS_FWHM_mas[0])
+        r1 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[0], NGS_freq[0], NGS_SR_1650[0], NGS_FWHM_mas[0], PixelScale)
         TestMavisLO.mLO.configLOFreq(NGS_freq[1]) 
-        r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_freq[1], NGS_SR_1650[1], NGS_FWHM_mas[1])
+        r2 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[1], NGS_freq[1], NGS_SR_1650[1], NGS_FWHM_mas[1], PixelScale)
         TestMavisLO.mLO.configLOFreq(NGS_freq[2]) 
-        r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_freq[2], NGS_SR_1650[2], NGS_FWHM_mas[2])
+        r3 = TestMavisLO.mLO.computeBiasAndVariance(NGS_flux[2], NGS_freq[2], NGS_SR_1650[2], NGS_FWHM_mas[2], PixelScale)
         
         self.assertTrue( np.testing.assert_allclose(np.array(r1[0]), np.array((0.3532540510862264)), rtol=1e-03, atol=1e-5)==None)
         self.assertTrue( np.testing.assert_allclose(np.array(r1[1]), np.array((0.0883135127715566, -2.8275988362257914e-09)), rtol=1e-03, atol=1e-5)==None)
@@ -115,7 +116,7 @@ class TestWindResiduals(TestMavisLO):
         print("Running Test: TestWindResiduals")
 
         psd_freq, psd_tip_wind, psd_tilt_wind = TestMavisLO.mLO.loadWindPsd('data/windpsd_mavis.fits')
-        var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO**2
+        var1x = 0.05993281522281573 * TestMavisLO.mLO.PixelScale_LO[0]**2
         bias = 0.4300779971881394
         nr = TestMavisLO.mLO.computeNoiseResidual(0.25, 250.0, 1000, var1x, bias )
         wr = TestMavisLO.mLO.computeWindResidual(psd_freq, psd_tip_wind, psd_tilt_wind, var1x, bias )
@@ -140,7 +141,7 @@ class TestBiasAndVariance(TestMavisLO):
         aNGS_EE = 1
         aNGS_flux = 100000
         aNGS_freq = 100
-        aNGS_FWHM_mas = 2*TestMavisLO.mLO.PixelScale_LO
+        aNGS_FWHM_mas = 2*TestMavisLO.mLO.PixelScale_LO[0]
         
         TestMavisLO.mLO.simpleVarianceComputation = False
         TestMavisLO.mLO.configLOFreq(aNGS_freq)
@@ -148,7 +149,7 @@ class TestBiasAndVariance(TestMavisLO):
         
         aNGS_frameflux = aNGS_flux / aNGS_freq
         TestMavisLO.mLO.smallGridSize = 2
-        TestMavisLO.mLO.mediumPixelScale = TestMavisLO.mLO.PixelScale_LO/TestMavisLO.mLO.downsample_factor
+        TestMavisLO.mLO.mediumPixelScale = TestMavisLO.mLO.PixelScale_LO[0]/TestMavisLO.mLO.downsample_factor
         asigma = aNGS_FWHM_mas/sigmaToFWHM/TestMavisLO.mLO.mediumPixelScale
                
         xCoords = np.asarray(np.linspace(-TestMavisLO.mLO.largeGridSize/2.0+0.5, TestMavisLO.mLO.largeGridSize/2.0-0.5, TestMavisLO.mLO.largeGridSize), dtype=np.float32)
