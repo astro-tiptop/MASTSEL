@@ -138,6 +138,9 @@ class MavisLO(object):
                 self.N_sa_tot_LO.append(n**2)
 
         self.PixelScale_LO          = self.get_config_value('sensor_LO','PixelScale')
+        # if self.PixelScale_LO is a scalar makes a list on n elements
+        if not isinstance(self.PixelScale_LO, list):
+            self.PixelScale_LO = [self.PixelScale_LO] * len(self.NumberLenslets)
         self.WindowRadiusWCoG_LO    = self.get_config_value('sensor_LO','WindowRadiusWCoG')
         if self.WindowRadiusWCoG_LO=='optimize':
             self.WindowRadiusWCoG_LO = 0
@@ -186,6 +189,9 @@ class MavisLO(object):
             self.skyBackground_Focus     = self.get_config_value('sensor_Focus','SkyBackground')
             self.Dark_Focus              = self.get_config_value('sensor_Focus','Dark')
             self.PixelScale_Focus        = self.get_config_value('sensor_Focus','PixelScale')
+            # if self.PixelScale_Focus is a scalar makes a list on n elements
+            if not isinstance(self.PixelScale_Focus, list):
+                self.PixelScale_Focus = [self.PixelScale_Focus] * len(self.NumberLenslets)
             self.ExcessNoiseFactor_Focus = self.get_config_value('sensor_Focus','ExcessNoiseFactor')
             self.sigmaRON_Focus          = self.get_config_value('sensor_Focus','SigmaRON')
             self.NumberLenslets_Focus    = self.get_config_value('sensor_Focus','NumberLenslets')
@@ -730,19 +736,19 @@ class MavisLO(object):
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
 
-    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas, doLO=True):
+    def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE, aNGS_FWHM_mas, PixelScale, doLO=True):
         if doLO:
             if self.WindowRadiusWCoG_LO == 0:
-                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_LO)),1)
+                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/PixelScale)),1)
             else:
                 WindowRadiusWCoG = self.WindowRadiusWCoG_LO
-            self.mediumPixelScale = self.PixelScale_LO/self.downsample_factor
+            self.mediumPixelScale = PixelScale/self.downsample_factor
         else:
             if self.WindowRadiusWCoG_Focus == 0:
-                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/self.PixelScale_Focus)),1)
+                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/PixelScale)),1)
             else:
                 WindowRadiusWCoG = self.WindowRadiusWCoG_Focus
-            self.mediumPixelScale = self.PixelScale_Focus/self.downsample_factor
+            self.mediumPixelScale = PixelScale/self.downsample_factor
         self.smallGridSize = 2*WindowRadiusWCoG
 
         # aNGS_flux is provided in photons/s
@@ -1435,16 +1441,19 @@ class MavisLO(object):
                 # this is required for the case of asterism selection
                 NumberLenslets = self.NumberLenslets[0]
                 N_sa_tot_LO = self.N_sa_tot_LO[0]
+                PixelScale_LO = self.PixelScale_LO[0]
             else:
                 NumberLenslets = self.NumberLenslets[starIndex]
                 N_sa_tot_LO = self.N_sa_tot_LO[starIndex]
+                PixelScale_LO = self.PixelScale_LO[starIndex]
             if self.verbose:
                 print('star number:', starIndex+1, 'over', nNaturalGS)
                 print('    Number of SA:', N_sa_tot_LO)
             # one scalar (bias), two tuples of 2 (amu, avar)
-            bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex])
+            bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex],
+                                                          PixelScale_LO)
             # conversion from pixel2 to mas2
-            var1x = avar[0] * self.PixelScale_LO**2
+            var1x = avar[0] * PixelScale_LO**2
             # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
             var1x /= N_sa_tot_LO
 
@@ -1552,13 +1561,16 @@ class MavisLO(object):
             if nNaturalGS != len(self.NumberLenslets_Focus):
                 NumberLenslets = self.NumberLenslets_Focus[0]
                 N_sa_tot_Focus = self.N_sa_tot_Focus[0]
+                PixelScale_Focus = self.PixelScale_Focus[0]
             else:
                 NumberLenslets = self.NumberLenslets_Focus[starIndex]
                 N_sa_tot_Focus = self.N_sa_tot_Focus[starIndex]
+                PixelScale_Focus = self.PixelScale_Focus[starIndex]
             # one scalar (bias), two tuples of 2 (amu, avar)
-            bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex], doLO=False)
+            bias, amu, avar = self.computeBiasAndVariance(aNGS_flux[starIndex], aNGS_freq[starIndex], aNGS_EE[starIndex], aNGS_FWHM_mas[starIndex],
+                                                          PixelScale_Focus, doLO=False)
             # conversion from pixel2 to mas2
-            var1x = avar[0] * self.PixelScale_Focus**2
+            var1x = avar[0] * PixelScale_Focus**2
             # noise propagation coefficient on tip/tilt is normalized by the number of sub-apertures
             var1x /= N_sa_tot_Focus
 
