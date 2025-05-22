@@ -455,7 +455,8 @@ def maskSA(nSA, nMask, telPupil):
     return mask
 
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_range,
-                   dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False):
+                   dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
+                   skip_reshape=False):
 
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
@@ -528,7 +529,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             if nBig > psfLE.N:
                 psfLE.sampling = zeroPad(psfLE.sampling, (nBig-psfLE.N)//2)
             # resample the PSF to get the not oversampled pixel scale
-            if ovrsmp > 1:
+            if ovrsmp > 1 and not skip_reshape:
                 nOvr = int(ovrsmp)
                 nOut = int(psfLE.sampling.shape[0] / nOvr)
 
