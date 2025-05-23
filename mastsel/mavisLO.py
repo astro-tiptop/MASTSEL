@@ -82,6 +82,10 @@ class MavisLO(object):
         elif self.configType == 'yml':
             return self.my_yaml_dict[primary][secondary]
 
+    def raiseMissingRequiredOpt(self,sec,opt):
+        raise ValueError("'{}' is missing from section '{}'"
+                         .format(opt,sec))
+
     def __init__(self, path, parametersFile, verbose=False):
 
         self.verbose = verbose
@@ -116,8 +120,15 @@ class MavisLO(object):
 
         self.AtmosphereWavelength   = self.get_config_value('atmosphere','Wavelength')
         self.L0                     = self.get_config_value('atmosphere','L0')
-        self.Cn2Weights             = self.get_config_value('atmosphere','Cn2Weights')
-        self.Cn2Heights             = self.get_config_value('atmosphere','Cn2Heights')
+
+        if self.check_config_key('atmosphere','Cn2Weights'):
+            self.Cn2Weights         = self.get_config_value('atmosphere','Cn2Weights')
+        else:
+            self.raiseMissingRequiredOpt('atmosphere','Cn2Weights')
+        if self.check_config_key('atmosphere','Cn2Heights'):
+            self.Cn2Heights         = self.get_config_value('atmosphere','Cn2Heights')
+        else:
+            self.raiseMissingRequiredOpt('atmosphere','Cn2Heights')
        
         if np.min(self.Cn2Heights) == 0:
             self.Cn2Heights[np.argmin(self.Cn2Heights)] = 1e-6
@@ -274,14 +285,20 @@ class MavisLO(object):
         if self.check_config_key('atmosphere','WindSpeed') and self.check_config_key('atmosphere','testWindspeed'):
             if testWindspeedIsValid:
                 print('%%%%%%%% ATTENTION %%%%%%%%')
-                print('You must provide WindSpeed or testWindspeed value, not both, ')
+                print('You must provide WindSpeed or testWindspeed value in atmosphere section, not both, ')
                 print('testWindspeed parameter will be used, WindSpeed will be discarded!\n')
 
         if testWindspeedIsValid:
             self.WindSpeed = self.get_config_value('atmosphere','testWindspeed')
         else:
-            self.wSpeed = self.get_config_value('atmosphere','WindSpeed')
-            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+            wSpeed = self.get_config_value('atmosphere','WindSpeed')
+            self.WindSpeed = (np.dot( np.power(np.asarray(wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+
+        if self.check_config_key('atmosphere','WindSpeed') and self.check_config_key('atmosphere','WindDirection'):
+            wDir = self.get_config_value('atmosphere','WindSpeed')
+            self.WindDir = (np.dot( np.power(np.asarray(wDir), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+        else:
+            self.WindDir = 0.0
 
         #
         # END OF SETTING PARAMETERS READ FROM FILE       
@@ -455,13 +472,13 @@ class MavisLO(object):
         return expr0
 
     def specializedTurbFuncs(self):
-        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed,
+        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed*nnp.cos(self.WindDir*nnp.pi/180),
                                                              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
                                                              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
                                                              self.MavisFormulas.symbol_map['L_0']:self.L0,
                                                              self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
                                                              self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
-        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed,
+        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed*nnp.sin(self.WindDir*nnp.pi/180),
                                                                self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
                                                                self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
                                                                self.MavisFormulas.symbol_map['L_0']:self.L0,
@@ -796,7 +813,7 @@ class MavisLO(object):
         return (bias,(mux,muy),(varx,vary))
 
     @method_lru_cache(maxsize=None)
-    def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed, telescope_diameter, r0_value, l0):
+    def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed, wind_dir, telescope_diameter, r0_value, l0):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
@@ -811,15 +828,16 @@ class MavisLO(object):
 
         return psd_tip_turb, psd_tilt_turb
 
-    def computeTurbPSDs(self, fmin, fmax, freq_samples):        
+    def computeTurbPSDs(self, fmin, fmax, freq_samples):
         wind_speed = float(np.round(self.WindSpeed, 3))
+        wind_dir = float(np.round(self.WindDir, 3))
         telescope_diameter = float(np.round(self.TelescopeDiameter, 3))
         r0_value = float(np.round(self.r0_Value, 6))
         l0 = float(np.round(self.L0, 3))
 
         # Pass the parameters to the cached function
         return self._compute_turb_psds_cached(
-            fmin, fmax, int(freq_samples), wind_speed, telescope_diameter, r0_value, l0
+            fmin, fmax, int(freq_samples), wind_speed, wind_dir, telescope_diameter, r0_value, l0
         )
 
     @method_lru_cache(maxsize=None)
