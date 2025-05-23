@@ -295,7 +295,7 @@ class MavisLO(object):
             self.WindSpeed = (np.dot( np.power(np.asarray(wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
 
         if self.check_config_key('atmosphere','WindSpeed') and self.check_config_key('atmosphere','WindDirection'):
-            wDir = self.get_config_value('atmosphere','WindSpeed')
+            wDir = self.get_config_value('atmosphere','WindDirection')
             self.WindDir = (np.dot( np.power(np.asarray(wDir), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
         else:
             self.WindDir = 0.0
