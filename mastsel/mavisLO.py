@@ -472,13 +472,13 @@ class MavisLO(object):
         return expr0
 
     def specializedTurbFuncs(self):
-        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed*nnp.cos(self.WindDir*nnp.pi/180),
+        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed*np.cos(self.WindDir*np.pi/180),
                                                              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
                                                              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
                                                              self.MavisFormulas.symbol_map['L_0']:self.L0,
                                                              self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
                                                              self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
-        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed*nnp.sin(self.WindDir*nnp.pi/180),
+        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs({self.MavisFormulas.symbol_map['V']:self.WindSpeed*np.sin(self.WindDir*np.pi/180),
                                                                self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
                                                                self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
                                                                self.MavisFormulas.symbol_map['L_0']:self.L0,
