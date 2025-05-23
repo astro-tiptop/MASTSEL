@@ -299,7 +299,9 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
         mu_thr_it = np.zeros_like(flux_tmp, dtype=np.float64)
         var_thr_it = np.zeros_like(flux_tmp, dtype=np.float64)
 
-        if excess > 1:
+        # this value, 1.14, was found experimentally to avoid numerical errors
+        # this means that excess is ignored if excess < 1.14
+        if excess >= 1.14:
             x = np.exp(np.linspace(np.log(order / npoints), np.log(order), npoints - 1))
             x = np.insert(x, 0, 0)
             dx = np.diff(x)
