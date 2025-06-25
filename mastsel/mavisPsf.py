@@ -218,7 +218,7 @@ class Field(object):
         self.width = new_pixel_size * self.N
 
     def pupilToMtf(self):
-        self.sampling = self.xp.real(
+        self.sampling = self.xp.abs(
             ft_ft2(
                 self.xp.square(
                     self.xp.absolute(
