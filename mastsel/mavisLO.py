@@ -109,10 +109,13 @@ class MavisLO(object):
             self.error = True
             return
         
-        self.TelescopeDiameter      = self.get_config_value('telescope','TelescopeDiameter')  
-        self.ZenithAngle            = self.get_config_value('telescope','ZenithAngle')  
-        self.TechnicalFoV           = self.get_config_value('telescope','TechnicalFoV')  
-        self.ObscurationRatio       = self.get_config_value('telescope','ObscurationRatio')   
+        self.TelescopeDiameter      = self.get_config_value('telescope','TelescopeDiameter')
+        self.ZenithAngle            = self.get_config_value('telescope','ZenithAngle')
+        self.TechnicalFoV           = self.get_config_value('telescope','TechnicalFoV')
+        if self.check_config_key('telescope','ObscurationRatio'):
+            self.ObscurationRatio   = self.get_config_value('telescope','ObscurationRatio')
+        else:
+            self.ObscurationRatio   = 0.0
 
         self.AtmosphereWavelength   = self.get_config_value('atmosphere','Wavelength')
         self.L0                     = self.get_config_value('atmosphere','L0')
