@@ -117,7 +117,6 @@ def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
    
     # P3 relative paths
     if path_p3 and clean_path.startswith('aoSystem'):
-        print(path_p3, clean_path)
         return os.path.join(path_p3, clean_path)
    
     # TIPTOP relative paths
