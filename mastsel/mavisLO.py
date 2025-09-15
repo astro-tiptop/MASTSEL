@@ -59,6 +59,51 @@ def maxStableGain(delay):
         maxG = 0.1
     return maxG
 
+def detect_tiptop_path():
+    """Auto-detect TIPTOP path from the call stack"""
+    import inspect
+    from pathlib import Path
+    try:
+        for frame_info in inspect.stack(context=0):
+            p = Path(frame_info.filename).resolve()
+            for parent in (p, *p.parents):
+                if parent.name == 'tiptop':
+                    return str(parent.parent)   # Repository root = parent of the "tiptop" directory
+    except Exception:
+        pass
+    return None
+
+PATH_TIPTOP = detect_tiptop_path()
+
+def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
+    """
+    Resolve configuration file paths for both P3 and TIPTOP
+    - path_root has priority if it is not empty.
+    - aoSystem/... => resolved under path_p3
+    - tiptop/...   => resolved under path_tiptop (if available)
+    - otherwise: returns as is (absolute or current relative)
+    """
+    if not path_value or path_value == '':
+        return ''
+   
+    # Explicit path_root has priority
+    if path_root:
+        return os.path.join(path_root, path_value)
+   
+    # Clean path for consistent checking (remove leading slash)
+    clean_path = path_value.lstrip('/')
+   
+    # P3 relative paths
+    if clean_path.startswith('aoSystem'):
+        return os.path.join(path_p3, clean_path)
+   
+    # TIPTOP relative paths
+    if path_tiptop and clean_path.startswith('tiptop'):
+        return os.path.join(path_tiptop, clean_path)
+   
+    # Default: use as-is (could be absolute or relative to current dir)
+    return path_value
+
 class MavisLO(object):
 
     def check_section_key(self, primary):
@@ -355,6 +400,8 @@ class MavisLO(object):
         self.maxLOtFreq = 0.5*self.SensorFrameRate_LO
         if self.check_config_key('telescope','windPsdFile'):
             windPsdFile = self.get_config_value('telescope','windPsdFile')
+            windPsdFile = resolve_config_path(windPsdFile, path_root = '', path_p3 = None,
+                                              path_tiptop=PATH_TIPTOP)
             self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
         else:
             if self.verbose:
@@ -381,6 +428,8 @@ class MavisLO(object):
 
 
     def loadWindPsd(self, filename):
+        filename = resolve_config_path(filename, path_root = '', path_p3 = None,
+                                        path_tiptop=PATH_TIPTOP)
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
         hdul.close()
