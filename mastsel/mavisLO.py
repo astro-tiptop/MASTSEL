@@ -60,20 +60,42 @@ def maxStableGain(delay):
     return maxG
 
 def detect_tiptop_path():
-    """Auto-detect TIPTOP path from the call stack"""
-    import inspect
+    """Auto-detect TIPTOP project root path"""
     from pathlib import Path
+    # --- Method 1: Standard package inspection (preferred, fast, and reliable) ---
     try:
-        for frame_info in inspect.stack(context=0):
-            p = Path(frame_info.filename).resolve()
-            for parent in (p, *p.parents):
-                if parent.name == 'tiptop':
-                    return str(parent.parent)   # Repository root = parent of the "tiptop" directory
-    except Exception:
-        pass
+        import tiptop
+        # The project root is assumed to be the parent of the 'tiptop' package directory.
+        # e.g., from /path/to/project/tiptop/__init__.py -> get /path/to/project
+        project_root = Path(tiptop.__file__).resolve().parent.parent
+        return str(project_root)
+   
+    except ImportError:
+        import inspect
+        # --- Method 2: Fallback via call stack inspection ---
+        # This is useful when running from a source checkout without installation.
+        try: 
+            for frame_info in inspect.stack(context=0):
+                p = Path(frame_info.filename).resolve()
+                for parent in (p, *p.parents):
+                    if parent.name == 'tiptop':
+                        return str(parent.parent)   # Repository root = parent of the "tiptop" directory
+        except Exception:
+            pass
     return None
 
+def detect_p3_path():
+    """Auto-detect P3 project root path"""
+    from pathlib import Path
+    try:
+        import p3
+        project_root = Path(p3.__file__).resolve().parent
+        return str(project_root)
+    except Exception:
+        return None
+
 PATH_TIPTOP = detect_tiptop_path()
+PATH_P3 = detect_p3_path()
 
 def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
     """
@@ -94,7 +116,8 @@ def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
     clean_path = path_value.lstrip('/')
    
     # P3 relative paths
-    if clean_path.startswith('aoSystem'):
+    if path_p3 and clean_path.startswith('aoSystem'):
+        print(path_p3, clean_path)
         return os.path.join(path_p3, clean_path)
    
     # TIPTOP relative paths
@@ -400,7 +423,7 @@ class MavisLO(object):
         self.maxLOtFreq = 0.5*self.SensorFrameRate_LO
         if self.check_config_key('telescope','windPsdFile'):
             windPsdFile = self.get_config_value('telescope','windPsdFile')
-            windPsdFile = resolve_config_path(windPsdFile, path_root = '', path_p3 = None,
+            windPsdFile = resolve_config_path(windPsdFile, path_root = '', path_p3 = PATH_P3,
                                               path_tiptop=PATH_TIPTOP)
             self.psd_freq, self.psd_tip_wind, self.psd_tilt_wind = self.loadWindPsd(windPsdFile)
         else:
@@ -428,7 +451,7 @@ class MavisLO(object):
 
 
     def loadWindPsd(self, filename):
-        filename = resolve_config_path(filename, path_root = '', path_p3 = None,
+        filename = resolve_config_path(filename, path_root = '', path_p3 = PATH_P3,
                                         path_tiptop=PATH_TIPTOP)
         hdul = fits.open(filename)
         psd_data = np.asarray(hdul[0].data, np.float32)
