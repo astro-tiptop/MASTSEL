@@ -753,8 +753,12 @@ class MavisLO(object):
             for ii in range(nstars):
                 p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
             P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
-            
-            rec_tomo = np.linalg.pinv(P_mat,rcond=0.05) # aka W, 5x(2*nstars)    
+
+            # Tikhonov regularization
+            lambda_tikhonov = 0.05
+            A = P_mat.T @ P_mat + lambda_tikhonov * np.eye(P_mat.shape[1])
+            b = P_mat.T
+            rec_tomo = np.linalg.solve(A, b) # aka W, 5x(2*nstars)
 
             vx = np.asarray(aCartPointingCoordsV[:,0])
             vy = np.asarray(aCartPointingCoordsV[:,1])
@@ -764,7 +768,7 @@ class MavisLO(object):
                 R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
 
             return R_1, R_1.transpose()
-    
+
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, expr1):
         gaussianPoints = gaussianPointsM.flatten()
         aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z_r'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i_p'), 1, int(self.imax)) )
@@ -828,7 +832,7 @@ class MavisLO(object):
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
         asigma = aNGS_FWHM_mas/sigmaToFWHM/self.mediumPixelScale
-  
+
         g2d = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
         I_k_data = g2d * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
