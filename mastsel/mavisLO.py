@@ -456,9 +456,9 @@ class MavisLO(object):
     def loadWindPsd(self, filename):
         filename = resolve_config_path(filename, path_root = '', path_p3 = PATH_P3,
                                         path_tiptop=PATH_TIPTOP)
-        hdul = fits.open(filename)
-        psd_data = np.asarray(hdul[0].data, np.float32)
-        hdul.close()
+        with fits.open(filename) as hdul:
+            psd_data = np.asarray(hdul[0].data, np.float32)
+
         psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
         psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
         psd_tilt_wind = np.interp(psd_freq, psd_data[0,:], psd_data[2,:],left=0,right=0)
