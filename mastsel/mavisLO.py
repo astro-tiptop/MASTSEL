@@ -741,7 +741,7 @@ class MavisLO(object):
         R_1 = np.dot(P_alpha1, rec_tomo)
         return P_mat, rec_tomo, R_0, R_1
 
-    def buildReconstuctor2(self, aCartPointingCoordsV, aCartNGSCoords, aCnn=None, Css=None):
+    def buildReconstuctor2(self, aCartPointingCoordsV, aCartNGSCoords, Cnn=None, Caa=None):
         npointings = aCartPointingCoordsV.shape[0]
         nstars = aCartNGSCoords.shape[0]
 
@@ -757,11 +757,11 @@ class MavisLO(object):
             p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
         P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
 
-        if self.mmse_LO and aCnn is not None and Css is not None:
+        if self.mmse_LO and Cnn is not None and Caa is not None:
             # Calculate noise covariance matrix from diagonal elements of Css
             # for 5 modes, tip, tilt, focus, and 2 astigmatisms.
             # We consider a ratio of 3 between tilt and higher order modes (focus, astigmatisms)
-            first_order_variance = np.mean([Css[0,0], Css[1,1]])  # Average of tip and tilt variances
+            first_order_variance = np.mean([Caa[0,0], Caa[1,1]])  # Average of tip and tilt variances
             second_order_variance = first_order_variance / 3.0
             v_modes = np.array([
                 first_order_variance,             # tip
@@ -772,8 +772,9 @@ class MavisLO(object):
             ])
             Cx = np.diag(v_modes)
             # MMSE reconstructor: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
-            H = P_mat @ Cx @ P_mat.T + aCnn
+            H = P_mat @ Cx @ P_mat.T + Cnn
             rec_tomo = Cx @ P_mat.T @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
+            print('rec_tomo', rec_tomo)
         else:
             # Tikhonov regularization
             lambda_tikhonov = 0.05
@@ -1430,10 +1431,7 @@ class MavisLO(object):
         points = aCartPointingCoordsV.shape[0]
         Ctot = np.zeros((2*points,2))
         Caa, Cas, Css = self.computeCovMatrices(xp.asarray(aCartPointingCoordsV), xp.asarray(aCartNGSCoords), xp=np)
-        print('shape Caa:', Caa.shape)
-        print('shape Cas:', Cas.shape)
-        print('shape Css:', Css.shape)
-        R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords, aCnn=aCnn, Css=Css)
+        R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords, Cnn=aCnn, Caa=Caa)
         for i in range(points):
             Ri = R[2*i:2*(i+1),:]
             RTi = RT[:, 2*i:2*(i+1)]
@@ -1442,7 +1440,7 @@ class MavisLO(object):
             C3 = xp.dot(Ri, xp.dot(xp.asarray(aCnn), RTi))
             # tomography (C2), noise (C3), wind (aC1) errors
             if self.noNoise:
-                ss = xp.asarray(aC1) + Caa + C2b 
+                ss = xp.asarray(aC1) + Caa + C2b
                 print('    WARNING: LO noise is not active!')
             else:
                 ss = xp.asarray(aC1) + Caa + C2b + C3
