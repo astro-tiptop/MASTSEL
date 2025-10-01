@@ -757,8 +757,11 @@ class MavisLO(object):
             p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
         P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
 
-        if self.mmse_LO and Cnn is not None and Caa is not None:
-            # Calculate noise covariance matrix from diagonal elements of Css
+        if self.mmse_LO:
+            # MMSE reconstructor
+            if Cnn is None and Caa is None:
+                raise ValueError('Cnn and Caa must be defined when mmse_LO is True!')
+            # Calculate noise covariance matrix from diagonal elements of Caa
             # for 5 modes, tip, tilt, focus, and 2 astigmatisms.
             # We consider a ratio of 3 between tilt and higher order modes (focus, astigmatisms)
             first_order_variance = np.mean([Caa[0,0], Caa[1,1]])  # Average of tip and tilt variances
@@ -771,7 +774,7 @@ class MavisLO(object):
                 second_order_variance             # astigmatism 45 deg
             ])
             Cx = np.diag(v_modes)
-            # MMSE reconstructor: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
+            # MMSE estimator: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
             H = P_mat @ Cx @ P_mat.T + Cnn
             rec_tomo = Cx @ P_mat.T @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
         else:
