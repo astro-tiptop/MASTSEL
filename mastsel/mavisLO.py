@@ -251,10 +251,10 @@ class MavisLO(object):
         self.SensorFrameRate_HO     = self.get_config_value('RTC','SensorFrameRate_HO')
         self.LoopDelaySteps_HO      = self.get_config_value('RTC','LoopDelaySteps_HO')
 
-        if self.check_config_key('RTC','mmse_LO'):
-            self.mmse_LO = self.get_config_value('RTC','mmse_LO')
+        if self.check_config_key('RTC','MMSE_Rec_LO'):
+            self.MMSE_Rec_LO = self.get_config_value('RTC','MMSE_Rec_LO')
         else:
-            self.mmse_LO = False
+            self.MMSE_Rec_LO = False
 
         if self.check_section_key('sensor_Focus'):
             self.WindowRadiusWCoG_Focus  = self.get_config_value('sensor_Focus','WindowRadiusWCoG')
@@ -757,10 +757,10 @@ class MavisLO(object):
             p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
         P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
 
-        if self.mmse_LO:
+        if self.MMSE_Rec_LO:
             # MMSE reconstructor
             if Cnn is None and Caa is None:
-                raise ValueError('Cnn and Caa must be defined when mmse_LO is True!')
+                raise ValueError('Cnn and Caa must be defined when MMSE_Rec_LO is True!')
             # Calculate noise covariance matrix from diagonal elements of Caa
             # for 5 modes, tip, tilt, focus, and 2 astigmatisms.
             # We consider a ratio of 3 between tilt and higher order modes (focus, astigmatisms)
