@@ -26,7 +26,7 @@ def method_lru_cache(maxsize=None,verbose=False):
 
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
-            # Crea una chiave basata solo sugli argomenti (non su self)
+            # Create a key based only on the arguments (not on self)
             key = (args, tuple(sorted(kwargs.items())))
 
             if key in cache:
@@ -321,7 +321,6 @@ class MavisLO(object):
             if self.check_config_key('COMPUTATION','simpleVarianceComputation'):
                 print('simpleVarianceComputation method is deprecated, it will not be used!')
 
-
         if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
             print('%%%%%%%% ATTENTION %%%%%%%%')
             print('You must provide r0_Value or Seeing value, not both, ')
@@ -355,17 +354,19 @@ class MavisLO(object):
             self.WindSpeed = self.get_config_value('atmosphere','testWindspeed')
         else:
             self.wSpeed = self.get_config_value('atmosphere','WindSpeed')
-            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+            self.WindSpeed = (np.dot( np.power(np.asarray(self.wSpeed), 5.0/3.0), np.asarray(self.Cn2Weights) )
+                              / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
 
         #
-        # END OF SETTING PARAMETERS READ FROM FILE       
+        # END OF SETTING PARAMETERS READ FROM FILE
         #
        
         airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
 
         self.Cn2Heights = [x * airmass for x in self.Cn2Heights]
-        self.Cn2HeightsMean = (np.dot( np.power(np.asarray(self.Cn2Heights), 5.0/3.0), np.asarray(self.Cn2Weights) ) / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
+        self.Cn2HeightsMean = (np.dot( np.power(np.asarray(self.Cn2Heights), 5.0/3.0), np.asarray(self.Cn2Weights) )
+                               / np.sum( np.asarray(self.Cn2Weights) ) ) ** (3.0/5.0)
 
         # from mas to nm
         self.mas2nm = np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9)
@@ -391,7 +392,7 @@ class MavisLO(object):
         # diffraction limited FWHM - one aperture
         self.subapNGS_FWHM_mas = self.SensingWavelength_LO/(self.TelescopeDiameter/self.NumberLenslets[0])*radiansToArcsecs*1000
         self.subapFocus_FWHM_mas = self.SensingWavelength_Focus/(self.TelescopeDiameter/self.NumberLenslets_Focus[0])*radiansToArcsecs*1000
-        
+
         if self.computationPlatform=='GPU' and gpuEnabled:
             self.mIt = Integrator(cp, cp.float64, '')
             self.mItcomplex = Integrator(cp, cp.complex64, '')
@@ -485,7 +486,7 @@ class MavisLO(object):
                 print('    no apIM_func')
         return apIM, apIM_func
 
-    
+
     def specializedMeanVarFormulas(self, kind):
         dd0 = {self.MavisFormulas.symbol_map['t']:self.ThresholdWCoG_LO, self.MavisFormulas.symbol_map['nu']:self.NewValueThrPix_LO, self.MavisFormulas.symbol_map['sigma_RON']:self.sigmaRON_LO}
         dd1 = {self.MavisFormulas.symbol_map['b']:(self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO}
@@ -1053,19 +1054,19 @@ class MavisLO(object):
                 # if gain is set no optimization is done and bias is not compensated
                 g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
                 g0g = xp.asarray(g0)
-            
+
             g0g_tip = g0g
             g0g_tilt = g0g
-        
+
             e1 = psd_freq.reshape((1,psd_freq.shape[0]))
             e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
             e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
             e4 = g0g.reshape((g0g.shape[0], 1))
             psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
-            
+
             resultTip = xp.absolute((xp.sum(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1)) ) )
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1( g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
-               
+
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
             for x in range(g0g.shape[0]):
@@ -1247,22 +1248,22 @@ class MavisLO(object):
             g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
             maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
             g0g_coarse = xp.concatenate((xp.asarray(g0), xp.linspace(0.01, maxG, npoints)))
-            
+
             e1 = psd_freq.reshape((1,psd_freq.shape[0]))
             e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
             e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
             e4 = g0g_coarse.reshape((g0g_coarse.shape[0], 1))
             psd_freq_ext, psd_tip_wind_ext, psd_tilt_wind_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
-            
+
             resultTip_coarse = xp.absolute((xp.sum(self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1))))
             resultTilt_coarse = xp.absolute((xp.sum(self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1))))
-            
+
             minTipIdx_coarse = xp.where(resultTip_coarse == xp.nanmin(resultTip_coarse))
             minTiltIdx_coarse = xp.where(resultTilt_coarse == xp.nanmin(resultTilt_coarse))
-            
+
             bestTipGain_coarse = g0g_coarse[minTipIdx_coarse[0][0]]
             bestTiltGain_coarse = g0g_coarse[minTiltIdx_coarse[0][0]]
-            
+
             # Step 2: Fine search around the coarse minimum
             fine_range = 0.1 * maxG
             g0g_tip = xp.linspace(max(0, bestTipGain_coarse - fine_range), min(maxG, bestTipGain_coarse + fine_range), npoints)
@@ -1283,10 +1284,10 @@ class MavisLO(object):
                 # if gain is set no optimization is done and bias is not compensated
                 g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
                 g0g = xp.asarray(g0)
-            
+
             g0g_tip = g0g
             g0g_tilt = g0g
-        
+
             e1 = psd_freq.reshape((1,psd_freq.shape[0]))
             e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
             e3 = psd_tilt_wind.reshape((1,psd_tilt_wind.shape[0]))
@@ -1305,13 +1306,13 @@ class MavisLO(object):
             ax2.set_title('residual wind PSD', color='black')
             ax2.set_xlabel('frequency [Hz]')
             ax2.set_ylabel('Power')
-                
+
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
-        
+
         if self.verbose:
             print('    best tip & tilt gain (wind)',"%.3f" % cpuArray(g0g_tip[minTipIdx[0][0]]), "%.3f" % cpuArray(g0g_tilt[minTiltIdx[0][0]]))
-                    
+
         if self.platformlib==gpulib and gpuEnabled:
             return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
         else:
@@ -1412,7 +1413,7 @@ class MavisLO(object):
                 pp = polarPointingCoordsD[0]*xp.exp(1j*polarPointingCoordsD[1])
                 inputsArray[nstars*points+iidd] = pp
                 iidd = iidd+1
-        
+
         _idx0 = {4:np.arange(0, nstars, 1)}
 
         for ii in [4]:
@@ -1534,7 +1535,7 @@ class MavisLO(object):
 
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
-            
+
         for starIndex in range(nNaturalGS):
             self.configLOFreq( aNGS_freq[starIndex] )
             if nNaturalGS != len(self.NumberLenslets):
@@ -1635,9 +1636,9 @@ class MavisLO(object):
                 print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
             Cnn[starIndex,starIndex] = nr
-            
+
         C2, C3 = self.multiFocusCMatAssemble( aCartNGSCoords, Cnn)
-            
+
         # difference
         CtotDiff = C2 + C3  - self.CtotL
 
@@ -1648,14 +1649,14 @@ class MavisLO(object):
         self.amuF = []
         self.avarF = []
         self.nrF = []
-        
+
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
         Cnn = np.zeros((nNaturalGS,nNaturalGS))
-        
+
         if self.verbose:
             print('mavisLO.computeFocusTotalResidualMatrix')
-            
+
         for starIndex in range(nNaturalGS):
             self.configFocusFreq( aNGS_freq[starIndex] )
             if nNaturalGS != len(self.NumberLenslets_Focus):
@@ -1704,10 +1705,10 @@ class MavisLO(object):
         CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
         # tomography error for a on-axis star for LGS WFSs
         self.CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
-        
+
         if doAll:
             C2, C3 = self.multiFocusCMatAssemble(aCartNGSCoords, Cnn)
-            
+
             # difference
             CtotDiff = C2 + C3 - self.CtotL
 
@@ -1738,7 +1739,7 @@ class MavisLO(object):
                 CC[1,0] = 1e-20
             if np.abs(CC[0,1]) < 1e-20:
                 CC[0,1] = 1e-20
-            
+
             th = leq1(CC[0,0], CC[1,1], CC[1,0])        
             s1 = leq2(CC[0,0], CC[1,1], CC[1,0], th)
             s2 = leq3(CC[0,0], CC[1,1], s1)
@@ -1749,7 +1750,7 @@ class MavisLO(object):
             else:
                 smax = s1
                 smin = s2
-            scale = (np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9))        
+            scale = (np.pi/(180*3600*1000) * self.TelescopeDiameter / (4*1e-9))
             return th, np.sqrt(smax)/scale, np.sqrt(smin)/scale
 
         def computeCovEllispses(Ctot):
@@ -1762,9 +1763,9 @@ class MavisLO(object):
 
         return computeCovEllispses(Ctot)
 
-    
+
 #        if not mono and nPointings>1:
-#            # while C2 and C3 do        
+#            # while C2 and C3 do 
 #            inputs = aCartPointingCoords.tolist()
 #            pool_size = int( min( mp.cpu_count()/2, nPointings) )
 #            semaphore = mp.Semaphore()
@@ -1776,7 +1777,7 @@ class MavisLO(object):
 #        else:
 
 #    def initializer(self, semaphore):
-#        """This function is run at the Pool startup. 
+#        """This function is run at the Pool startup.
 #        Use it to set your Semaphore object in the child process.#
 #
 #        """
