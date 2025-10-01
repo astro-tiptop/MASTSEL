@@ -1470,17 +1470,13 @@ class MavisLO(object):
 
     def multiFocusCMatAssemble(self, aCartNGSCoords, Cnn):
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
-        # NGS Rec. Mat. - MMSE estimator
-        IM = np.ones(aCartNGSCoords.shape[0])
-        # MMSE formula: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
-        # where:
-        # - Cx = Css (turbulence covariance between NGS)
-        # - A = IM (interaction matrix, [1,1,1] for focus)
-        # - Cz = Cnn (noise covariance, should be diagonal matrix nstars x nstars)
-        H = IM @ Caa @ IM.T
-        H += np.trace(Cnn)   # Sum of noise variances
-        R = (Caa @ IM) / H   # H is scalar
-        RT = R.transpose()
+        # NGS Rec. Mat.
+        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
+        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Cnn)*1e-2,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
+        cov_noise_inv = np.linalg.pinv(cov_noise)
+        H = IMt @ cov_noise_inv @ IMt.T
+        R = 1/H * IMt @ cov_noise_inv
+        RT = RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(Cnn, RT))
