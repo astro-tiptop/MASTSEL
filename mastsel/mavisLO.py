@@ -1459,10 +1459,15 @@ class MavisLO(object):
     def multiFocusCMatAssemble(self, aCartNGSCoords, Cnn):
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
         # NGS Rec. Mat. - MMSE estimator
-        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
-        H = IMt.T @ Css @ IMt + Cnn
-        rec_tomo = Css @ IMt @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
-        R = np.matmul(1/H*IMt,cov_noise_inv)
+        IM = np.ones(aCartNGSCoords.shape[0])
+        # MMSE formula: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
+        # where:
+        # - Cx = Css (turbulence covariance between NGS)
+        # - A = IM (interaction matrix, [1,1,1] for focus)
+        # - Cz = Cnn (noise covariance, should be diagonal matrix nstars x nstars)
+        H = IM @ Css @ IM.T
+        H += np.trace(Cnn)   # Sum of noise variances
+        R = (Css @ IM) / H   # H is scalar
         RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
