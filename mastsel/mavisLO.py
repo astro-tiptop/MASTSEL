@@ -774,7 +774,6 @@ class MavisLO(object):
             # MMSE reconstructor: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
             H = P_mat @ Cx @ P_mat.T + Cnn
             rec_tomo = Cx @ P_mat.T @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
-            print('rec_tomo', rec_tomo)
         else:
             # Tikhonov regularization
             lambda_tikhonov = 0.05
@@ -1481,6 +1480,7 @@ class MavisLO(object):
         H = IM @ Css @ IM.T
         H += np.trace(Cnn)   # Sum of noise variances
         R = (Css @ IM) / H   # H is scalar
+        R /= R.sum()  # normalize to 1
         RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
