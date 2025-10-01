@@ -1477,10 +1477,9 @@ class MavisLO(object):
         # - Cx = Css (turbulence covariance between NGS)
         # - A = IM (interaction matrix, [1,1,1] for focus)
         # - Cz = Cnn (noise covariance, should be diagonal matrix nstars x nstars)
-        H = IM @ Css @ IM.T
+        H = IM @ Caa @ IM.T
         H += np.trace(Cnn)   # Sum of noise variances
-        R = (Css @ IM) / H   # H is scalar
-        R /= R.sum()  # normalize to 1
+        R = (Caa @ IM) / H   # H is scalar
         RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
