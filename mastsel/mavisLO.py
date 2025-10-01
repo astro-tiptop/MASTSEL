@@ -23,25 +23,25 @@ def method_lru_cache(maxsize=None,verbose=False):
     """Decorator that works like lru_cache but ignores the self parameter."""
     def decorator(func):
         cache = {}
-        
+
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             # Crea una chiave basata solo sugli argomenti (non su self)
             key = (args, tuple(sorted(kwargs.items())))
-            
+
             if key in cache:
                 if verbose:
                     print(f"Cache hit!")
                 return cache[key]
-            
+
             result = func(self, *args, **kwargs)
             cache[key] = result
             return result
-        
+
         wrapper.cache_clear = cache.clear
         wrapper.cache_info = lambda: f"Cache size: {len(cache)}"
         return wrapper
-    
+
     return decorator
 
 def cpuArray(v):
@@ -69,7 +69,7 @@ def detect_tiptop_path():
         # e.g., from /path/to/project/tiptop/__init__.py -> get /path/to/project
         project_root = Path(tiptop.__file__).resolve().parent.parent
         return str(project_root)
-   
+
     except ImportError:
         import inspect
         # --- Method 2: Fallback via call stack inspection ---
@@ -107,22 +107,22 @@ def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
     """
     if not path_value or path_value == '':
         return ''
-   
+
     # Explicit path_root has priority
     if path_root:
         return os.path.join(path_root, path_value)
-   
+
     # Clean path for consistent checking (remove leading slash)
     clean_path = path_value.lstrip('/')
-   
+
     # P3 relative paths
     if path_p3 and clean_path.startswith('aoSystem'):
         return os.path.join(path_p3, clean_path)
-   
+
     # TIPTOP relative paths
     if path_tiptop and clean_path.startswith('tiptop'):
         return os.path.join(path_tiptop, clean_path)
-   
+
     # Default: use as-is (could be absolute or relative to current dir)
     return path_value
 
@@ -133,7 +133,7 @@ class MavisLO(object):
             return self.config.has_section(primary)
         elif self.configType == 'yml':
             return primary in self.my_yaml_dict.keys()
-    
+
     def check_config_key(self, primary, secondary):
         if self.configType == 'ini':
             return self.config.has_option(primary, secondary)
@@ -156,7 +156,7 @@ class MavisLO(object):
         self.displayEquation = False
 
         if self.verbose: np.set_printoptions(precision=3)
-        
+
         filename_ini = os.path.join(path, parametersFile + '.ini')
         filename_yml = os.path.join(path, parametersFile + '.yml')
 
@@ -175,7 +175,7 @@ class MavisLO(object):
             print('The .ini or .yml file does not exist\n')
             self.error = True
             return
-        
+
         self.TelescopeDiameter      = self.get_config_value('telescope','TelescopeDiameter')
         self.ZenithAngle            = self.get_config_value('telescope','ZenithAngle')
         self.TechnicalFoV           = self.get_config_value('telescope','TechnicalFoV')
@@ -188,7 +188,7 @@ class MavisLO(object):
         self.L0                     = self.get_config_value('atmosphere','L0')
         self.Cn2Weights             = self.get_config_value('atmosphere','Cn2Weights')
         self.Cn2Heights             = self.get_config_value('atmosphere','Cn2Heights')
-       
+
         if np.min(self.Cn2Heights) == 0:
             self.Cn2Heights[np.argmin(self.Cn2Heights)] = 1e-6
 
@@ -225,7 +225,6 @@ class MavisLO(object):
         # this is called v (nu greek letter) in MAVIS AOM formulas
         self.NewValueThrPix_LO      = self.get_config_value('sensor_LO','NewValueThrPix')
 
-        
         if self.check_config_key('sensor_LO','noNoise'):
             self.noNoise = self.get_config_value('sensor_LO','noNoise')
         else:
@@ -251,6 +250,11 @@ class MavisLO(object):
         self.LoopGain_HO            = self.get_config_value('RTC','LoopGain_HO')
         self.SensorFrameRate_HO     = self.get_config_value('RTC','SensorFrameRate_HO')
         self.LoopDelaySteps_HO      = self.get_config_value('RTC','LoopDelaySteps_HO')
+
+        if self.check_config_key('RTC','mmse_LO'):
+            self.mmse_LO = self.get_config_value('RTC','mmse_LO')
+        else:
+            self.mmse_LO = False
 
         if self.check_section_key('sensor_Focus'):
             self.WindowRadiusWCoG_Focus  = self.get_config_value('sensor_Focus','WindowRadiusWCoG')
@@ -737,37 +741,42 @@ class MavisLO(object):
         R_1 = np.dot(P_alpha1, rec_tomo)
         return P_mat, rec_tomo, R_0, R_1
 
-    
-    def buildReconstuctor2(self, aCartPointingCoordsV, aCartNGSCoords):
+    def buildReconstuctor2(self, aCartPointingCoordsV, aCartNGSCoords, aCnn=None, Css=None):
         npointings = aCartPointingCoordsV.shape[0]
         nstars = aCartNGSCoords.shape[0]
+
         if nstars==1:
             R_1 = np.zeros((2*npointings, 2*nstars))
             for k in range(npointings):
                 R_1[2*k:2*(k+1), :] = np.identity(2)
-
             return R_1, R_1.transpose()
-        else:        
-            P, P_func = self.specializedIM()
-            p_mat_list = []
-            for ii in range(nstars):
-                p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
-            P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
 
-            # Tikhonov regularization
+        P, P_func = self.specializedIM()
+        p_mat_list = []
+        for ii in range(nstars):
+            p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
+        P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
+
+        if self.mmse_LO and aCnn is not None and Css is not None:
+            # MMSE reconstructor: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
+            # compute tomographic reconstructor
+            H = P_mat @ Css @ P_mat.T + aCnn
+            rec_tomo = Css @ P_mat.T @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
+        else:
+            # Tikhonov regularization
             lambda_tikhonov = 0.05
             A = P_mat.T @ P_mat + lambda_tikhonov * np.eye(P_mat.shape[1])
             b = P_mat.T
             rec_tomo = np.linalg.solve(A, b) # aka W, 5x(2*nstars)
 
-            vx = np.asarray(aCartPointingCoordsV[:,0])
-            vy = np.asarray(aCartPointingCoordsV[:,1])
-            R_1 = np.zeros((2*npointings, 2*nstars))
-            for k in range(npointings):
-                P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
-                R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
+        vx = np.asarray(aCartPointingCoordsV[:,0])
+        vy = np.asarray(aCartPointingCoordsV[:,1])
+        R_1 = np.zeros((2*npointings, 2*nstars))
+        for k in range(npointings):
+            P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
+            R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
 
-            return R_1, R_1.transpose()
+        return R_1, R_1.transpose()
 
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, expr1):
         gaussianPoints = gaussianPointsM.flatten()
@@ -1408,8 +1417,8 @@ class MavisLO(object):
         xp = np
         points = aCartPointingCoordsV.shape[0]
         Ctot = np.zeros((2*points,2))
-        R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords)
         Caa, Cas, Css = self.computeCovMatrices(xp.asarray(aCartPointingCoordsV), xp.asarray(aCartNGSCoords), xp=np)
+        R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords, aCnn=aCnn, Css=Css)
         for i in range(points):
             Ri = R[2*i:2*(i+1),:]
             RTi = RT[:, 2*i:2*(i+1)]
@@ -1448,21 +1457,18 @@ class MavisLO(object):
         return Ctot
 
     def multiFocusCMatAssemble(self, aCartNGSCoords, Cnn):
-        xp = np
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
         # NGS Rec. Mat. - MMSE estimator
         IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
-        cov_turb_inv = np.array(1e-3) # the minimum ratio between turb. and noise cov. is 1e3 (this guarantees that the sum of the elements of R is 1).
-        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Css)*1e-2,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
-        cov_noise_inv = np.linalg.pinv(cov_noise)
-        H = np.matmul(np.matmul(IMt,cov_noise_inv),np.transpose(IMt))
+        H = IMt.T @ Css @ IMt + Cnn
+        rec_tomo = Css @ IMt @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
         R = np.matmul(1/H*IMt,cov_noise_inv)
         RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(Cnn, RT))
 
-        return C2, C3 
+        return C2, C3
 
     def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux):
         nPointings = aCartPointingCoords.shape[0]
