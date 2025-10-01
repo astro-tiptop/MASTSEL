@@ -758,10 +758,22 @@ class MavisLO(object):
         P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
 
         if self.mmse_LO and aCnn is not None and Css is not None:
+            # Calculate noise covariance matrix from diagonal elements of Css
+            # for 5 modes, tip, tilt, focus, and 2 astigmatisms.
+            # We consider a ratio of 3 between tilt and higher order modes (focus, astigmatisms)
+            first_order_variance = np.mean([Css[0,0], Css[1,1]])  # Average of tip and tilt variances
+            second_order_variance = first_order_variance / 3.0
+            v_modes = np.array([
+                first_order_variance,             # tip
+                first_order_variance,             # tilt
+                second_order_variance,            # focus
+                second_order_variance,            # astigmatism 0 deg
+                second_order_variance             # astigmatism 45 deg
+            ])
+            Cx = np.diag(v_modes)
             # MMSE reconstructor: W = Cx * A^T * (A * Cx * A^T + Cz)^-1
-            # compute tomographic reconstructor
-            H = P_mat @ Css @ P_mat.T + aCnn
-            rec_tomo = Css @ P_mat.T @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
+            H = P_mat @ Cx @ P_mat.T + aCnn
+            rec_tomo = Cx @ P_mat.T @ np.linalg.pinv(H) # aka W, 5x(2*nstars)
         else:
             # Tikhonov regularization
             lambda_tikhonov = 0.05
@@ -1320,7 +1332,7 @@ class MavisLO(object):
 
     def computeCovMatrices(self, aCartPointingCoords, aCartNGSCoords, xp=np):
         points = aCartPointingCoords.shape[0]
-        nstars = aCartNGSCoords.shape[0]        
+        nstars = aCartNGSCoords.shape[0]
         scaleF = (500.0/(2*np.pi))**2
         matCaaValue = xp.zeros((2,2), dtype=xp.float32)
         matCasValue = xp.zeros((2*points,2*nstars), dtype=xp.float32)
@@ -1351,7 +1363,7 @@ class MavisLO(object):
                 pp = polarPointingCoordsD[0]*xp.exp(1j*polarPointingCoordsD[1])
                 inputsArray[nstars*points+iidd] = pp
                 iidd = iidd+1
-        
+
         _idx0 = {2:np.arange(0, 2*nstars, 2), 3:np.arange(1, 2*nstars, 2)}
 
         for ii in [2,3]:
@@ -1418,6 +1430,9 @@ class MavisLO(object):
         points = aCartPointingCoordsV.shape[0]
         Ctot = np.zeros((2*points,2))
         Caa, Cas, Css = self.computeCovMatrices(xp.asarray(aCartPointingCoordsV), xp.asarray(aCartNGSCoords), xp=np)
+        print('shape Caa:', Caa.shape)
+        print('shape Cas:', Cas.shape)
+        print('shape Css:', Css.shape)
         R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords, aCnn=aCnn, Css=Css)
         for i in range(points):
             Ri = R[2*i:2*(i+1),:]
@@ -1438,7 +1453,7 @@ class MavisLO(object):
                       '(', "%.2f" % np.sqrt(np.trace(Caa + C2b)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
-        
+
     def CMatAssemble(self, aCartPointingCoordsV, aCartNGSCoords, aCnn, aC1):
         R, RT = self.buildReconstuctor2(np.asarray(aCartPointingCoordsV), aCartNGSCoords)
         Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aCartNGSCoords)
@@ -1446,7 +1461,7 @@ class MavisLO(object):
         C3 = np.dot(R, np.dot(aCnn, RT))
         # sum tomography (C2), noise (C3), wind (aC1) errors
         if self.noNoise:
-            ss = aC1 + C2
+            Ctot = aC1 + C2
             print('    WARNING: LO noise is not active!')
         else:
             Ctot = aC1 + C2 + C3
