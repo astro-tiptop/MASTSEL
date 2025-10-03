@@ -254,7 +254,7 @@ class MavisLO(object):
         if self.check_config_key('RTC','MMSE_Rec_LO'):
             self.MMSE_Rec_LO = self.get_config_value('RTC','MMSE_Rec_LO')
         else:
-            self.MMSE_Rec_LO = False
+            self.MMSE_Rec_LO = True
 
         if self.check_section_key('sensor_Focus'):
             self.WindowRadiusWCoG_Focus  = self.get_config_value('sensor_Focus','WindowRadiusWCoG')
