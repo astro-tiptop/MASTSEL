@@ -356,7 +356,7 @@ def convolve(psf, kernel, xp=defaultArrayBackend):
 
 def shortExposurePsf(mask, phaseScreen):
     xp = mask.xp
-    if (mask.N != phaseScreen.N):
+    if mask.N != phaseScreen.N:
         print('Mask and phaseScreen sampling not compatible (grids sizes in pixels are different!)')
         print(mask.N, phaseScreen.N)
         return
@@ -372,9 +372,82 @@ def shortExposurePsf(mask, phaseScreen):
     return result
 
 
+def coronagraphicPsf(psd, wvl, N=None):
+    """
+    Compute coronagraphic long exposure PSF from residual phase PSD.
+    
+    According to Fusco et al. 2006: for a perfect coronagraph with partial AO 
+    correction, the coronagraphic image intensity is proportional to the residual 
+    phase power spectral density (first order approximation).
+    
+    This means: PSF_coro(r) ∝ PSD_φ(f) where spatial frequency f maps to 
+    image position r through the relation f = r/(λ D)
+    
+    Parameters:
+    -----------
+    psd : Field
+        Phase PSD in frequency domain (rad^2 m^2)
+    wvl : float
+        Wavelength [m]
+    N : int, optional
+        Output PSF size in pixels. If None, uses psd.N
+        
+    Returns:
+    --------
+    result : Field
+        Coronagraphic PSF (incoherent halo only, no coherent peak)
+    """
+    xp = psd.xp
+
+    if N is None:
+        N = psd.N
+
+    # The key insight: PSD frequencies map directly to image plane positions
+    # through: angular_position [rad] = wavelength * spatial_frequency [1/m]
+    # So the pixel size in image plane is:
+    p_final_psf = wvl * psd.pixel_size  # [rad]
+
+    result = Field(wvl, N, N * p_final_psf, unit='rad', xp=xp)
+
+    # Pad PSD if needed
+    if psd.N < N:
+        psd_padded = zeroPad(psd.sampling, (N - psd.N) // 2, xp)
+    else:
+        psd_padded = psd.sampling
+
+    # For coronagraphic case (first order):
+    # PSF_coro is DIRECTLY proportional to the PSD (no FFT needed!)
+    # The PSD is already in the right space (frequency -> image position)
+    # The PSD is already centered (DC at center)
+    result.sampling = xp.abs(psd_padded)
+
+    # Normalize
+    result.normalize()
+
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as colors
+    plt.figure()
+    plt.imshow(hostData(result.sampling), norm=colors.LogNorm(vmin=1e-6, vmax=result.sampling.max()), cmap='hot')
+    plt.colorbar()
+    plt.title('Coronagraphic PSF (log scale)')
+    plt.xlabel('Pixels')
+    plt.ylabel('Pixels')
+    plt.show()
+
+    # Crop to desired size if needed
+    if result.N > N:
+        result.sampling = centralSquare(result.sampling, N, xp)
+
+    return result
+
+
 def longExposurePsf(mask, psd, otf_tel = None):
+    """
+    Compute long exposure PSF from telescope mask and phase PSD.
+    Includes both coherent peak (Strehl) and incoherent halo.
+    """
     xp = mask.xp
-    if (mask.N != psd.N):
+    if mask.N != psd.N:
         print('Mask and PSD sampling not compatible (grids sizes in pixels are different!)')
         print('mask grid size: ', mask.N)
         print('psf grid size: ', psd.N)
@@ -387,17 +460,17 @@ def longExposurePsf(mask, psd, otf_tel = None):
         print('otf_turb pixel size: ', pitch)
         return
     p_final_psf = mask.wvl / (pitch * mask.N)  # rad
-    result = Field(mask.wvl, mask.N, psd.N * p_final_psf, unit='rad')
+    result = Field(mask.wvl, mask.N, psd.N * p_final_psf, unit='rad', xp=xp)
     ################################################
 
     # step 0 : compute telescope otf
     if otf_tel is None:
-        maskC = Field(mask.wvl, mask.N, pitch*mask.N)
+        maskC = Field(mask.wvl, mask.N, pitch*mask.N, xp=xp)
         maskC.sampling = xp.copy(mask.sampling)
         maskC.pupilToOtf()
         otf_tel = maskC.sampling
 
-    psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2)
+    psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2, xp)
 
     # step 1 : compute phase autocorrelation
     B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) * (psd.kk * freq_range) ** 2
@@ -427,6 +500,7 @@ def residualToSpectrum(ellp, wvl, N,  pixel_scale_otf):
     convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), -ellp[0])
 
     return convKernelFFT
+
 
 def maskSA(nSA, nMask, telPupil):
     # define a set 2D array with the mask of the sub-aperture of the WFS
@@ -463,9 +537,45 @@ def maskSA(nSA, nMask, telPupil):
             mask = maskI
     return mask
 
+
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_range,
                    dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
-                   skip_reshape=False):
+                   skip_reshape=False, coronagraphic=False):
+    """Compute long exposure PSF set from input PSD set.
+    
+    Parameters:
+    -----------
+    inputPSDs : list of Field
+        List of phase PSDs in frequency domain (rad^2 m^2)
+    mask : 2D array or list of 2D arrays
+        Telescope pupil mask(s)
+    wavelength : float or list of float
+        Wavelength(s) [m]
+    N : int
+        Size of the PSD grid (N x N)
+    nPixPup : int
+        Size of the pupil mask grid (nPixPup x nPixPup)
+    grid_diameter : float
+        Diameter of the grid in the pupil plane [m]
+    freq_range : float
+        Frequency range of the PSD [1/m]
+    dk : float
+        Frequency sampling of the PSD [1/m]
+    nPixPsf : int
+        Size of the output PSF grid (nPixPsf x nPixPsf)
+    wvlRef : float
+        Reference wavelength for padding [m]
+    oversampling : int or list of int
+        Oversampling factor(s) for the output PSF pixel scale
+    opdMap : 2D array, optional
+        Static OPD map to include in the PSF computation [nm]
+    padPSD : bool, optional
+        Whether to pad the PSD based on wavelength ratio
+    skip_reshape : bool, optional
+        Whether to skip the reshaping of the PSF to the desired pixel scale
+    coronagraphic : bool, optional
+        Whether to compute coronagraphic PSFs
+    """
 
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
@@ -531,7 +641,10 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 psd.sampling = zeroPad(psd.sampling, (nPad-N)//2)
                 psd.width = psd.width * nPad/N
 
-            psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
+            if coronagraphic:
+                psfLE = coronagraphicPsf(psd, wvl, N=nPad)
+            else:
+                psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
             # enlarge the PSF to get a side multiple of ovrsmp
             nBig = int(np.ceil(psfLE.N/ovrsmp/2)*ovrsmp*2)
