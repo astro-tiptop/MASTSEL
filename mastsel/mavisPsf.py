@@ -409,34 +409,19 @@ def coronagraphicPsf(psd, wvl, N=None):
 
     result = Field(wvl, N, N * p_final_psf, unit='rad', xp=xp)
 
-    # Pad PSD if needed
-    if psd.N < N:
-        psd_padded = zeroPad(psd.sampling, (N - psd.N) // 2, xp)
-    else:
-        psd_padded = psd.sampling
-
     # For coronagraphic case (first order):
     # PSF_coro is DIRECTLY proportional to the PSD (no FFT needed!)
     # The PSD is already in the right space (frequency -> image position)
     # The PSD is already centered (DC at center)
-    result.sampling = xp.abs(psd_padded)
+    result.sampling = xp.abs(psd.sampling)
 
     # Normalize
     result.normalize()
 
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as colors
-    plt.figure()
-    plt.imshow(hostData(result.sampling), norm=colors.LogNorm(vmin=1e-6, vmax=result.sampling.max()), cmap='hot')
-    plt.colorbar()
-    plt.title('Coronagraphic PSF (log scale)')
-    plt.xlabel('Pixels')
-    plt.ylabel('Pixels')
-    plt.show()
-
     # Crop to desired size if needed
     if result.N > N:
         result.sampling = centralSquare(result.sampling, N, xp)
+        result.width = N * p_final_psf
 
     return result
 
