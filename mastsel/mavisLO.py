@@ -1586,11 +1586,11 @@ class MavisLO(object):
                 # Beyond this maximum value, a logarithmic growth is used.
                 if aNGS_FWHM_mas[starIndex] - FWHM_DL_mas > 0:
                     raw_alias = 4 * (aNGS_FWHM_mas[starIndex] - FWHM_DL_mas)
-                    max_alias = 4 * FWHM_DL_mas
+                    max_alias = 2 * FWHM_DL_mas
                     if raw_alias <= max_alias:
                         aliasRMS = raw_alias
                     else:
-                        aliasRMS = max_alias + np.log1p(raw_alias - max_alias) * max_alias / 4
+                        aliasRMS = max_alias + np.log1p(raw_alias - max_alias) * max_alias / 2
                         warnings.warn(f"aliasRMS reduced from {raw_alias} to {aliasRMS} mas RMS", UserWarning)
                 else:
                     aliasRMS = 0.1
