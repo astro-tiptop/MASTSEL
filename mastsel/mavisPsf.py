@@ -567,3 +567,261 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             psfLongExpArr = psfMultiWave
 
     return psfLongExpArr
+
+
+# ------- Functions for PSF extrapolation and normalization -------
+
+
+def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75), verbose=True, xp=np):
+    """
+    Estimate the power-law exponent and normalization from the final part of the PSF profile.
+    Fit: psf = k * r^exponent
+    
+    Parameters:
+    -----------
+    r : array
+        Radii array
+    psf : array
+        PSF values array
+    fraction : tuple of float
+        Fraction of the profile to use for fitting (default: (0.5, 0.75) = second half to 75%)
+    verbose : bool
+        If True, print fitting information
+    xp : module
+        Array backend (numpy or cupy)
+    
+    Returns:
+    --------
+    exponent : float
+        Estimated power-law exponent
+    normalization : float
+        Normalization constant k
+    r_fit_pos : array
+        Radii used for fitting
+    psf_fit_pos : array
+        PSF values used for fitting
+    """
+    idx_start = int(len(r) * fraction[0])
+    idx_end = int(len(r) * fraction[1])
+    r_fit = r[idx_start:idx_end]
+    psf_fit = psf[idx_start:idx_end]
+
+    # Remove any values <= 0
+    mask_positive = (r_fit > 0) & (psf_fit > 0)
+    r_fit_pos = r_fit[mask_positive]
+    psf_fit_pos = psf_fit[mask_positive]
+
+    # Convert to numpy for polyfit if using cupy
+    if xp.__name__ == 'cupy':
+        r_fit_np = xp.asnumpy(r_fit_pos)
+        psf_fit_np = xp.asnumpy(psf_fit_pos)
+    else:
+        r_fit_np = r_fit_pos
+        psf_fit_np = psf_fit_pos
+
+    if len(r_fit_pos) > 5:
+        # Linear fit in log-log: log(psf) = log(k) + exponent * log(r)
+        coeffs = np.polyfit(np.log10(r_fit_np), np.log10(psf_fit_np), 1)
+        exponent = coeffs[0]
+        log10_k = coeffs[1]
+        normalization = 10**log10_k
+
+        if verbose:
+            print(f'Estimated power-law exponent: {exponent:.3f}')
+            print(f'Estimated normalization: k = {normalization:.6e}')
+
+        # Calculate R² to evaluate fit quality
+        psf_fit_pred = normalization * r_fit_np**exponent
+        residuals = psf_fit_np - psf_fit_pred
+        ss_res = np.sum(residuals**2)
+        ss_tot = np.sum((psf_fit_np - np.mean(psf_fit_np))**2)
+        r_squared = 1 - (ss_res / ss_tot)
+
+        if verbose:
+            print(f'Fit R²: {r_squared:.4f}')
+    else:
+        if verbose:
+            print('Warning: not enough points for fitting, using -10/3')
+        exponent = -10/3
+        normalization = psf_fit_pos[-1] / (r_fit_pos[-1]**exponent) if len(r_fit_pos) > 0 else 1.0
+
+    return exponent, normalization, r_fit_pos, psf_fit_pos
+
+
+def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=None,
+                            power_law_normalization=None, smooth_transition=True,
+                            verbose=True, xp=np):
+    """
+    Extrapolate the PSF profile up to r_max using a power-law.
+    
+    Parameters:
+    -----------
+    r_input : array
+        Original radii array
+    psf_input : array
+        Original PSF values array
+    r_max : float
+        Maximum radius for extrapolation (in mas)
+    power_law_exponent : float, optional
+        Power-law exponent. If None, estimated automatically.
+    power_law_normalization : float, optional
+        Power-law normalization. If None, estimated automatically.
+    smooth_transition : bool
+        If True, smoothly blend the last quarter of original profile with extrapolation
+    verbose : bool
+        If True, print extrapolation information
+    xp : module
+        Array backend (numpy or cupy)
+    
+    Returns:
+    --------
+    r_extended : array
+        Extended radii array
+    psf_extended : array
+        Extended PSF array
+    power_law_exponent : float
+        Exponent used for extrapolation
+    power_law_normalization : float
+        Normalization used for extrapolation
+    """
+    # Calculate median step
+    r_step = xp.median(xp.diff(r_input))
+
+    if verbose:
+        print(f'Median step of r_input: {float(r_step):.6f} mas')
+
+    # Estimate exponent and normalization if not provided
+    if power_law_exponent is None or power_law_normalization is None:
+        exponent, normalization, _, _ = estimate_power_law_exponent(
+            r_input, psf_input, verbose=verbose, xp=xp
+        )
+        if power_law_exponent is None:
+            power_law_exponent = exponent
+        if power_law_normalization is None:
+            power_law_normalization = normalization
+
+    # Generate new extrapolated points
+    r_extrapolated = xp.arange(float(r_input[-1] + r_step), float(r_max + r_step), float(r_step))
+
+    # Combine original and extrapolated points
+    r_extended = xp.concatenate([r_input, r_extrapolated])
+
+    if verbose:
+        print(f'Number of original points: {len(r_input)}')
+        print(f'Number of extrapolated points: {len(r_extrapolated)}')
+        print(f'Total number of points: {len(r_extended)}')
+        print(f'Maximum radius reached: {float(r_extended[-1]):.2f} mas')
+
+    # Initialize extended profile
+    psf_extended = xp.zeros_like(r_extended)
+    psf_extended[:len(r_input)] = psf_input
+
+    # Smooth transition: blend last N points of original profile with power-law
+    if smooth_transition:
+        N = len(r_input) // 4  # Last quarter for smooth transition
+        idx_start = len(r_input) - N
+
+        # Calculate power-law values for transition region
+        psf_powerlaw = power_law_normalization * r_extended[idx_start:]**power_law_exponent
+
+        # Create blending weights (linear transition from 0 to 1)
+        weights = xp.linspace(0, 1, N)
+
+        # Blend original and power-law in transition region
+        psf_extended[idx_start:len(r_input)] = (
+            (1 - weights) * psf_input[idx_start:] +
+            weights * psf_powerlaw[:N]
+        )
+
+        # Use pure power-law for extrapolated region
+        psf_extended[len(r_input):] = psf_powerlaw[N:]
+    else:
+        # Simple extrapolation: psf = k * r^exponent
+        psf_extended[len(r_input):] = (
+            power_law_normalization * r_extended[len(r_input):]**power_law_exponent
+        )
+
+    return r_extended, psf_extended, power_law_exponent, power_law_normalization
+
+
+def normalize_psf_profile(r, psf, r_original, psf_original, verbose=True, xp=np):
+    """
+    Normalize the extended PSF profile to conserve total flux.
+    
+    Parameters:
+    -----------
+    r : array
+        Extended radii array
+    psf : array
+        Extended PSF array
+    r_original : array
+        Original radii array
+    psf_original : array
+        Original PSF array
+    verbose : bool
+        If True, print normalization information
+    xp : module
+        Array backend (numpy or cupy)
+    
+    Returns:
+    --------
+    psf_norm : array
+        Normalized PSF
+    renorm_factor : float
+        Renormalization factor applied
+    """
+    # Choose appropriate simpson function
+    if xp.__name__ == 'cupy':
+        try:
+            from cupyx.scipy.integrate import simpson
+        except ImportError:
+            # Fallback to numpy if cupy simpson not available
+            if verbose:
+                print("Warning: cupy simpson not available, using numpy")
+            from scipy.integrate import simpson
+            r = xp.asnumpy(r)
+            psf = xp.asnumpy(psf)
+            r_original = xp.asnumpy(r_original)
+            psf_original = xp.asnumpy(psf_original)
+    else:
+        from scipy.integrate import simpson
+
+    # Calculate median steps for proper integration
+    delta_r_original = float(xp.median(xp.diff(r_original)))
+    delta_r = float(xp.median(xp.diff(r)))
+
+    # Compute integrals: ∫ 2π r * psf(r) dr
+    integral_original = 2 * np.pi * simpson(
+        (r_original + delta_r_original) * psf_original, 
+        x=r_original
+    )
+    integral_extended = 2 * np.pi * simpson(
+        (r + delta_r) * psf,
+        x=r
+    )
+
+    if verbose:
+        print(f'\nOriginal integral: {float(integral_original):.6f}')
+        print(f'Extended integral: {float(integral_extended):.6f}')
+        print(f'Extrapolation contribution: {float(integral_extended - integral_original):.6f}')
+
+    # Check for valid integral
+    if not (xp.isnan(integral_extended) or integral_extended <= 0):
+        renorm_factor = integral_original / integral_extended
+        psf_norm = psf * renorm_factor
+
+        integral_check = 2 * np.pi * simpson(
+            (r + delta_r) * psf_norm,
+            x=r
+        )
+
+        if verbose:
+            print(f'Renormalization factor: {float(renorm_factor):.6f}')
+            print(f'Integral after renormalization: {float(integral_check):.6f}')
+    else:
+        if verbose:
+            print("Warning: integral is nan or zero, skipping renormalization")
+        psf_norm = psf
+        renorm_factor = 1.0
+
+    return psf_norm, renorm_factor
