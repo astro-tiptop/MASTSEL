@@ -75,7 +75,7 @@ def detect_tiptop_path():
         import inspect
         # --- Method 2: Fallback via call stack inspection ---
         # This is useful when running from a source checkout without installation.
-        try: 
+        try:
             for frame_info in inspect.stack(context=0):
                 p = Path(frame_info.filename).resolve()
                 for parent in (p, *p.parents):
@@ -204,7 +204,8 @@ class MavisLO(object):
         self.N_sa_tot_LO = []
         for n in self.NumberLenslets:
             if n > 2:
-                self.N_sa_tot_LO.append(int(np.floor(n**2 * np.pi / 4.0 * (1.0 - self.ObscurationRatio**2))))
+                self.N_sa_tot_LO.append(int(np.floor(n**2 * np.pi / 4.0 \
+                                        * (1.0 - self.ObscurationRatio**2))))
             else:
                 self.N_sa_tot_LO.append(n**2)
 
@@ -361,7 +362,7 @@ class MavisLO(object):
         #
         # END OF SETTING PARAMETERS READ FROM FILE
         #
-       
+
         airmass = 1/np.cos(self.ZenithAngle*np.pi/180)
         self.r0_Value = self.r0_Value * airmass**(-3.0/5.0)
 
@@ -661,8 +662,8 @@ class MavisLO(object):
             except:
                 print('    no self.fTiltS1')
         return self.fTipS1, self.fTiltS1
-    
-    
+
+
     def buildSpecializedCovFunctions(self):
         covValue_integrationLimits = (sp.symbols('f', positive=True), self.min_freq_cov, self.max_freq_cov)
         p = sp.symbols('p', real=False)
@@ -695,7 +696,7 @@ class MavisLO(object):
                                        self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                        self.MavisFormulas.symbol_map['n_k']: nk_value,
                                        self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
-                    
+
                     aa = rexpr.subs(paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1_filt, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
@@ -719,7 +720,7 @@ class MavisLO(object):
                                         self.MavisFormulas.symbol_map['m_j']: abs(mj_value), 
                                         self.MavisFormulas.symbol_map['n_k']: nk_value,
                                         self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
-                    
+
                     aa = rexpr.subs(paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
@@ -728,7 +729,7 @@ class MavisLO(object):
 
         return cov_expr
 
-    
+
     def buildReconstuctor(self, aCartPointingCoords, aCartNGSCoords):
         P, P_func = self.specializedIM()
         pp1 = P_func(aCartNGSCoords[0,0]*arcsecsToRadians, aCartNGSCoords[0,1]*arcsecsToRadians)
@@ -755,7 +756,8 @@ class MavisLO(object):
         P, P_func = self.specializedIM()
         p_mat_list = []
         for ii in range(nstars):
-            p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians, aCartNGSCoords[ii,1]*arcsecsToRadians))
+            p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians,
+                                     aCartNGSCoords[ii,1]*arcsecsToRadians))
         P_mat = np.vstack(p_mat_list) # aka Interaction Matrix, im
 
         if self.MMSE_Rec_LO:
@@ -796,16 +798,21 @@ class MavisLO(object):
 
     def compute2DMeanVar(self, aFunction, expr0, gaussianPointsM, expr1):
         gaussianPoints = gaussianPointsM.flatten()
-        aIntegral = sp.Integral(aFunction, (getSymbolByName(aFunction, 'z_r'), self.zmin, self.zmax), (getSymbolByName(aFunction, 'i_p'), 1, int(self.imax)) )
+        aIntegral = sp.Integral(aFunction,
+                                (getSymbolByName(aFunction, 'z_r'),self.zmin, self.zmax),
+                                (getSymbolByName(aFunction, 'i_p'), 1, int(self.imax)) )
         paramsAndRanges = [( 'f_k', gaussianPoints, 0.0, 0.0, 'provided' )]
         lh = sp.Function('B')(getSymbolByName(aFunction, 'f_k'))
-        xplot1, zplot1 = self.mIt.IntegralEval(lh, aIntegral, paramsAndRanges, [ (self.integrationPoints//2, 'linear'), (self.imax, 'linear')], 'raw')
+        xplot1, zplot1 = self.mIt.IntegralEval(lh, aIntegral, paramsAndRanges,
+                                               [ (self.integrationPoints//2, 'linear'),
+                                                 (self.imax, 'linear')], 'raw')
         ssx, s0 = self.mIt.functionEval(expr0, paramsAndRanges )
         zplot1 = zplot1 + s0
         lh = sp.Function('B')(getSymbolByName(expr1, 'f_k'))
         ssx, zplot2 = self.mIt.functionEval(expr1, paramsAndRanges )
         # magic number 10 here is due to the fact that more than 10 photons flux can be approximated witha gaussian distribution
-        rr = np.where(gaussianPoints + (self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO < 10.0, zplot1, zplot2)
+        rr = np.where(gaussianPoints + (self.Dark_LO+self.skyBackground_LO) \
+                      /self.SensorFrameRate_LO < 10.0, zplot1, zplot2)
         rr = rr.reshape(gaussianPointsM.shape)
         return ssx, rr
 
@@ -1590,8 +1597,11 @@ class MavisLO(object):
                     if raw_alias <= max_alias:
                         aliasRMS = raw_alias
                     else:
-                        aliasRMS = max_alias + np.log1p(raw_alias - max_alias) * max_alias / 2
-                        warnings.warn(f"aliasRMS reduced from {raw_alias} to {aliasRMS} mas RMS", UserWarning)
+                        excess = raw_alias - max_alias
+                        aliasRMS = max_alias + max_alias * 0.1 * np.log1p(excess / max_alias)
+                        if self.verbose:
+                            warnings.warn(f"aliasRMS reduced from {raw_alias} to {aliasRMS} mas RMS",
+                                          UserWarning)
                 else:
                     aliasRMS = 0.1
                 # conversion in nm RMS
