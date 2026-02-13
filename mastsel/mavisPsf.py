@@ -572,7 +572,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 # ------- Functions for PSF extrapolation and normalization -------
 
 
-def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75), verbose=True, xp=np):
+def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
+                                power_fit=False, verbose=True, xp=np):
     """
     Estimate the power-law exponent and normalization from the final part of the PSF profile.
     Fit: psf = k * r^exponent
@@ -585,6 +586,9 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75), verbose=True, xp=n
         PSF values array
     fraction : tuple of float
         Fraction of the profile to use for fitting (default: (0.5, 0.75) = second half to 75%)
+    power_fit : bool
+        If True, perform a linear fit in log-log space to estimate the exponent and normalization.
+        If False, use the last point to estimate normalization and set exponent to -10/3.
     verbose : bool
         If True, print fitting information
     xp : module
@@ -619,7 +623,7 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75), verbose=True, xp=n
         r_fit_np = r_fit_pos
         psf_fit_np = psf_fit_pos
 
-    if len(r_fit_pos) > 5:
+    if power_fit and len(r_fit_pos) > 5:
         # Linear fit in log-log: log(psf) = log(k) + exponent * log(r)
         coeffs = np.polyfit(np.log10(r_fit_np), np.log10(psf_fit_np), 1)
         exponent = coeffs[0]
@@ -650,7 +654,7 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75), verbose=True, xp=n
 
 def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=None,
                             power_law_normalization=None, smooth_transition=True,
-                            verbose=True, xp=np):
+                            power_fit=False, verbose=True, xp=np):
     """
     Extrapolate the PSF profile up to r_max using a power-law.
     
@@ -668,6 +672,8 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
         Power-law normalization. If None, estimated automatically.
     smooth_transition : bool
         If True, smoothly blend the last quarter of original profile with extrapolation
+    power_fit : bool
+        If True, perform a linear fit in log-log space to estimate the exponent and normalization.
     verbose : bool
         If True, print extrapolation information
     xp : module
@@ -693,7 +699,7 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
     # Estimate exponent and normalization if not provided
     if power_law_exponent is None or power_law_normalization is None:
         exponent, normalization, _, _ = estimate_power_law_exponent(
-            r_input, psf_input, verbose=verbose, xp=xp
+            r_input, psf_input, power_fit=power_fit, verbose=verbose, xp=xp
         )
         if power_law_exponent is None:
             power_law_exponent = exponent
