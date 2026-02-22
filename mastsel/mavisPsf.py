@@ -12,6 +12,21 @@ from mastsel.mavisFormulas import *
 
 fit_window_max_size = 512
 defaultArrayBackend = cp
+defaultArrayDtype = defaultArrayBackend.float64
+
+def mastselPsfPrecision(precision=None, dtype=None):
+    global defaultArrayDtype
+    if precision == 'single':
+        defaultArrayDtype = defaultArrayBackend.float32
+    elif precision == 'double':
+        defaultArrayDtype = defaultArrayBackend.float64
+    elif dtype is not None:
+        if dtype==cp.float32 or dtype==np.float32:
+            defaultArrayDtype = defaultArrayBackend.float32
+        else:
+            defaultArrayDtype = defaultArrayBackend.float64
+    else:
+        raise ValueError("Precision must be either 'single' or 'double'.")
 
 def hostData(_data):
     if defaultArrayBackend == cp and gpuEnabled:
@@ -78,7 +93,7 @@ class Field(object):
             width,
             unit='m',
             xp=defaultArrayBackend,
-            _dtype=defaultArrayBackend.float64):
+            _dtype=defaultArrayDtype):
         self.xp = xp
         self.sampling = self.xp.zeros((N, N), dtype=_dtype)
         self.__N = N
@@ -470,9 +485,14 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
 
+    if defaultArrayDtype == defaultArrayBackend.float32:
+        dtype = np.float32
+    else:
+        dtype = np.float64
+
     oversampling = np.atleast_1d(oversampling)
     if len(oversampling) == 1:
-        oversampling = np.full_like(wavelength, oversampling[0], dtype=float)
+        oversampling = np.full_like(wavelength, oversampling[0], dtype=dtype)
 
     psfLongExpArr = []
 
