@@ -46,7 +46,7 @@ def method_lru_cache(maxsize=None,verbose=False):
     return decorator
 
 def cpuArray(v):
-    if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v, float):
+    if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v,np.float32) or isinstance(v, float):
         return v
     else:
         return v.get()
@@ -313,6 +313,8 @@ class MavisLO(object):
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
 
+        self.precision = 'double'
+
         if self.check_section_key('COMPUTATION'):
             if self.check_config_key('COMPUTATION','platform'):
                 self.computationPlatform    = self.get_config_value('COMPUTATION','platform')
@@ -322,6 +324,16 @@ class MavisLO(object):
                 self.integralDiscretization2 = self.get_config_value('COMPUTATION','integralDiscretization2')
             if self.check_config_key('COMPUTATION','simpleVarianceComputation'):
                 print('simpleVarianceComputation method is deprecated, it will not be used!')
+            if self.check_section_key('COMPUTATION') and self.check_config_key('COMPUTATION', 'precision'):
+                self.precision = str(self.get_config_value('COMPUTATION', 'precision')).lower()
+
+        # Set dtype and complex_dtype for fourierModel
+        if self.precision == 'single':
+            self.dtype = np.float32
+            self.complex_dtype = np.complex64
+        elif self.precision == 'double':
+            self.dtype = np.float64
+            self.complex_dtype = np.complex128
 
         if self.check_config_key('atmosphere','r0_Value') and self.check_config_key('atmosphere','Seeing'):
             print('%%%%%%%% ATTENTION %%%%%%%%')
@@ -396,12 +408,12 @@ class MavisLO(object):
         self.subapFocus_FWHM_mas = self.SensingWavelength_Focus/(self.TelescopeDiameter/self.NumberLenslets_Focus[0])*radiansToArcsecs*1000
 
         if self.computationPlatform=='GPU' and gpuEnabled:
-            self.mIt = Integrator(cp, cp.float64, '')
-            self.mItcomplex = Integrator(cp, cp.complex64, '')
+            self.mIt = Integrator(cp, self.dtype, '')
+            self.mItcomplex = Integrator(cp, self.complex_dtype, '')
             self.platformlib = gpulib
         else:
-            self.mIt = Integrator(np, float, '')
-            self.mItcomplex = Integrator(np, complex, '')
+            self.mIt = Integrator(np, self.dtype, '')
+            self.mItcomplex = Integrator(np, self.complex_dtype, '')
             self.platformlib = cpulib
 
         self.min_freq_cov = 1e-3
@@ -435,9 +447,12 @@ class MavisLO(object):
         else:
             if self.verbose:
                 print('    WARNING: no windPsdFile file is set.')
-            self.psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
-            self.psd_tip_wind = np.zeros((int(5*self.maxLOtFreq)))
-            self.psd_tilt_wind = np.zeros((int(5*self.maxLOtFreq)))
+            self.psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)),
+                                       dtype=self.dtype)
+            self.psd_tip_wind = np.zeros((int(5*self.maxLOtFreq)),
+                                         dtype=self.dtype)
+            self.psd_tilt_wind = np.zeros((int(5*self.maxLOtFreq)),
+                                          dtype=self.dtype)
 
         self.fTipS_LO, self.fTiltS_LO = self.specializedNoiseFuncs()
         self.fTipS, self.fTiltS = self.specializedWindFuncs()
@@ -461,7 +476,8 @@ class MavisLO(object):
                                         path_tiptop=PATH_TIPTOP)
         with fits.open(filename) as hdul:
             psd_data = np.asarray(hdul[0].data, np.float32)
-        psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)))
+        psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)),
+                              dtype=self.dtype)
         psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
         psd_tilt_wind = np.interp(psd_freq, psd_data[0,:], psd_data[2,:],left=0,right=0)
         return psd_freq, psd_tip_wind, psd_tilt_wind
@@ -470,9 +486,12 @@ class MavisLO(object):
     # specialized formulas, mostly substituting parameter with mavisParametrs.py values
     def specializedIM(self):
         apIM = self.MavisFormulas['interactionMatrixNGS']
-        apIM = apIM.subs({self.MavisFormulas.symbol_map['D']:self.TelescopeDiameter, self.MavisFormulas.symbol_map['r_FoV']:self.TechnicalFoV*arcsecsToRadians/2.0, self.MavisFormulas.symbol_map['H_DM']:max(self.DmHeights)})
+        apIM = apIM.subs({self.MavisFormulas.symbol_map['D']:self.TelescopeDiameter,
+                          self.MavisFormulas.symbol_map['r_FoV']:self.TechnicalFoV*arcsecsToRadians/2.0,
+                          self.MavisFormulas.symbol_map['H_DM']:max(self.DmHeights)})
         xx, yy = sp.symbols('x_1 y_1', real=True)
-        apIM = apIM.subs({self.MavisFormulas.symbol_map['x_NGS']:xx, self.MavisFormulas.symbol_map['y_NGS']:yy})
+        apIM = apIM.subs({self.MavisFormulas.symbol_map['x_NGS']:xx,
+                          self.MavisFormulas.symbol_map['y_NGS']:yy})
         apIM_func = sp.lambdify((xx, yy), apIM, modules=cpulib)
         if self.displayEquation:
             print('mavisLO.specializedIM')
@@ -490,10 +509,14 @@ class MavisLO(object):
 
 
     def specializedMeanVarFormulas(self, kind):
-        dd0 = {self.MavisFormulas.symbol_map['t']:self.ThresholdWCoG_LO, self.MavisFormulas.symbol_map['nu']:self.NewValueThrPix_LO, self.MavisFormulas.symbol_map['sigma_RON']:self.sigmaRON_LO}
+        dd0 = {self.MavisFormulas.symbol_map['t']:self.ThresholdWCoG_LO,
+               self.MavisFormulas.symbol_map['nu']:self.NewValueThrPix_LO,
+               self.MavisFormulas.symbol_map['sigma_RON']:self.sigmaRON_LO}
         dd1 = {self.MavisFormulas.symbol_map['b']:(self.Dark_LO+self.skyBackground_LO)/self.SensorFrameRate_LO}
         dd2 = {self.MavisFormulas.symbol_map['F']:self.ExcessNoiseFactor_LO}
-        expr0, exprK, integral = self.MavisFormulas[kind+"0"], self.MavisFormulas[kind+"1"], self.MavisFormulas[kind+"2"]
+        expr0, exprK, integral = self.MavisFormulas[kind+"0"], \
+                                 self.MavisFormulas[kind+"1"], \
+                                 self.MavisFormulas[kind+"2"]
         expr0 = expr0.subs({**dd0, **dd1})
         exprK = exprK.subs({**dd1})
         integral = integral.subs({**dd0, **dd1, **dd2})
@@ -748,9 +771,9 @@ class MavisLO(object):
         nstars = aCartNGSCoords.shape[0]
 
         if nstars==1:
-            R_1 = np.zeros((2*npointings, 2*nstars))
+            R_1 = np.zeros((2*npointings, 2*nstars), dtype=self.dtype)
             for k in range(npointings):
-                R_1[2*k:2*(k+1), :] = np.identity(2)
+                R_1[2*k:2*(k+1), :] = np.identity(2, dtype=self.dtype)
             return R_1, R_1.transpose()
 
         P, P_func = self.specializedIM()
@@ -789,7 +812,7 @@ class MavisLO(object):
 
         vx = np.asarray(aCartPointingCoordsV[:,0])
         vy = np.asarray(aCartPointingCoordsV[:,1])
-        R_1 = np.zeros((2*npointings, 2*nstars))
+        R_1 = np.zeros((2*npointings, 2*nstars), dtype=self.dtype)
         for k in range(npointings):
             P_alpha1 = P_func(vx[k]*arcsecsToRadians, vy[k]*arcsecsToRadians)
             R_1[2*k:2*(k+1), :] = cp.dot(P_alpha1, rec_tomo)
@@ -877,7 +900,7 @@ class MavisLO(object):
 
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
         I_k_prime_data = intRebin(I_k_prime_data,self.mediumShape) * self.downsample_factor**2
-        W_Mask = np.zeros(self.mediumShape)
+        W_Mask = np.zeros(self.mediumShape, dtype=self.dtype)
         # this is the array with the CoG weights, they are not normalized and so the variance is in pixel2
         ffx = np.arange(-self.mediumGridSize/2, self.mediumGridSize/2, 1.0) + 0.5
         (fx, fy) = np.meshgrid(ffx, ffx)
@@ -1351,7 +1374,7 @@ class MavisLO(object):
         matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
         matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
-        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
+        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=self.complex_dtype)
         iidd = 0
         for kk in range(nstars):
             vv = np.ones((points,2))
@@ -1398,7 +1421,7 @@ class MavisLO(object):
         matCssValue = xp.zeros((nstars,nstars), dtype=xp.float32)
         matCaaValue = self.covValue(4, 4, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
         hh = xp.asarray(self.Cn2Heights)
-        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=complex)
+        inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=self.complex_dtype)
         iidd = 0
         for kk in range(nstars):
             vv = np.ones((points,2))
@@ -1439,7 +1462,7 @@ class MavisLO(object):
     def multiCMatAssemble(self, aCartPointingCoordsV, aCartNGSCoords, aCnn, aC1):
         xp = np
         points = aCartPointingCoordsV.shape[0]
-        Ctot = np.zeros((2*points,2))
+        Ctot = np.zeros((2*points,2), dtype=self.dtype)
         Caa, Cas, Css = self.computeCovMatrices(xp.asarray(aCartPointingCoordsV), xp.asarray(aCartNGSCoords), xp=np)
         R, RT = self.buildReconstuctor2(aCartPointingCoordsV, aCartNGSCoords, Cnn=aCnn, Caa=Caa)
         for i in range(points):
@@ -1498,8 +1521,8 @@ class MavisLO(object):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = len(indices)
-        C1 = np.zeros((2,2))
-        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
+        C1 = np.zeros((2,2), dtype=self.dtype)
+        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS), dtype=self.dtype)
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
         for starIndex in range(nNaturalGS):
@@ -1538,8 +1561,8 @@ class MavisLO(object):
         nPointings = aCartPointingCoords.shape[0]
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
-        C1 = np.zeros((2,2))
-        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS))
+        C1 = np.zeros((2,2), dtype=self.dtype)
+        Cnn = np.zeros((2*nNaturalGS,2*nNaturalGS), dtype=self.dtype)
 
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
@@ -1646,7 +1669,7 @@ class MavisLO(object):
 
     def computeFocusTotalResidualMatrixI(self, indices, aCartNGSCoords, aNGS_flux):
         nNaturalGS = len(indices)
-        Cnn = np.zeros((nNaturalGS,nNaturalGS))
+        Cnn = np.zeros((nNaturalGS,nNaturalGS), dtype=self.dtype)
         if self.verbose:
             print('mavisLO.computeFocusTotalResidualMatrixI')
         for starIndex in range(nNaturalGS):
@@ -1673,7 +1696,7 @@ class MavisLO(object):
 
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
         nNaturalGS = aCartNGSCoords.shape[0]
-        Cnn = np.zeros((nNaturalGS,nNaturalGS))
+        Cnn = np.zeros((nNaturalGS,nNaturalGS), dtype=self.dtype)
 
         if self.verbose:
             print('mavisLO.computeFocusTotalResidualMatrix')
@@ -1776,8 +1799,7 @@ class MavisLO(object):
 
         def computeCovEllispses(Ctot):
             nPointings = Ctot.shape[0]
-            result = np.zeros((nPointings, 3))
-            covEllipses = np.zeros(nPointings)
+            result = np.zeros((nPointings, 3), dtype=self.dtype)
             for i in range(nPointings):
                 result[i] = computeCovEllispse(Ctot[i])
             return result
