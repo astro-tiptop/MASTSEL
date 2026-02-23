@@ -13,18 +13,23 @@ from mastsel.mavisFormulas import *
 fit_window_max_size = 512
 defaultArrayBackend = cp
 defaultArrayDtype = defaultArrayBackend.float64
+defaultArrayCDtype = defaultArrayBackend.complex128
 
 def mastselPsfPrecision(precision=None, dtype=None):
-    global defaultArrayDtype
+    global defaultArrayDtype, defaultArrayCDtype
     if precision == 'single':
         defaultArrayDtype = defaultArrayBackend.float32
+        defaultArrayCDtype = defaultArrayBackend.complex64
     elif precision == 'double':
         defaultArrayDtype = defaultArrayBackend.float64
+        defaultArrayCDtype = defaultArrayBackend.complex128
     elif dtype is not None:
         if dtype==cp.float32 or dtype==np.float32:
             defaultArrayDtype = defaultArrayBackend.float32
+            defaultArrayCDtype = defaultArrayBackend.complex64
         else:
             defaultArrayDtype = defaultArrayBackend.float64
+            defaultArrayCDtype = defaultArrayBackend.complex128
     else:
         raise ValueError("Precision must be either 'single' or 'double'.")
 
@@ -203,6 +208,7 @@ class Field(object):
         #        rand_pahse = xp.random.random_sample( (N,N), dtype=xp.float64 )
         #        complexField = xp.exp( rand_pahse*1j*xp.pi*2.0 ) * xp.sqrt(xp.abs(self.sampling))
         #        realField = xp.real()
+        i_complex = defaultArrayCDtype(1j)
         N = self.N
         freq_range = self.width
         cn = (
@@ -210,7 +216,7 @@ class Field(object):
                 size=(
                     N,
                     N)) +
-                1j *
+                i_complex *
                 self.xp.random.normal(
                 size=(
                     N,
@@ -482,6 +488,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                    dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
                    skip_reshape=False):
 
+    i_complex = defaultArrayCDtype(1j)
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
 
@@ -528,7 +535,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             if mask is None or not isinstance(mask, list):
-                maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
+                maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                 maskOtf.pupilToOtf()
                 maskOtf.sampling /= maskOtf.sampling.max()
                 otf_tel = maskOtf.sampling
@@ -540,7 +547,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
                 maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
                 if opdMap is not None:
-                    maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
+                    maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                     maskOtf.pupilToOtf()
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
