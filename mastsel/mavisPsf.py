@@ -212,18 +212,11 @@ class Field(object):
         N = self.N
         freq_range = self.width
         cn = (
-            (self.xp.random.normal(
-                size=(
-                    N,
-                    N)) +
-                i_complex *
-                self.xp.random.normal(
-                size=(
-                    N,
-                    N))) *
-            self.xp.sqrt(
-                self.sampling) *
-            self.pixel_size)
+            (self.xp.random.normal(size=(N, N)).astype(defaultArrayDtype) +
+            i_complex *
+            self.xp.random.normal(size=(N, N)).astype(defaultArrayDtype)) *
+            self.xp.sqrt(self.sampling) *
+            self.pixel_size)        
         self.sampling = ft_ift2(cn, self.xp).real
         self.width = 1.0 / (freq_range / N)
 

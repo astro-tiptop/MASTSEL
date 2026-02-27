@@ -46,7 +46,8 @@ def method_lru_cache(maxsize=None,verbose=False):
     return decorator
 
 def cpuArray(v):
-    if isinstance(v,np.ndarray) or isinstance(v,np.float64) or isinstance(v,np.float32) or isinstance(v, float):
+    if isinstance(v,np.ndarray) or isinstance(v,np.float64) \
+      or isinstance(v,np.float32) or isinstance(v, float):
         return v
     else:
         return v.get()
@@ -392,8 +393,12 @@ class MavisLO(object):
         self.integrationPoints = self.integralDiscretization1
         self.psdIntegrationPoints = self.integralDiscretization2
         self.largeGridSize = 200
-        xCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
-        yCoords = np.asarray(np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize), dtype=np.float32)
+        xCoords = np.asarray(
+            np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize),
+            dtype=self.dtype)
+        yCoords = np.asarray(
+            np.linspace(-self.largeGridSize/2.0+0.5, self.largeGridSize/2.0-0.5, self.largeGridSize),
+            dtype=self.dtype)
         self.xLargeGrid, self.yLargeGrid = np.meshgrid( xCoords, yCoords, sparse=False, copy=True)
         self.downsample_factor = 4
         # this is N_W in the simplified variance formulas
@@ -475,7 +480,7 @@ class MavisLO(object):
         filename = resolve_config_path(filename, path_root = '', path_p3 = PATH_P3,
                                         path_tiptop=PATH_TIPTOP)
         with fits.open(filename) as hdul:
-            psd_data = np.asarray(hdul[0].data, np.float32)
+            psd_data = np.asarray(hdul[0].data, self.dtype)
         psd_freq = np.asarray(np.linspace(0.2, self.maxLOtFreq, int(5*self.maxLOtFreq)),
                               dtype=self.dtype)
         psd_tip_wind = np.interp(psd_freq, psd_data[0,:], psd_data[1,:],left=0,right=0)
@@ -866,7 +871,7 @@ class MavisLO(object):
                                                       new_value=self.NewValueThrPix_LO,
                                                       dtype=self.dtype)
 
-        sigma_ktr_array = np.sqrt(var_ktr_array.astype(np.float32))
+        sigma_ktr_array = np.sqrt(var_ktr_array.astype(self.dtype))
         return mu_ktr_array, var_ktr_array, sigma_ktr_array
 
 
@@ -937,7 +942,7 @@ class MavisLO(object):
     def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed,
                                   telescope_diameter, r0_value, l0):
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
-        scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
+        scaleFactor = self.dtype((500 / 2.0 / np.pi) ** 2)  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
         psdIntegrationPoints = round(self.max_freq_turb/100*self.psdIntegrationPoints)
 
@@ -1400,8 +1405,10 @@ class MavisLO(object):
         matCaaValue = xp.zeros((2,2), dtype=self.dtype)
         matCasValue = xp.zeros((2*points,2*nstars), dtype=self.dtype)
         matCssValue = xp.zeros((2*nstars,2*nstars), dtype=self.dtype)
-        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
-        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10]), xp.asarray([1]))[0,0]
+        matCaaValue[0,0] = self.covValue(2, 2, xp.asarray([1e-10, 1e-10], dtype=self.dtype),
+                                         xp.asarray([1], dtype=self.dtype))[0,0]
+        matCaaValue[1,1] = self.covValue(3, 3, xp.asarray([1e-10, 1e-10], dtype=self.dtype),
+                                         xp.asarray([1], dtype=self.dtype))[0,0]
         hh = xp.asarray(self.Cn2Heights)
         inputsArray = np.zeros( nstars*points + nstars*nstars, dtype=self.complex_dtype)
         iidd = 0
@@ -1413,8 +1420,9 @@ class MavisLO(object):
                                                      dtype=self.dtype)
             polarPointingCoordsD[:,1] *= degToRad
             polarPointingCoordsD[:,0] *= arcsecsToRadians
-            polarPointingCoordsD[:,0] = np.maximum( polarPointingCoordsD[:,0], 1e-9*np.ones(points))
-            pp = polarPointingCoordsD[:,0]*xp.exp(i_complex*polarPointingCoordsD[:,1])
+            polarPointingCoordsD[:,0] = np.maximum(polarPointingCoordsD[:,0],
+                                                   self.dtype(1e-9) * np.ones(points, dtype=self.dtype))
+            pp = polarPointingCoordsD[:,0]*xp.exp(i_complex * polarPointingCoordsD[:,1])
             inputsArray[points*iidd:points*(iidd+1)] = pp
             iidd = iidd+1
         iidd=0
@@ -1543,8 +1551,10 @@ class MavisLO(object):
     def multiFocusCMatAssemble(self, aCartNGSCoords, Cnn):
         Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
         # NGS Rec. Mat.
-        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]))
-        cov_noise = np.diag(np.clip(np.diag(Cnn),np.max(Cnn)*1e-2,np.max(Cnn))/np.max(Cnn)) # it clips noise covariance when noise level is low
+        IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]), dtype=self.dtype)
+        cov_noise = np.diag(
+            np.clip(np.diag(Cnn),np.max(Cnn)*1e-2,np.max(Cnn))/np.max(Cnn)
+            ) # it clips noise covariance when noise level is low
         cov_noise_inv = np.linalg.pinv(cov_noise)
         H = IMt @ cov_noise_inv @ IMt.T
         R = 1/H * IMt @ cov_noise_inv
