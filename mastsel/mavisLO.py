@@ -1030,8 +1030,8 @@ class MavisLO(object):
 
         if self.plot4debug:
             fig, ax1 = plt.subplots(1,1)
-            im = ax1.plot(psd_freq,psd_tip_turb) 
-            im = ax1.plot(psd_freq,psd_tilt_turb) 
+            im = ax1.plot(psd_freq,psd_tip_turb)
+            im = ax1.plot(psd_freq,psd_tilt_turb)
             ax1.set_xscale('log')
             ax1.set_yscale('log')
             ax1.set_title('Turbulence PSD', color='black')
@@ -1248,8 +1248,8 @@ class MavisLO(object):
 
         if self.plot4debug:
             fig, ax1 = plt.subplots(1,1)
-            im = ax1.plot(psd_freq,psd_tip_wind) 
-            im = ax1.plot(psd_freq,psd_tilt_wind) 
+            im = ax1.plot(psd_freq,psd_tip_wind)
+            im = ax1.plot(psd_freq,psd_tilt_wind)
             ax1.set_xscale('log')
             ax1.set_yscale('log')
             ax1.set_title('wind shake PSD', color='black')
@@ -1259,7 +1259,8 @@ class MavisLO(object):
         sigma2Noise = var1x / bias**2 / (Df / df)
 
         if self.plot4debug:
-            dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
+            dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO,
+                     self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
             RTFwind = self.fTipS1tfW.subs(dict1)
             NTFwind = self.fTipS1tfN.subs(dict1)
             RTFwind_lambda1 = lambdifyByName( RTFwind, ['g^Tip_0', 'f'], cpulib)
@@ -1293,13 +1294,13 @@ class MavisLO(object):
             xp = cp
             psd_freq = cp.asarray(psd_freq)
             psd_tip_wind = cp.asarray(psd_tip_wind)
-            psd_tilt_wind = cp.asarray(psd_tilt_wind)  
+            psd_tilt_wind = cp.asarray(psd_tilt_wind)
         else:
             xp = np
 
         if self.LoopGain_LO == 'optimize':
             # Step 1: Initial coarse search
-            g0 = (0.00000001,0.0000001,0.000001,0.00001,0.0001,0.001)
+            g0 = (0.0000001,0.000001,0.00001,0.0001,0.001)
             maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
             g0g_coarse = xp.concatenate((xp.asarray(g0), xp.linspace(0.01, maxG, npoints)))
 
@@ -1311,7 +1312,7 @@ class MavisLO(object):
                 xp.broadcast_arrays(e1, e2, e3, e4)
 
             resultTip_coarse = xp.absolute(
-                (xp.sum(self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1))))
+                (xp.sum(self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_wind_ext),axis=(1))))
             resultTilt_coarse = xp.absolute(
                 (xp.sum(self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1))))
 
@@ -1364,7 +1365,8 @@ class MavisLO(object):
         if self.plot4debug:
             fig, ax2 = plt.subplots(1,1)
             for x in range(g0g.shape[0]):
-                im = ax2.plot(cpuArray(psd_freq),(self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:]) 
+                im = ax2.plot(cpuArray(psd_freq),
+                              (self.fTipS_lambda1( g0g_ext, psd_freq_ext, psd_tip_wind_ext).get())[x,:])
             ax2.set_xscale('log')
             ax2.set_yscale('log')
             ax2.set_title('residual wind PSD', color='black')
