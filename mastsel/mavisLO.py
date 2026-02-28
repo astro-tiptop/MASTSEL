@@ -1407,6 +1407,7 @@ class MavisLO(object):
             psd_tilt_wind = cp.asarray(psd_tilt_wind, dtype=cp.float64)
         else:
             xp = np
+            dtype = self.dtype
 
         if self.LoopGain_LO == 'optimize':
             # Step 1: Initial coarse search
