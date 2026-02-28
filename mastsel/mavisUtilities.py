@@ -55,7 +55,7 @@ if not gpuEnabled:
                   "This routine currently only support "
                   "rebinning to the same number of dimensions.")
             return None
-        newdims = np.asarray(newdims, dtype=float)
+        newdims = np.asarray(newdims, dtype=a.dtype)
         dimlist = []
 
         if method == 'neighbour':
@@ -114,7 +114,7 @@ if not gpuEnabled:
             newcoords_tr -= ofs
 
             newa = scipy.ndimage.map_coordinates(a, newcoords)
-            return newa
+            return newa.astype(a.dtype)
         else:
             print("Congrid error: Unrecognized interpolation type.\n",
                   "Currently only \'neighbour\', \'nearest\',\'linear\',",
@@ -130,14 +130,15 @@ else:
         r1 = a.shape[0]/newdims[0]
         r2 = a.shape[1]/newdims[1]
 
-        interp = RegularGridInterpolator((cp.linspace(0.5, a.shape[0]-0.5, a.shape[0]), cp.linspace(0.5, a.shape[1]-0.5, a.shape[1])), 
+        interp = RegularGridInterpolator((cp.linspace(0.5, a.shape[0]-0.5, a.shape[0]),
+                                          cp.linspace(0.5, a.shape[1]-0.5, a.shape[1])),
                                          a, bounds_error=False, fill_value=None)
 
         xx = cp.linspace(0.5, a.shape[0] - (r1 - 0.5), newdims[0])
         yy = cp.linspace(0.5, a.shape[1] - (r2 - 0.5), newdims[1])
 
         X, Y = cp.meshgrid(xx, yy, indexing='ij')
-        return interp((X, Y))
+        return (interp((X, Y)).astype(a.dtype))
 
 degToRad = np.pi/180.0
 radToDeg = 1.0/degToRad
@@ -148,17 +149,20 @@ radiansToMas = radiansToArcsecs * 1000.0
 sigmaToFWHM = 2 * np.sqrt(2.0 * np.log(2.0))
 
 
-def cartesianToPolar(x):
-    return np.asarray( [np.sqrt(x[0]**2+x[1]**2), np.arctan2(x[1],x[0])*radToDeg], dtype=np.float64 )
+def cartesianToPolar(x, dtype=np.float64):
+    return np.asarray( [np.sqrt(x[0]**2+x[1]**2), np.arctan2(x[1],x[0])*radToDeg],
+                      dtype=dtype )
 
 
-def cartesianToPolar2(x):
-    return np.asarray( [np.sqrt(x[:,0]**2+x[:,1]**2), np.arctan2(x[:,1],x[:,0])*radToDeg], dtype=np.float64 ).transpose()
+def cartesianToPolar2(x, dtype=np.float64):
+    return np.asarray( [np.sqrt(x[:,0]**2+x[:,1]**2), np.arctan2(x[:,1],x[:,0])*radToDeg],
+                      dtype=dtype ).transpose()
 
 
 
-def polarToCartesian(x):
-    return x[0] * np.asarray( [np.cos(x[1]*degToRad), np.sin(x[1]*degToRad)], dtype=np.float64 )
+def polarToCartesian(x, dtype=np.float64):
+    return x[0] * np.asarray( [np.cos(x[1]*degToRad), np.sin(x[1]*degToRad)],
+                             dtype=dtype )
 
 
 def FWHM_from_sigma(sigma):
@@ -231,7 +235,8 @@ def intRebin(arr, new_shape):
 
 from scipy.special import erf, gamma
 
-def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nophot=False, npoints=1000, new_value=None):
+def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1,
+                    nophot=False, npoints=1000, new_value=None, dtype=None):
     """
     Calculates the mean and variance of the pixels taking into account the signal flow, 
     read noise, background and a threshold.
@@ -246,11 +251,14 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
     - nophot: if True, removes photon noise (default False)
     - npoints: points for numerical integration (default 1000)
     - new_value: replacement value for pixels below threshold (default = threshold)
+    - dtype: data type for output arrays (default = flux dtype)
     
     returns:
     - mean_thr: NxN matrix of the mean
     - var_thr: NxN matrix of
     """
+    if dtype is None:
+        dtype = flux.dtype
 
     if new_value is None:
         new_value = thresh
@@ -269,8 +277,8 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
     index_it = np.where((flux + bg) < 10) if not nophot else ([], [])
 
     # Initializes output arrays
-    mean_thr = np.zeros_like(flux, dtype=np.float64)
-    var_thr = np.zeros_like(flux, dtype=np.float64)
+    mean_thr = np.zeros_like(flux, dtype=dtype)
+    var_thr = np.zeros_like(flux, dtype=dtype)
 
     # ---- Gaussian approximation ----
     if np.any(index_gauss):
@@ -282,7 +290,8 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
         phi = np.exp(-offset**2 / (2 * sigma_e**2)) / np.sqrt(2 * np.pi)  # gaussian PDF at offset
 
         mu_thr_gauss = flux_tmp * z + new_value * (1 - z) + sigma_e * phi
-        var_thr_gauss = (flux_tmp**2 + sigma_e**2) * z + new_value**2 * (1 - z) + (flux_tmp + thresh2) * sigma_e * phi
+        var_thr_gauss = (flux_tmp**2 + sigma_e**2) * z + new_value**2 * (1 - z) \
+                      + (flux_tmp + thresh2) * sigma_e * phi
         var_thr_gauss -= mu_thr_gauss**2
 
         mean_thr[index_gauss] = mu_thr_gauss
@@ -295,9 +304,9 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
         flux2 = flux_tmp + bg
         tab_k = np.arange(order) - bg
         sigma_e = ron
-    
-        mu_thr_it = np.zeros_like(flux_tmp, dtype=np.float64)
-        var_thr_it = np.zeros_like(flux_tmp, dtype=np.float64)
+
+        mu_thr_it = np.zeros_like(flux_tmp, dtype=dtype)
+        var_thr_it = np.zeros_like(flux_tmp, dtype=dtype)
 
         # this value, 1.14, was found experimentally to avoid numerical errors
         # this means that excess is ignored if excess < 1.14
@@ -311,7 +320,8 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
             phi = np.exp(-offset**2 / (2 * sigma_e**2)) / np.sqrt(2 * np.pi)
 
             mu_x = sigma_e * phi + (x - bg) * z + new_value * (1 - z)
-            var_x = sigma_e * (x - bg + thresh2) * phi + (sigma_e**2 + (x - bg) ** 2) * z + new_value**2 * (1 - z)
+            var_x = sigma_e * (x - bg + thresh2) * phi + (sigma_e**2 + (x - bg) ** 2) \
+                  * z + new_value**2 * (1 - z)
 
             mu_thr_it = np.exp(-flux2) * mu_x[0]
             var_thr_it = np.exp(-flux2) * var_x[0]
@@ -347,7 +357,8 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
 
                 coeff = np.exp(-flux2) * flux2**k2 / gamma(k2 + 1)
                 mu_thr_it += coeff * (k * z + new_value * (1 - z) + sigma_e * phi)
-                var_thr_it += coeff * (z * (sigma_e**2 + k**2) + new_value**2 * (1 - z) + (k + thresh2) * sigma_e * phi)
+                var_thr_it += coeff * (z * (sigma_e**2 + k**2) + new_value**2 * (1 - z) \
+                           + (k + thresh2) * sigma_e * phi)
 
         var_thr_it -= mu_thr_it**2
 
@@ -355,13 +366,14 @@ def meanVarPixelThr(flux, ron=0, bg=0, thresh=-np.inf, order=30, excess=1, nopho
         var_thr[index_it] = var_thr_it
 
     return mean_thr, var_thr
-    
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 def plotEllipses(cartPointingCoords, cov_ellipses, ss):
     nPointings = cov_ellipses.shape[0]
-    ells = [Ellipse(xy=cartPointingCoords[i],  width=cov_ellipses[i,1]*ss, height=cov_ellipses[i,2]*ss, angle=cov_ellipses[i,0]*180/np.pi) for i in range(nPointings)]
+    ells = [Ellipse(xy=cartPointingCoords[i],  width=cov_ellipses[i,1]*ss,
+            height=cov_ellipses[i,2]*ss, angle=cov_ellipses[i,0]*180/np.pi) for i in range(nPointings)]
     fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'}, figsize=[8,8])
     for e in ells:
         ax.add_artist(e)
@@ -375,7 +387,7 @@ def tiledDisplay(results):
     ncols = int(np.sqrt(nn))
     nrows = ncols
     fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=[10,10])
-    
+
     if nrows>1 or ncols>1:
         for i in range(nrows):
             for j in range(ncols):
@@ -385,8 +397,8 @@ def tiledDisplay(results):
     else:
         img = np.log(np.abs(results[0].sampling) + 1e-20)
         ax.imshow(img, cmap='hot')
-        
-    
+
+
 #    for i in range(nrows):
 #        for j in range(ncols):
 #            img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
