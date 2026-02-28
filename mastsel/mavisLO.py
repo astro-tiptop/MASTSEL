@@ -1568,7 +1568,7 @@ class MavisLO(object):
             points = aCartPointingCoords.shape[0]
         else:
             points = 1
-        nstars = aCartNGSCoords.shape[0]        
+        nstars = aCartNGSCoords.shape[0]
         scaleF = (500.0/(2*np.pi))**2
         matCasValue = xp.zeros((points,nstars), dtype=self.dtype)
         matCssValue = xp.zeros((nstars,nstars), dtype=self.dtype)
@@ -1610,8 +1610,9 @@ class MavisLO(object):
                         matCasValue[ii-4+pind][_idx0[jj]] += \
                             h_weight*outputArray1[pind:nstars*points:points, hidx]
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] += \
-                                xp.reshape( h_weight*outputArray1[nstars*points:, hidx], (nstars,nstars))
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  \
+                                xp.reshape( h_weight*outputArray1[nstars*points:, hidx],
+                                           (nstars,nstars))
 
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
 
@@ -1630,17 +1631,25 @@ class MavisLO(object):
             Casi = Cas[2*i:2*(i+1),:]
             C2b = xp.dot(Ri, xp.dot(Css, RTi)) - xp.dot(Casi, RTi) - xp.dot(Ri, Casi.transpose())
             C3 = xp.dot(Ri, xp.dot(xp.asarray(aCnn), RTi))
+            C2b += Caa
+            if np.any(np.diag(C2b) < 0) or not np.isfinite(C2b).all():
+                C2b.fill(0)
+                print('    WARNING: negative or non-finite trace for C2b,'
+                      ' setting it to zero!')
             # tomography (C2), noise (C3), wind (aC1) errors
             if self.noNoise:
-                ss = xp.asarray(aC1) + Caa + C2b
+                ss = xp.asarray(aC1) + C2b
                 print('    WARNING: LO noise is not active!')
             else:
-                ss = xp.asarray(aC1) + Caa + C2b + C3
+                ss = xp.asarray(aC1) + C2b + C3
             Ctot[2*i:2*(i+1),:] = ss
             if self.verbose:
-                print('    Star coordinates [arcsec]: ', ("{:.1f}, "*len(aCartPointingCoordsV[i])).format(*aCartPointingCoordsV[i]))
-                print('    Total Cov. (tomo., tur.+noi., wind+alias.) [nm]:',"%.2f" % np.sqrt(np.trace(ss)),
-                      '(', "%.2f" % np.sqrt(np.trace(Caa + C2b)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
+                print('    Star coordinates [arcsec]: ',
+                      ("{:.1f}, "*len(aCartPointingCoordsV[i])).format(*aCartPointingCoordsV[i]))
+                print('    Total Cov. (tomo., tur.+noi., wind+alias.) [nm]:',
+                      "%.2f" % np.sqrt(np.trace(ss)),
+                      '(', "%.2f" % np.sqrt(np.trace(C2b)), ',', "%.2f" % np.sqrt(np.trace(C3)),
+                      ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
 
@@ -1649,6 +1658,9 @@ class MavisLO(object):
         Caa, Cas, Css = self.computeCovMatrices(np.asarray(aCartPointingCoordsV), aCartNGSCoords)
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(aCnn, RT))
+        if np.any(np.diag(C2) < 0) or not np.isfinite(C2).all():
+            C2.fill(0)
+            print('    WARNING: negative or non-finite trace for C2, setting it to zero!')
         # sum tomography (C2), noise (C3), wind (aC1) errors
         if self.noNoise:
             Ctot = aC1 + C2
@@ -1656,13 +1668,18 @@ class MavisLO(object):
         else:
             Ctot = aC1 + C2 + C3
         if self.verbose:
-            print('    Star coordinates [arcsec]: ', ("{:.1f}, "*len(aCartPointingCoordsV)).format(*aCartPointingCoordsV))
-            print('    Total Cov. (tomo., tur.+noi., wind) [nm]:', "%.2f" % np.sqrt(np.trace(Ctot)),
-                  '(', "%.2f" % np.sqrt(np.trace(C2)), ',', "%.2f" % np.sqrt(np.trace(C3)), ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
+            print('    Star coordinates [arcsec]: ',
+                  ("{:.1f}, "*len(aCartPointingCoordsV)).format(*aCartPointingCoordsV))
+            print('    Total Cov. (tomo., tur.+noi., wind) [nm]:',
+                  "%.2f" % np.sqrt(np.trace(Ctot)),
+                  '(', "%.2f" % np.sqrt(np.trace(C2)), ',', "%.2f" % np.sqrt(np.trace(C3)),
+                  ',', "%.2f" % np.sqrt(np.trace(aC1)),')')
         return Ctot
 
     def multiFocusCMatAssemble(self, aCartNGSCoords, Cnn):
-        Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartNGSCoords), xp=np)
+        Caa, Cas, Css = self.computeFocusCovMatrices(np.asarray((0,0)),
+                                                     np.asarray(aCartNGSCoords),
+                                                     xp=np)
         # NGS Rec. Mat.
         IMt = np.array(np.repeat(1, aCartNGSCoords.shape[0]), dtype=self.dtype)
         cov_noise = np.diag(
@@ -1671,12 +1688,13 @@ class MavisLO(object):
         cov_noise_inv = np.linalg.pinv(cov_noise)
         H = IMt @ cov_noise_inv @ IMt.T
         R = 1/H * IMt @ cov_noise_inv
-        RT = RT = R.transpose()
+        RT = R.transpose()
         # sum tomography (Caa,Cas,Css) and noise (Cnn) errors for a on-axis star
         C2 = Caa + np.dot(R, np.dot(Css, RT)) - np.dot(Cas, RT) - np.dot(R, Cas.transpose())
         C3 = np.dot(R, np.dot(Cnn, RT))
 
         return C2, C3
+
 
     def computeTotalResidualMatrixI(self, indices, aCartPointingCoords, aCartNGSCoords, aNGS_flux):
         nPointings = aCartPointingCoords.shape[0]
@@ -1687,12 +1705,13 @@ class MavisLO(object):
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]            
+            bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]      
             nr = self.nr[indices[starIndex]]
             ar = self.ar[indices[starIndex]]
             if self.verbose:
                 print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
-                print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    NGS coordinates [arcsec] : ',
+                      ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
                 print('    aliasing (per NGS)               [nm\u00b2]:',np.array(ar))
             Cnn[2*starIndex,2*starIndex] = nr[0]
@@ -1819,7 +1838,8 @@ class MavisLO(object):
 
             if self.verbose:
                 print('    NGS flux [ph/SA/s]       :', aNGS_flux[starIndex])
-                print('    NGS coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    NGS coordinates [arcsec] : ',
+                      ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
                 print('    aliasing (per NGS)               [nm\u00b2]:',np.array(ar))
                 print('    wind-shake residual (per NGS)    [nm\u00b2]:',np.array(wr))
@@ -1849,8 +1869,10 @@ class MavisLO(object):
             bias, amu, avar = self.biasF[indices[starIndex]], self.amuF[indices[starIndex]], self.avarF[indices[starIndex]]            
             nr = self.nrF[indices[starIndex]] 
             if self.verbose:
-                print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
-                print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    NGS (focus sensor) flux [ph/SA/s]       :',
+                      aNGS_flux[starIndex])
+                print('    NGS (focus sensor) coordinates [arcsec] : ',
+                      ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
                 print('    turb. + noise residual (per NGS) [nm\u00b2]:',np.array(nr))
             Cnn[starIndex,starIndex] = nr
 
