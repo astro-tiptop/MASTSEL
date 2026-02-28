@@ -916,12 +916,14 @@ class MavisLO(object):
 
         g2d = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, 0, 0, asigma)
         g2d = g2d * 1 / np.sum(g2d)
-        I_k_data = g2d * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
+        # Encirceld Energy in two times the FWHM is used to scale the PSF model
+        I_k_data = g2d * aNGS_EE
         I_k_data = I_k_data * aNGS_flux/aNGS_freq
 
         g2d_prime = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, self.p_offset, 0, asigma)
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)
-        I_k_prime_data = g2d_prime * aNGS_EE # Encirceld Energy in double FWHM is used to scale the PSF model
+        # Encirceld Energy in two times the FWHM is used to scale the PSF model
+        I_k_prime_data = g2d_prime * aNGS_EE
         I_k_prime_data = I_k_prime_data * aNGS_flux/aNGS_freq
 
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
@@ -1117,8 +1119,9 @@ class MavisLO(object):
             e2 = psd_tip_turb.reshape((1,psd_tip_turb.shape[0]))
             e3 = psd_tilt_turb.reshape((1,psd_tilt_turb.shape[0]))
             e4 = g0g_coarse.reshape((g0g_coarse.shape[0], 1))
-            psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = xp.broadcast_arrays(e1, e2, e3, e4)
-            
+            psd_freq_ext, psd_tip_turb_ext, psd_tilt_turb_ext, g0g_ext = \
+                xp.broadcast_arrays(e1, e2, e3, e4)
+
             resultTip_coarse = xp.absolute((xp.sum(
                 self.fTipS_lambda1(g0g_ext, psd_freq_ext, psd_tip_turb_ext), axis=(1))))
             resultTilt_coarse = xp.absolute((xp.sum(
@@ -1217,7 +1220,7 @@ class MavisLO(object):
          - bias: bias on the measurements (in pixel)
          Here there is no need to force double precision.
         """
-        
+
         npoints = 10
         psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples), dtype=self.dtype)
@@ -1373,19 +1376,31 @@ class MavisLO(object):
 
         if self.LoopGain_LO == 'optimize' or self.LoopGain_LO == 'test':
             # control TF for optimize or test is a 2nd order system
-            self.fTipS1 = self.fTipS.subs({self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
-            self.fTiltS1 = self.fTiltS.subs({self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS1 = self.fTipS.subs(
+                {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
+            self.fTiltS1 = self.fTiltS.subs(
+                {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
+            self.fTipS_lambda1 = lambdifyByName(
+                self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+            self.fTiltS_lambda1 = lambdifyByName(
+                self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
         else:
             # control TF in the other cases is an integrator
-            self.fTipS1 = self.fTipS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
-            self.fTiltS1 = self.fTiltS_LO.subs({self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName( self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName( self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS1 = self.fTipS_LO.subs(
+                {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
+            self.fTiltS1 = self.fTiltS_LO.subs(
+                {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
+            self.fTipS_lambda1 = lambdifyByName(
+                self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+            self.fTiltS_lambda1 = lambdifyByName(
+                self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
 
         if self.platformlib==gpulib and gpuEnabled:
             xp = cp
+            if self.dtype == np.float32:
+                dtype = cp.float32
+            else:
+                dtype = cp.float64
             # force double precision for the PSD arrays to avoid numerical issues
             psd_freq = cp.asarray(psd_freq, dtype=cp.float64)
             psd_tip_wind = cp.asarray(psd_tip_wind, dtype=cp.float64)
@@ -1454,9 +1469,9 @@ class MavisLO(object):
                 xp.broadcast_arrays(e1, e2, e3, e4)
 
             resultTip = xp.absolute((xp.sum(self.fTipS_lambda1(
-                g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)))).astype(self.dtype)
+                g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)))).astype(dtype)
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(
-                g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)))).astype(self.dtype)
+                g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)))).astype(dtype)
 
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
@@ -1867,7 +1882,7 @@ class MavisLO(object):
             print('mavisLO.computeFocusTotalResidualMatrixI')
         for starIndex in range(nNaturalGS):
             bias, amu, avar = self.biasF[indices[starIndex]], self.amuF[indices[starIndex]], self.avarF[indices[starIndex]]            
-            nr = self.nrF[indices[starIndex]] 
+            nr = self.nrF[indices[starIndex]]
             if self.verbose:
                 print('    NGS (focus sensor) flux [ph/SA/s]       :',
                       aNGS_flux[starIndex])
@@ -1883,7 +1898,8 @@ class MavisLO(object):
 
         return CtotDiff
 
-    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq, aNGS_SR, aNGS_EE, aNGS_FWHM_mas, doAll=True):
+    def computeFocusTotalResidualMatrix(self, aCartNGSCoords, aNGS_flux, aNGS_freq,
+                                        aNGS_SR, aNGS_EE, aNGS_FWHM_mas, doAll=True):
         self.biasF = []
         self.amuF = []
         self.avarF = []
@@ -1937,9 +1953,12 @@ class MavisLO(object):
 
             Cnn[starIndex,starIndex] = nr
             if self.verbose:
-                print('    NGS (focus sensor) flux [ph/SA/s]       :', aNGS_flux[starIndex])
-                print('    NGS (focus sensor) coordinates [arcsec] : ', ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
-                print('    turb. + noi. r. (per NGS, focus) [nm\u00b2]:',np.array(nr))
+                print('    NGS (focus sensor) flux [ph/SA/s]       :',
+                      aNGS_flux[starIndex])
+                print('    NGS (focus sensor) coordinates [arcsec] : ',
+                      ("{:.1f}, "*len(aCartNGSCoords[starIndex])).format(*aCartNGSCoords[starIndex]))
+                print('    turb. + noi. r. (per NGS, focus) [nm\u00b2]:',
+                      np.array(nr))
 
         # reference error for LGS case
         HO_zen_field    = self.get_config_value('sources_HO','Zenith')
@@ -1949,7 +1968,9 @@ class MavisLO(object):
         # LGS Rec. Mat.
         RL = np.array(np.repeat(1, aCartLGSCoords.shape[0]))*1/self.dtype(aCartLGSCoords.shape[0])
         RLT = RL.transpose()
-        CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)), np.asarray(aCartLGSCoords), xp=np)
+        CaaL, CasL, CssL = self.computeFocusCovMatrices(np.asarray((0,0)),
+                                                        np.asarray(aCartLGSCoords),
+                                                        xp=np)
         # tomography error for a on-axis star for LGS WFSs
         self.CtotL = CaaL + np.dot(RL, np.dot(CssL, RLT)) - np.dot(CasL, RLT) - np.dot(RL, CasL.transpose())
 
@@ -1960,8 +1981,9 @@ class MavisLO(object):
             CtotDiff = C2 + C3 - self.CtotL
 
             if self.verbose:
-                print('    focus residual (tomo., tur.+noi., LGS) [nm]:', "%.2f" % np.sqrt(CtotDiff),
-                    '(', "%.2f" % np.sqrt(C2), ',', "%.2f" % np.sqrt(C3), ',', "%.2f" % np.sqrt(self.CtotL),')')
+                print('    focus residual (tomo., tur.+noi., LGS) [nm]:',
+                      "%.2f" % np.sqrt(CtotDiff), '(', "%.2f" % np.sqrt(C2),
+                      ',', "%.2f" % np.sqrt(C3), ',', "%.2f" % np.sqrt(self.CtotL),')')
 
             return CtotDiff
         else:
