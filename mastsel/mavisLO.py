@@ -1050,6 +1050,16 @@ class MavisLO(object):
 
 
     def computeNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
+        """
+        Compute the residual noise due to turbulence on TT after correction by the AO loop,
+        for a given noise level (varX) and bias.
+         - fmin: minimum frequency to consider for the PSD (in Hz)
+         - fmax: maximum frequency to consider for the PSD (in Hz)
+         - freq_samples: number of frequency samples to compute the PSD
+         - varX: variance of the noise on the measurements (in pixel^2)
+         - bias: bias on the measurements (in pixel)
+         Here there is no need to force double precision.
+        """
         npoints = 10
         psd_tip_turb, psd_tilt_turb = self.computeTurbPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples), dtype=self.dtype)
@@ -1197,6 +1207,17 @@ class MavisLO(object):
 
 
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
+        """
+        Compute the residual noise due to turbulence on Focus after correction by the AO loop,
+        for a given noise level (varX) and bias.
+         - fmin: minimum frequency to consider for the PSD (in Hz)
+         - fmax: maximum frequency to consider for the PSD (in Hz)
+         - freq_samples: number of frequency samples to compute the PSD
+         - varX: variance of the noise on the measurements (in pixel^2)
+         - bias: bias on the measurements (in pixel)
+         Here there is no need to force double precision.
+        """
+        
         npoints = 10
         psd_focus_turb, psd_focus_sodium = self.computeFocusPSDs(fmin, fmax, freq_samples)
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples), dtype=self.dtype)
@@ -1303,6 +1324,16 @@ class MavisLO(object):
 
 
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias):
+        """
+        Compute the residual noise due to wind shake after correction by the AO loop,
+        for a given noise level (var1x) and bias.
+         - psd_freq: frequencies at which the PSDs are sampled
+         - psd_tip_wind0: tip wind shake PSD before correction by the AO loop
+         - psd_tilt_wind0: tilt wind shake PSD before correction by the AO loop
+         - var1x: variance of the noise on the measurements (in pixel^2)
+         - bias: bias on the measurements (in pixel)
+         Computations are forced to be done in double precision to avoid numerical issues.
+        """
         npoints = 10
         df = psd_freq[1]-psd_freq[0]
         Df = psd_freq[-1]-psd_freq[0]
@@ -1366,8 +1397,8 @@ class MavisLO(object):
             # Step 1: Initial coarse search
             g0 = (0.000001,0.00001,0.0001,0.001)
             maxG = maxStableGain(self.loopDelaySteps_LO)*0.8
-            g0g_coarse = xp.concatenate((xp.asarray(g0, dtype=np.float64),
-                                         xp.linspace(0.01, maxG, npoints, dtype=np.float64)))
+            g0g_coarse = xp.concatenate((xp.asarray(g0, dtype=xp.float64),
+                                         xp.linspace(0.01, maxG, npoints, dtype=xp.float64)))
 
             e1 = psd_freq.reshape((1,psd_freq.shape[0]))
             e2 = psd_tip_wind.reshape((1,psd_tip_wind.shape[0]))
@@ -1406,11 +1437,11 @@ class MavisLO(object):
                 g0g_ext_tilt, psd_tilt_freq_ext, psd_tilt_wind_ext), axis=(1))))
         else:
             if self.LoopGain_LO == 'test':
-                g0g = xp.asarray( xp.linspace(0.0001, 0.98, 99), dtype=np.float64)
+                g0g = xp.asarray( xp.linspace(0.0001, 0.98, 99), dtype=xp.float64)
             else:
                 # if gain is set no optimization is done and bias is not compensated
                 g0 = (bias*self.LoopGain_LO,bias*self.LoopGain_LO)
-                g0g = xp.asarray(g0)
+                g0g = xp.asarray(g0, dtype=xp.float64)
 
             g0g_tip = g0g
             g0g_tilt = g0g
@@ -1423,9 +1454,9 @@ class MavisLO(object):
                 xp.broadcast_arrays(e1, e2, e3, e4)
 
             resultTip = xp.absolute((xp.sum(self.fTipS_lambda1(
-                g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)) ) )
+                g0g_ext, psd_freq_ext, psd_tip_wind_ext), axis=(1)))).astype(self.dtype)
             resultTilt = xp.absolute((xp.sum(self.fTiltS_lambda1(
-                g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)) ) )
+                g0g_ext, psd_freq_ext, psd_tilt_wind_ext), axis=(1)))).astype(self.dtype)
 
         minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
         minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
