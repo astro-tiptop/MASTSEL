@@ -391,6 +391,10 @@ def shortExposurePsf(mask, phaseScreen):
 
 def longExposurePsf(mask, psd, otf_tel = None):
     xp = mask.xp
+    if defaultArrayDtype == defaultArrayBackend.float32:
+        dtype = xp.float32
+    else:
+        dtype = xp.float64
     if (mask.N != psd.N):
         print('Mask and PSD sampling not compatible (grids sizes in pixels are different!)')
         print('mask grid size: ', mask.N)
@@ -417,8 +421,8 @@ def longExposurePsf(mask, psd, otf_tel = None):
     psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2)
 
     # step 1 : compute phase autocorrelation
-    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) \
-          * defaultArrayDtype((psd.kk * freq_range) ** 2)
+    coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
+    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) * coeff
     b0 = B_phi[0, 0]
     B_phi = xp.fft.fftshift(B_phi)
 
@@ -485,6 +489,12 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                    dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
                    skip_reshape=False):
 
+
+    if defaultArrayDtype == defaultArrayBackend.float32:
+        dtype = np.float32
+    else:
+        dtype = np.float64
+
     i_complex = defaultArrayCDtype(1j)
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
@@ -492,7 +502,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
     oversampling = np.atleast_1d(oversampling)
     if len(oversampling) == 1:
         oversampling = np.full_like(wavelength, oversampling[0],
-                                    dtype=defaultArrayDtype)
+                                    dtype=dtype)
 
     psfLongExpArr = []
 
@@ -524,7 +534,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             otf_tel = None
         else:
             maskOtf = Field(wvl, nPad, grid_diameter)
-            phaseStat = defaultArrayDtype(2 * np.pi * 1e-9 / wvl) * opdMap
+            coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
+            phaseStat = coeff * opdMap
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             if mask is None or not isinstance(mask, list):
