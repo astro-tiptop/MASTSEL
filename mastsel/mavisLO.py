@@ -1626,8 +1626,8 @@ class MavisLO(object):
                         matCasValue[ii-4+pind][_idx0[jj]] += \
                             h_weight*outputArray1[pind:nstars*points:points, hidx]
                         if pind==0:
-                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] +=  \
-                                xp.reshape( h_weight*outputArray1[nstars*points:, hidx],
+                            matCssValue[ xp.ix_(_idx0[ii], _idx0[jj]) ] += \
+                                xp.reshape(h_weight*outputArray1[nstars*points:, hidx],
                                            (nstars,nstars))
 
         return scaleF*matCaaValue, scaleF*matCasValue, scaleF*matCssValue
@@ -1721,7 +1721,7 @@ class MavisLO(object):
         if self.verbose:
             print('mavisLO.computeTotalResidualMatrix')
         for starIndex in range(nNaturalGS):
-            bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]      
+            bias, amu, avar = self.bias[indices[starIndex]], self.amu[indices[starIndex]], self.avar[indices[starIndex]]
             nr = self.nr[indices[starIndex]]
             ar = self.ar[indices[starIndex]]
             if self.verbose:
