@@ -79,7 +79,7 @@ if not gpuEnabled:
             # first interpolation - for ndims = any
             mint = scipy.interpolate.interp1d(
                 olddims[-1], a, kind=method, fill_value="extrapolate")
-            newa = mint(dimlist[-1])
+            newa = mint(dimlist[-1]).astype(a.dtype)
 
             trorder = [ndims - 1] + list(range(ndims - 1))
             for i in range(ndims - 2, -1, -1):
@@ -87,7 +87,7 @@ if not gpuEnabled:
 
                 mint = scipy.interpolate.interp1d(
                     olddims[i], newa, kind=method, fill_value="extrapolate")
-                newa = mint(dimlist[i])
+                newa = mint(dimlist[i]).astype(a.dtype)
 
             if ndims > 1:
                 # need one more transpose to return to original dimensions
