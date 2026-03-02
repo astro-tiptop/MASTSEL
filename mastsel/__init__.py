@@ -16,7 +16,7 @@ if systemDisable=='FALSE':
 else:
     print("env variable MASTSEL_DISABLE_GPU prevents using the GPU.")
     cp = np
-    
+
 from mastsel.mavisPsf import *  # noqa
 from mastsel.mavisLO import *  # noqa
 from mastsel.mavisFormulas import *  # noqa
