@@ -314,8 +314,8 @@ class MavisLO(object):
         self.integralDiscretization1 = defaultIntegralDiscretization1
         self.integralDiscretization2 = defaultIntegralDiscretization2
 
-        # default is single precision
-        self.precision = 'single'
+        # default is double precision
+        self.precision = 'double'
 
         if self.check_section_key('COMPUTATION'):
             if self.check_config_key('COMPUTATION','platform'):

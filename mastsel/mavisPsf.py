@@ -12,8 +12,9 @@ from mastsel.mavisFormulas import *
 
 fit_window_max_size = 512
 defaultArrayBackend = cp
-defaultArrayDtype = defaultArrayBackend.float32
-defaultArrayCDtype = defaultArrayBackend.complex64
+# default is double precision
+defaultArrayDtype = defaultArrayBackend.float64
+defaultArrayCDtype = defaultArrayBackend.complex128
 
 def mastselPsfPrecision(precision=None, dtype=None):
     global defaultArrayDtype, defaultArrayCDtype
