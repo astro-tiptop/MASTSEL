@@ -12,6 +12,27 @@ from mastsel.mavisFormulas import *
 
 fit_window_max_size = 512
 defaultArrayBackend = cp
+# default is double precision
+defaultArrayDtype = defaultArrayBackend.float64
+defaultArrayCDtype = defaultArrayBackend.complex128
+
+def mastselPsfPrecision(precision=None, dtype=None):
+    global defaultArrayDtype, defaultArrayCDtype
+    if precision == 'single':
+        defaultArrayDtype = defaultArrayBackend.float32
+        defaultArrayCDtype = defaultArrayBackend.complex64
+    elif precision == 'double':
+        defaultArrayDtype = defaultArrayBackend.float64
+        defaultArrayCDtype = defaultArrayBackend.complex128
+    elif dtype is not None:
+        if dtype==cp.float32 or dtype==np.float32:
+            defaultArrayDtype = defaultArrayBackend.float32
+            defaultArrayCDtype = defaultArrayBackend.complex64
+        else:
+            defaultArrayDtype = defaultArrayBackend.float64
+            defaultArrayCDtype = defaultArrayBackend.complex128
+    else:
+        raise ValueError("Precision must be either 'single' or 'double'.")
 
 def hostData(_data):
     if defaultArrayBackend == cp and gpuEnabled:
@@ -78,7 +99,7 @@ class Field(object):
             width,
             unit='m',
             xp=defaultArrayBackend,
-            _dtype=defaultArrayBackend.float64):
+            _dtype=defaultArrayDtype):
         self.xp = xp
         self.sampling = self.xp.zeros((N, N), dtype=_dtype)
         self.__N = N
@@ -143,10 +164,13 @@ class Field(object):
         x_stddev= sigma_X / self.pixel_size
         y_stddev= sigma_Y / self.pixel_size
         theta = angle
-        a = self.xp.cos(theta)*self.xp.cos(theta)/(2*x_stddev*x_stddev) + self.xp.sin(theta)*self.xp.sin(theta)/(2*y_stddev*y_stddev)
+        a = self.xp.cos(theta)*self.xp.cos(theta)/(2*x_stddev*x_stddev) \
+          + self.xp.sin(theta)*self.xp.sin(theta)/(2*y_stddev*y_stddev)
         b = self.xp.sin(2*theta)/(2*x_stddev*x_stddev) - self.xp.sin(2*theta)/(2*y_stddev*y_stddev)
-        c = self.xp.sin(theta)*self.xp.sin(theta)/(2*x_stddev*x_stddev) + self.xp.cos(theta)*self.xp.cos(theta)/(2*y_stddev*y_stddev)
-        return A * self.xp.exp( -a*(x-x0)*(x-x0)-b*(x-x0)*(y-y0)-c*(y-y0)*(y-y0) )
+        c = self.xp.sin(theta)*self.xp.sin(theta)/(2*x_stddev*x_stddev) \
+          + self.xp.cos(theta)*self.xp.cos(theta)/(2*y_stddev*y_stddev)
+        return A * self.xp.exp(-a*(x-x0)*(x-x0)-b*(x-x0)*(y-y0)-c*(y-y0)*(y-y0)
+                               ).astype(self.sampling.dtype)
 
     def loadSamplingFromFile(self, filename):
         hdul = fits.open(filename)
@@ -188,21 +212,15 @@ class Field(object):
         #        rand_pahse = xp.random.random_sample( (N,N), dtype=xp.float64 )
         #        complexField = xp.exp( rand_pahse*1j*xp.pi*2.0 ) * xp.sqrt(xp.abs(self.sampling))
         #        realField = xp.real()
+        i_complex = defaultArrayCDtype(1j)
         N = self.N
         freq_range = self.width
         cn = (
-            (self.xp.random.normal(
-                size=(
-                    N,
-                    N)) +
-                1j *
-                self.xp.random.normal(
-                size=(
-                    N,
-                    N))) *
-            self.xp.sqrt(
-                self.sampling) *
-            self.pixel_size)
+            (self.xp.random.normal(size=(N, N)).astype(defaultArrayDtype) +
+            i_complex *
+            self.xp.random.normal(size=(N, N)).astype(defaultArrayDtype)) *
+            self.xp.sqrt(self.sampling) *
+            self.pixel_size)        
         self.sampling = ft_ift2(cn, self.xp).real
         self.width = 1.0 / (freq_range / N)
 
@@ -304,7 +322,7 @@ class Field(object):
         if zoom > 1:
             img1 = centralSquare(img1, int(self.N / zoom / 2), self.xp)
 
-        img2 = self.hostData(img1)       
+        img2 = self.hostData(img1)
         standardPsfPlot(img2)
 
     def printStatus(self):
@@ -374,6 +392,10 @@ def shortExposurePsf(mask, phaseScreen):
 
 def longExposurePsf(mask, psd, otf_tel = None):
     xp = mask.xp
+    if defaultArrayDtype == defaultArrayBackend.float32:
+        dtype = xp.float32
+    else:
+        dtype = xp.float64
     if (mask.N != psd.N):
         print('Mask and PSD sampling not compatible (grids sizes in pixels are different!)')
         print('mask grid size: ', mask.N)
@@ -400,7 +422,8 @@ def longExposurePsf(mask, psd, otf_tel = None):
     psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2)
 
     # step 1 : compute phase autocorrelation
-    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) * (psd.kk * freq_range) ** 2
+    coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
+    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) * coeff
     b0 = B_phi[0, 0]
     B_phi = xp.fft.fftshift(B_phi)
 
@@ -409,7 +432,7 @@ def longExposurePsf(mask, psd, otf_tel = None):
     D_phi = 2.0 * b0 - (B_phi + B_phi.conj())
 
     # step 3 : compute turbolence otf
-    otf_turb = xp.exp(-0.5 * (D_phi))
+    otf_turb = xp.exp(-0.5 * D_phi)
     # p_otft_turb = pitch
     otf_turb = congrid(otf_turb, [otf_turb.shape[0]//2, otf_turb.shape[0]//2])
 
@@ -467,12 +490,20 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                    dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
                    skip_reshape=False):
 
+
+    if defaultArrayDtype == defaultArrayBackend.float32:
+        dtype = np.float32
+    else:
+        dtype = np.float64
+
+    i_complex = defaultArrayCDtype(1j)
     wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
     multi_wave = len(wavelength) > 1
 
     oversampling = np.atleast_1d(oversampling)
     if len(oversampling) == 1:
-        oversampling = np.full_like(wavelength, oversampling[0], dtype=float)
+        oversampling = np.full_like(wavelength, oversampling[0],
+                                    dtype=dtype)
 
     psfLongExpArr = []
 
@@ -504,11 +535,12 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             otf_tel = None
         else:
             maskOtf = Field(wvl, nPad, grid_diameter)
-            phaseStat = (2 * np.pi * 1e-9 / wvl) * opdMap
+            coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
+            phaseStat = coeff * opdMap
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             if mask is None or not isinstance(mask, list):
-                maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
+                maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                 maskOtf.pupilToOtf()
                 maskOtf.sampling /= maskOtf.sampling.max()
                 otf_tel = maskOtf.sampling
@@ -520,7 +552,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
                 maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
                 if opdMap is not None:
-                    maskOtf.sampling = maskField.sampling * xp.exp(1j * phaseStat)
+                    maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                     maskOtf.pupilToOtf()
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
