@@ -181,6 +181,29 @@ class TestBiasAndVariance(TestMavisLO):
         self.assertTrue( np.testing.assert_array_less(result, 1e-3)==None)
 
 
+class TestPsfExtrapolation(unittest.TestCase):
+    def test_round_exponent_to_thirds(self):
+        r = np.arange(1.0, 31.0, dtype=np.float64)
+        true_exponent = -3.27
+        psf = 2.5 * r**true_exponent
+
+        _, _, exponent_raw, _ = extrapolate_psf_profile(
+            r, psf, r_max=40, power_fit=True, verbose=False
+        )
+        _, _, exponent_rounded, _ = extrapolate_psf_profile(
+            r,
+            psf,
+            r_max=40,
+            power_fit=True,
+            verbose=False,
+            round_exponent_to_thirds=True,
+        )
+
+        expected = np.round(exponent_raw * 3) / 3
+        self.assertAlmostEqual(exponent_raw, true_exponent, places=2)
+        self.assertAlmostEqual(exponent_rounded, expected)
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(TestReconstructor('test_reconstructor'))
@@ -188,6 +211,7 @@ def suite():
     suite.addTest(TestNoiseResiduals('test_noise_residuals'))
     suite.addTest(TestWindResiduals('test_wind_residuals'))
     suite.addTest(TestBiasAndVariance('test_bias_and_variance'))
+    suite.addTest(TestPsfExtrapolation('test_round_exponent_to_thirds'))
     return suite
 
 

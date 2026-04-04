@@ -676,9 +676,12 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
         if verbose:
             print(f'Fit R²: {r_squared:.4f}')
     else:
-        if verbose:
-            print('Warning: not enough points for fitting, using -10/3')
         exponent = -10/3
+        if verbose:
+            if power_fit:
+                print('Warning: not enough points for fitting, using -10/3')
+            else:
+                print('Using default power-law exponent: -10/3')
         normalization = psf_fit_pos[-1] / (r_fit_pos[-1]**exponent) if len(r_fit_pos) > 0 else 1.0
 
     return exponent, normalization, r_fit_pos, psf_fit_pos
@@ -686,7 +689,8 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
 
 def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=None,
                             power_law_normalization=None, smooth_transition=True,
-                            power_fit=False, verbose=True, xp=np):
+                            power_fit=False, verbose=True, xp=np,
+                            round_exponent_to_thirds=False):
     """
     Extrapolate the PSF profile up to r_max using a power-law.
     
@@ -710,6 +714,9 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
         If True, print extrapolation information
     xp : module
         Array backend (numpy or cupy)
+    round_exponent_to_thirds : bool
+        If True and ``power_law_exponent`` is None, round the estimated exponent
+        to the nearest multiple of 1/3 and recompute the normalization accordingly.
     
     Returns:
     --------
@@ -730,13 +737,26 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
 
     # Estimate exponent and normalization if not provided
     if power_law_exponent is None or power_law_normalization is None:
-        exponent, normalization, _, _ = estimate_power_law_exponent(
+        exponent, normalization, r_fit_pos, psf_fit_pos = estimate_power_law_exponent(
             r_input, psf_input, power_fit=power_fit, verbose=verbose, xp=xp
         )
         if power_law_exponent is None:
             power_law_exponent = exponent
+            if round_exponent_to_thirds:
+                rounded_exponent = np.round(float(power_law_exponent) * 3) / 3
+                if verbose:
+                    print(
+                        'Rounded estimated power-law exponent to nearest 1/3: '
+                        f'{float(power_law_exponent):.3f} -> {rounded_exponent:.3f}'
+                    )
+                power_law_exponent = rounded_exponent
         if power_law_normalization is None:
-            power_law_normalization = normalization
+            if round_exponent_to_thirds and power_law_exponent is not None and len(r_fit_pos) > 0:
+                power_law_normalization = xp.median(
+                    psf_fit_pos / (r_fit_pos**power_law_exponent)
+                )
+            else:
+                power_law_normalization = normalization
 
     # Generate new extrapolated points
     r_extrapolated = xp.arange(float(r_input[-1] + r_step), float(r_max + r_step), float(r_step))
