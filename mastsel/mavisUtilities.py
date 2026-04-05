@@ -55,7 +55,7 @@ if not gpuEnabled:
                   "This routine currently only support "
                   "rebinning to the same number of dimensions.")
             return None
-        newdims = np.asarray(newdims, dtype=a.dtype)
+        newdims = np.asarray(newdims, dtype=int)
         dimlist = []
 
         if method == 'neighbour':
@@ -98,9 +98,9 @@ if not gpuEnabled:
             oslices = [slice(0, j) for j in old]
             oldcoords = np.ogrid[oslices]
             nslices = [slice(0, j) for j in list(newdims)]
-            newcoords = np.mgrid[nslices]
+            newcoords = np.mgrid[nslices].astype(float)
 
-            newcoords_dims = range(np.rank(newcoords))
+            newcoords_dims = list(range(newcoords.ndim))
             # make first index last
             newcoords_dims.append(newcoords_dims.pop(0))
             newcoords_tr = newcoords.transpose(newcoords_dims)

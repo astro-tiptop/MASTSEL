@@ -25,7 +25,7 @@ def mastselPsfPrecision(precision=None, dtype=None):
         defaultArrayDtype = defaultArrayBackend.float64
         defaultArrayCDtype = defaultArrayBackend.complex128
     elif dtype is not None:
-        if dtype==cp.float32 or dtype==np.float32:
+        if np.dtype(dtype) == np.dtype(np.float32):
             defaultArrayDtype = defaultArrayBackend.float32
             defaultArrayCDtype = defaultArrayBackend.complex64
         else:
@@ -54,10 +54,10 @@ def ft_ft2(G, xp=defaultArrayBackend):
 def FFTConvolve(in1, in2, xp=defaultArrayBackend):
     if in1.ndim == in2.ndim == 0:  # scalar inputs
         return in1 * in2
-    elif not in1.ndim == in2.ndim:
+    elif in1.ndim != in2.ndim:
         raise ValueError("Dimensions do not match.")
     elif in1.size == 0 or in2.size == 0:  # empty arrays
-        return array([])
+        return xp.asarray([], dtype=np.result_type(in1, in2))
     rr = ft_ift2(ft_ft2(in1, xp) * ft_ft2(in2, xp), xp)
     return rr
 
@@ -65,10 +65,10 @@ def FFTConvolve(in1, in2, xp=defaultArrayBackend):
 def KernelConvolve(in1, kernel, xp=defaultArrayBackend):
     if in1.ndim == kernel.ndim == 0:  # scalar inputs
         return in1 * kernel
-    elif not in1.ndim == kernel.ndim:
+    elif in1.ndim != kernel.ndim:
         raise ValueError("Dimensions do not match.")
     elif in1.size == 0 or kernel.size == 0:  # empty arrays
-        return array([])
+        return xp.asarray([], dtype=np.result_type(in1, kernel))
     rr = ft_ift2(ft_ft2(in1, xp) * kernel, xp)
     return rr
 
@@ -86,9 +86,9 @@ def zeroPad(input_grid, n, xp=defaultArrayBackend):
 
 def centralSquare(input_grid, n, xp=defaultArrayBackend):
     N = input_grid.shape[0]
-    output_grid = xp.zeros((n, n), dtype=input_grid.dtype)
-    output_grid = input_grid[int(N/2-n/2):int(N/2+n/2), int(N/2-n/2):int(N/2+n/2)]
-    return output_grid
+    start = int(N / 2 - n / 2)
+    stop = start + int(n)
+    return input_grid[start:stop, start:stop]
 
 
 class Field(object):

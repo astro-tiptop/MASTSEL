@@ -1,5 +1,13 @@
+import ast
+import functools
+import multiprocessing as mp
+import os
+import warnings
+from configparser import ConfigParser
+
 import numpy as np
-from functools import lru_cache
+import yaml
+from sympy.physics.control.lti import TransferFunction
 
 from . import gpuEnabled
 
@@ -12,31 +20,30 @@ from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
 from mastsel.mavisFormulas import _mavisFormulas
 
-from sympy.physics.control.lti import TransferFunction
-import functools
-import multiprocessing as mp
-from configparser import ConfigParser
-import yaml
-import os
-import warnings
+try:
+    from IPython.display import display
+except ImportError:
+    def display(obj):
+        print(obj)
 
-def method_lru_cache(maxsize=None,verbose=False):
-    """Decorator that works like lru_cache but ignores the self parameter."""
+def method_lru_cache(maxsize=None, verbose=False):
+    """Decorator that works like `lru_cache` but ignores the `self` parameter."""
+    _ = maxsize  # kept for API compatibility with functools.lru_cache
+
     def decorator(func):
         cache = {}
 
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
-            # Create a key based only on the arguments (not on self)
-            key = (args, tuple(sorted(kwargs.items())))
+            cache_key = (args, tuple(sorted(kwargs.items())))
 
-            if key in cache:
+            if cache_key in cache:
                 if verbose:
-                    print(f"Cache hit!")
-                return cache[key]
+                    print("Cache hit!")
+                return cache[cache_key]
 
             result = func(self, *args, **kwargs)
-            cache[key] = result
+            cache[cache_key] = result
             return result
 
         wrapper.cache_clear = cache.clear
@@ -45,12 +52,64 @@ def method_lru_cache(maxsize=None,verbose=False):
 
     return decorator
 
+
+def _evaluate_config_ast(node):
+    """Safely evaluate simple arithmetic and container literals from config files."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.List):
+        return [_evaluate_config_ast(elt) for elt in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_evaluate_config_ast(elt) for elt in node.elts)
+    if isinstance(node, ast.Dict):
+        return {
+            _evaluate_config_ast(key): _evaluate_config_ast(value)
+            for key, value in zip(node.keys, node.values)
+        }
+    if isinstance(node, ast.Name) and node.id in {"None", "True", "False"}:
+        return {"None": None, "True": True, "False": False}[node.id]
+    if isinstance(node, ast.UnaryOp):
+        operand = _evaluate_config_ast(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            return +operand
+        if isinstance(node.op, ast.USub):
+            return -operand
+    if isinstance(node, ast.BinOp):
+        left = _evaluate_config_ast(node.left)
+        right = _evaluate_config_ast(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            return left / right
+        if isinstance(node.op, ast.Pow):
+            return left ** right
+    raise ValueError(f"Unsupported config expression: {ast.dump(node)}")
+
+
+def parse_config_value(raw_value):
+    """Parse INI values while supporting simple numeric expressions like `1650*1e-9`."""
+    if not isinstance(raw_value, str):
+        return raw_value
+
+    stripped_value = raw_value.strip()
+    if stripped_value == '':
+        return ''
+
+    try:
+        return ast.literal_eval(stripped_value)
+    except (ValueError, SyntaxError):
+        return _evaluate_config_ast(ast.parse(stripped_value, mode='eval').body)
+
 def cpuArray(v):
-    if isinstance(v,np.ndarray) or isinstance(v,np.float64) \
-      or isinstance(v,np.float32) or isinstance(v, float):
+    if np.isscalar(v) or isinstance(v, (np.ndarray, list, tuple)):
         return v
-    else:
+    if hasattr(v, 'get'):
         return v.get()
+    return v
 
 def maxStableGain(delay):
     d = np.array([0, 1, 2, 3, 4, 10])
@@ -62,38 +121,38 @@ def maxStableGain(delay):
     return maxG
 
 def detect_tiptop_path():
-    """Auto-detect TIPTOP project root path"""
+    """Auto-detect the TIPTOP project root path."""
     from pathlib import Path
-    # --- Method 1: Standard package inspection (preferred, fast, and reliable) ---
+
     try:
         import tiptop
-        # The project root is assumed to be the parent of the 'tiptop' package directory.
-        # e.g., from /path/to/project/tiptop/__init__.py -> get /path/to/project
+
         project_root = Path(tiptop.__file__).resolve().parent.parent
         return str(project_root)
-
     except ImportError:
-        import inspect
-        # --- Method 2: Fallback via call stack inspection ---
-        # This is useful when running from a source checkout without installation.
+        import inspect as inspect_module
+
         try:
-            for frame_info in inspect.stack(context=0):
+            for frame_info in inspect_module.stack(context=0):
                 p = Path(frame_info.filename).resolve()
                 for parent in (p, *p.parents):
                     if parent.name == 'tiptop':
-                        return str(parent.parent)   # Repository root = parent of the "tiptop" directory
-        except Exception:
+                        return str(parent.parent)
+        except (AttributeError, OSError, RuntimeError):
             pass
     return None
 
+
 def detect_p3_path():
-    """Auto-detect P3 project root path"""
+    """Auto-detect the P3 project root path."""
     from pathlib import Path
+
     try:
         import p3
+
         project_root = Path(p3.__file__).resolve().parent
         return str(project_root)
-    except Exception:
+    except (ImportError, AttributeError, OSError):
         return None
 
 PATH_TIPTOP = detect_tiptop_path()
@@ -101,8 +160,8 @@ PATH_P3 = detect_p3_path()
 
 def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
     """
-    Resolve configuration file paths for both P3 and TIPTOP
-    - path_root has priority if it is not empty.
+    Resolve configuration file paths for both P3 and TIPTOP.
+    - path_root has priority if it contains the requested file.
     - aoSystem/... => resolved under path_p3
     - tiptop/...   => resolved under path_tiptop (if available)
     - otherwise: returns as is (absolute or current relative)
@@ -110,22 +169,27 @@ def resolve_config_path(path_value, path_root, path_p3, path_tiptop=None):
     if not path_value or path_value == '':
         return ''
 
-    # Explicit path_root has priority
     if path_root:
-        return os.path.join(path_root, path_value)
+        candidate = os.path.join(path_root, path_value)
+        if os.path.isfile(candidate):
+            return candidate
 
-    # Clean path for consistent checking (remove leading slash)
     clean_path = path_value.lstrip('/')
 
-    # P3 relative paths
     if path_p3 and clean_path.startswith('aoSystem'):
         return os.path.join(path_p3, clean_path)
 
-    # TIPTOP relative paths
     if path_tiptop and clean_path.startswith('tiptop'):
         return os.path.join(path_tiptop, clean_path)
 
-    # Default: use as-is (could be absolute or relative to current dir)
+    if os.path.isfile(path_value):
+        return path_value
+
+    if path_value.startswith('/') and clean_path != path_value and path_p3:
+        candidate = os.path.join(path_p3, clean_path)
+        if os.path.isfile(candidate):
+            return candidate
+
     return path_value
 
 class MavisLO(object):
@@ -147,9 +211,10 @@ class MavisLO(object):
 
     def get_config_value(self, primary, secondary):
         if self.configType == 'ini':
-            return eval(self.config[primary][secondary])
-        elif self.configType == 'yml':
+            return parse_config_value(self.config[primary][secondary])
+        if self.configType == 'yml':
             return self.my_yaml_dict[primary][secondary]
+        raise ValueError(f"Unsupported config type: {self.configType}")
 
     def __init__(self, path, parametersFile, verbose=False):
 
@@ -165,7 +230,7 @@ class MavisLO(object):
         self.error = False
         if os.path.exists(filename_yml):
             self.configType = 'yml'
-            with open(filename_yml) as f:
+            with open(filename_yml, encoding='utf-8') as f:
                 self.my_yaml_dict = yaml.safe_load(f)
         elif os.path.exists(filename_ini):
             self.configType = 'ini'
@@ -357,7 +422,7 @@ class MavisLO(object):
                     testWindspeedIsValid = True
                 else:
                     testWindspeedIsValid = False
-            except:
+            except (TypeError, ValueError):
                 testWindspeedIsValid = False
 
         if self.check_config_key('atmosphere','WindSpeed') and self.check_config_key('atmosphere','testWindspeed'):
@@ -507,12 +572,12 @@ class MavisLO(object):
             print('    apIM')
             try:
                 display(apIM)
-            except:
+            except Exception:
                 print('    no apIM')
             print('    apIM_func')
             try:
                 display(apIM_func)
-            except:
+            except Exception:
                 print('    no apIM_func')
         return apIM, apIM_func
 
@@ -534,17 +599,17 @@ class MavisLO(object):
             print('    expr0')
             try:
                 display(expr0)
-            except:
+            except Exception:
                 print('    no expr0')
             print('    exprK')
             try:
                 display(exprK)
-            except:
+            except Exception:
                 print('    no exprK')
             print('    integral')
             try:
                 display(integral)
-            except:
+            except Exception:
                 print('    no integral')
         aFunction = exprK * integral.function
         return aFunction, expr0
@@ -563,7 +628,7 @@ class MavisLO(object):
             print('    expr0')
             try:
                 display(expr0)
-            except:
+            except Exception:
                 print('    no expr0')
         return expr0
 
@@ -588,12 +653,12 @@ class MavisLO(object):
             print('    aTurbPSDTip')
             try:
                 display(aTurbPSDTip)
-            except:
+            except Exception:
                 print('    no aTurbPSDTip')
             print('    aTurbPSDTilt')
             try:
                 display(aTurbPSDTilt)
-            except:
+            except Exception:
                 print('    no aTurbPSDTilt')
         return aTurbPSDTip, aTurbPSDTilt
 
@@ -614,12 +679,12 @@ class MavisLO(object):
             print('    aTurbPSDFocus')
             try:
                 display(aTurbPSDFocus)
-            except:
+            except Exception:
                 print('    no aTurbPSDFocus')
             print('    aSodiumPSDFocus')
             try:
                 display(aSodiumPSDFocus)
-            except:
+            except Exception:
                 print('    no aSodiumPSDFocus')
         return aTurbPSDFocus, aSodiumPSDFocus
 
@@ -645,12 +710,12 @@ class MavisLO(object):
             print('    self.fTipS_LO1')
             try:
                 display(self.fTipS_LO1)
-            except:
+            except Exception:
                 print('    no self.fTipS_LO1')
             print('    self.fTiltS_LO1')
             try:
                 display(self.fTiltS_LO1)
-            except:
+            except Exception:
                 print('    no self.fTiltS_LO1')
         return self.fTipS_LO1, self.fTiltS_LO1
 
@@ -668,7 +733,7 @@ class MavisLO(object):
             print('    self.fFocusS_LO1')
             try:
                 display(self.fFocusS_LO1)
-            except:
+            except Exception:
                 print('    no self.fFocusS_LO1')
         return self.fFocusS_LO1
 
@@ -694,12 +759,12 @@ class MavisLO(object):
             print('    self.fTipS1')
             try:
                 display(self.fTipS1)
-            except:
+            except Exception:
                 print('    no self.fTipS1')
             print('    self.fTiltS1')
             try:
                 display(self.fTiltS1)
-            except:
+            except Exception:
                 print('    no self.fTiltS1')
         return self.fTipS1, self.fTiltS1
 
@@ -721,17 +786,17 @@ class MavisLO(object):
                 print('zernikeCov_rh1_filt')
                 try:
                     display(self.zernikeCov_rh1_filt)
-                except:
+                except Exception:
                     print('    no zernikeCov_rh1_filt')
             for ii in [2,3,4]:
                 for jj in [2,3,4]:
                     expr = self.zernikeCov_rh1_filt
                     jj_value = ii
-                    kk_value = jj                    
+                    kk_value = jj             
                     nj_value, mj_value = noll_to_zern(jj_value)
                     nk_value, mk_value = noll_to_zern(kk_value)
                     rexpr = expr.subs({self.MavisFormulas.symbol_map['j']: jj_value,
-                                       self.MavisFormulas.symbol_map['k']: kk_value, 
+                                       self.MavisFormulas.symbol_map['k']: kk_value,
                                        self.MavisFormulas.symbol_map['n_j']: nj_value,
                                        self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                        self.MavisFormulas.symbol_map['n_k']: nk_value,
@@ -755,23 +820,24 @@ class MavisLO(object):
                     nj_value, mj_value = noll_to_zern(jj_value)
                     nk_value, mk_value = noll_to_zern(kk_value)
                     rexpr = expr.subs({self.MavisFormulas.symbol_map['j']: jj_value,
-                                       self.MavisFormulas.symbol_map['k']: kk_value, 
+                                       self.MavisFormulas.symbol_map['k']: kk_value,
                                         self.MavisFormulas.symbol_map['n_j']: nj_value,
-                                        self.MavisFormulas.symbol_map['m_j']: abs(mj_value), 
+                                        self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                         self.MavisFormulas.symbol_map['n_k']: nk_value,
                                         self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
 
                     aa = rexpr.subs(paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
-                    aaint = aaint.subs({self.MavisFormulas.symbol_map['rho']: sp.Abs(p), self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
+                    aaint = aaint.subs({self.MavisFormulas.symbol_map['rho']: sp.Abs(p),
+                                        self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
                     cov_expr[ii+10*jj] = aaint
 
         return cov_expr
 
 
     def buildReconstuctor(self, aCartPointingCoords, aCartNGSCoords):
-        P, P_func = self.specializedIM()
+        _, P_func = self.specializedIM()
         pp1 = P_func(aCartNGSCoords[0,0]*arcsecsToRadians,
                      aCartNGSCoords[0,1]*arcsecsToRadians)
         pp2 = P_func(aCartNGSCoords[1,0]*arcsecsToRadians,
@@ -799,7 +865,7 @@ class MavisLO(object):
                 R_1[2*k:2*(k+1), :] = np.identity(2, dtype=self.dtype)
             return R_1, R_1.transpose()
 
-        P, P_func = self.specializedIM()
+        _, P_func = self.specializedIM()
         p_mat_list = []
         for ii in range(nstars):
             p_mat_list.append(P_func(aCartNGSCoords[ii,0]*arcsecsToRadians,
@@ -886,8 +952,8 @@ class MavisLO(object):
                                                       ron=sigmaRON,
                                                       bg=Background,
                                                       excess=ExcessNoiseFactor,
-                                                      thresh=self.ThresholdWCoG_LO,
-                                                      new_value=self.NewValueThrPix_LO,
+                                                      thresh=ThresholdWCoG,
+                                                      new_value=NewValueThrPix,
                                                       dtype=self.dtype)
 
         sigma_ktr_array = np.sqrt(var_ktr_array.astype(self.dtype))
@@ -918,13 +984,13 @@ class MavisLO(object):
         g2d = g2d * 1 / np.sum(g2d)
         # Encirceld Energy in two times the FWHM is used to scale the PSF model
         I_k_data = g2d * aNGS_EE
-        I_k_data = I_k_data * aNGS_flux/aNGS_freq
+        I_k_data = I_k_data * aNGS_frameflux
 
         g2d_prime = simple2Dgaussian( self.xLargeGrid, self.yLargeGrid, self.p_offset, 0, asigma)
         g2d_prime = g2d_prime * 1 / np.sum(g2d_prime)
         # Encirceld Energy in two times the FWHM is used to scale the PSF model
         I_k_prime_data = g2d_prime * aNGS_EE
-        I_k_prime_data = I_k_prime_data * aNGS_flux/aNGS_freq
+        I_k_prime_data = I_k_prime_data * aNGS_frameflux
 
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
         I_k_prime_data = intRebin(I_k_prime_data,self.mediumShape) * self.downsample_factor**2
@@ -944,14 +1010,14 @@ class MavisLO(object):
             W_Mask = W_Mask[ii1:ii2,ii1:ii2]
             fx = fx[ii1:ii2,ii1:ii2]
             fy = fy[ii1:ii2,ii1:ii2]
-        mu_ktr_array, var_ktr_array, sigma_ktr_array = \
+        mu_ktr_array, var_ktr_array, _ = \
                                self.meanVarSigma(I_k_data, doLO=doLO)
-        mu_ktr_prime_array, var_ktr_prime_array, sigma_ktr_prime_array = \
+        mu_ktr_prime_array, _, _ = \
                                self.meanVarSigma(I_k_prime_data, doLO=doLO)
         masked_mu0 = W_Mask * mu_ktr_array
         masked_mu = W_Mask * mu_ktr_prime_array
         masked_sigma = W_Mask**2 * var_ktr_array
-        # TODO is the normalization correct?
+        # NOTE: keep the historical normalization convention used by the MAVIS model.
         mux = np.sum(masked_mu*fx)/np.sum(masked_mu)
         muy = np.sum(masked_mu*fy)/np.sum(masked_mu)
         varx = np.sum(masked_sigma*fx**2)/(np.sum(masked_mu0)**2)
@@ -965,16 +1031,16 @@ class MavisLO(object):
     @method_lru_cache(maxsize=None)
     def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed,
                                   telescope_diameter, r0_value, l0):
+        _ = (wind_speed, telescope_diameter, r0_value, l0)
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = self.dtype((500 / 2.0 / np.pi) ** 2)  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
         psdIntegrationPoints = round(self.max_freq_turb/100*self.psdIntegrationPoints)
 
-        xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip,
-                                                [paramAndRange],
-                                                [(psdIntegrationPoints, 'geometric')],
-                                                'trap_scaled')
-        psd_freq = xplot1[0]
+        _, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTip,
+                                           [paramAndRange],
+                                           [(psdIntegrationPoints, 'geometric')],
+                                           'trap_scaled')
         psd_tip_turb = zplot1 * scaleFactor
 
         xplot1, zplot1 = self.mIt.IntegralEvalE(self.sTurbPSDTilt,
@@ -1001,6 +1067,7 @@ class MavisLO(object):
     @method_lru_cache(maxsize=None)
     def _compute_focus_psds_cached(self, fmin, fmax, freq_samples, wind_speed,
                                    telescope_diameter, r0_value, l0, zenith_angle):
+        _ = (wind_speed, telescope_diameter, r0_value, l0, zenith_angle)
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
@@ -1036,8 +1103,8 @@ class MavisLO(object):
     def checkStability(self,keys,values,TFeq):
         # substitute values in sympy expression
         dictTf = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO}
-        for key, value in zip(keys,values):
-            dictTf[key] = value
+        for param_key, param_value in zip(keys, values):
+            dictTf[param_key] = param_value
         zTFeq = TFeq.subs(dictTf)
         # compute numerator and denominator of the polynomials
         n,d = sp.fraction(sp.simplify(zTFeq))
@@ -1067,9 +1134,9 @@ class MavisLO(object):
         psd_freq = np.asarray(np.linspace(fmin, fmax, freq_samples), dtype=self.dtype)
 
         if self.plot4debug:
-            fig, ax1 = plt.subplots(1,1)
-            im = ax1.plot(psd_freq,psd_tip_turb)
-            im = ax1.plot(psd_freq,psd_tilt_turb)
+            _, ax1 = plt.subplots(1,1)
+            ax1.plot(psd_freq, psd_tip_turb)
+            ax1.plot(psd_freq, psd_tilt_turb)
             ax1.set_xscale('log')
             ax1.set_yscale('log')
             ax1.set_title('Turbulence PSD', color='black')
@@ -1094,11 +1161,11 @@ class MavisLO(object):
             print('computeNoiseResidual')
             try:
                 display(self.fTipS1)
-            except:
+            except Exception:
                 print('    no self.fTipS1')
             try:
                 display(self.fTiltS1)
-            except:
+            except Exception:
                 print('    no self.fTiltS1')
 
         if self.platformlib==gpulib and gpuEnabled:
@@ -1249,7 +1316,7 @@ class MavisLO(object):
             print('computeNoiseResidual')
             try:
                 display(self.fFocusS1)
-            except:
+            except Exception:
                 print('    no self.fFocusS1')
 
         if self.platformlib==gpulib and gpuEnabled:
@@ -2034,7 +2101,7 @@ class MavisLO(object):
 
 
 #        if not mono and nPointings>1:
-#            # while C2 and C3 do 
+#            # while C2 and C3 do
 #            inputs = aCartPointingCoords.tolist()
 #            pool_size = int( min( mp.cpu_count()/2, nPointings) )
 #            semaphore = mp.Semaphore()
