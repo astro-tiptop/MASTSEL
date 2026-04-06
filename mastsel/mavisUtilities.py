@@ -193,17 +193,19 @@ def polar_to_cart(polar_data, theta_step, range_step, x, y, order=3):
 
 def fitGaussian(image):
     N = image.shape[0]
+    center = N // 2
     p_init = models.Gaussian2D(
         amplitude=np.max(image),
-        x_mean=N / 2,
-        y_mean=N / 2)
+        x_mean=center,
+        y_mean=center)
     fit_p = fitting.LevMarLSQFitter()
     return fit_p, p_init
 
 
 def fitAiry(image):
     N = image.shape[0]
-    p_init = models.AiryDisk2D(amplitude=np.max(image), x_0=N / 2, y_0=N / 2)
+    center = N // 2
+    p_init = models.AiryDisk2D(amplitude=np.max(image), x_0=center, y_0=center)
     fit_p = fitting.LevMarLSQFitter()
     return fit_p, p_init
 

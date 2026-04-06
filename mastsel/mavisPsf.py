@@ -42,12 +42,12 @@ def hostData(_data):
 
 
 def ft_ift2(G, xp=defaultArrayBackend):
-    g = xp.fft.fftshift(xp.fft.ifft2(xp.fft.fftshift(G)))
+    g = xp.fft.fftshift(xp.fft.ifft2(xp.fft.ifftshift(G)))
     return g
 
 
 def ft_ft2(G, xp=defaultArrayBackend):
-    g = xp.fft.fftshift(xp.fft.fft2(xp.fft.fftshift(G)))
+    g = xp.fft.fftshift(xp.fft.fft2(xp.fft.ifftshift(G)))
     return g
 
 
@@ -84,11 +84,56 @@ def zeroPad(input_grid, n, xp=defaultArrayBackend):
 # pixel size does not change
 
 
+def _centered_pixel_index(n):
+    return int(n) // 2
+
+
 def centralSquare(input_grid, n, xp=defaultArrayBackend):
     N = input_grid.shape[0]
-    start = int(N / 2 - n / 2)
-    stop = start + int(n)
+    n = int(n)
+    start = _centered_pixel_index(N) - _centered_pixel_index(n)
+    stop = start + n
     return input_grid[start:stop, start:stop]
+
+
+def _pad_or_crop_centered(input_grid, target_n, xp=defaultArrayBackend):
+    if input_grid.ndim != 2 or input_grid.shape[0] != input_grid.shape[1]:
+        raise ValueError('Expected a square 2D array.')
+
+    current_n = input_grid.shape[0]
+    target_n = int(target_n)
+    if target_n <= 0:
+        raise ValueError('Target size must be positive.')
+    if current_n == target_n:
+        return input_grid
+
+    if target_n < current_n:
+        return centralSquare(input_grid, target_n, xp)
+
+    output_grid = xp.zeros((target_n, target_n), dtype=input_grid.dtype)
+    start = _centered_pixel_index(target_n) - _centered_pixel_index(current_n)
+    stop = start + current_n
+    output_grid[start:stop, start:stop] = input_grid
+    return output_grid
+
+
+def _remove_even_spectrum_nyquist(input_grid, xp=defaultArrayBackend):
+    """
+    For fftshift-centered even-sized PSD/OTF arrays, remove the unique Nyquist
+    row/column (index 0 after fftshift) so the zero-frequency sample lies on a
+    perfectly symmetric odd grid.
+    """
+    if input_grid.ndim != 2 or input_grid.shape[0] != input_grid.shape[1]:
+        raise ValueError('Expected a square 2D array.')
+    if input_grid.shape[0] % 2 == 0:
+        return _pad_or_crop_centered(input_grid, input_grid.shape[0] - 1, xp)
+    return input_grid
+
+
+def _set_sampling_preserve_pixel_size(field, sampling):
+    pixel_size = field.pixel_size
+    field.sampling = sampling
+    field.width = pixel_size * field.N
 
 
 class Field(object):
@@ -159,8 +204,8 @@ class Field(object):
 
     def gModel1(self, x, y, sigma_X, sigma_Y, angle):
         A = 1.0
-        x0 = self.N / 2
-        y0 = self.N / 2
+        x0 = _centered_pixel_index(self.N)
+        y0 = _centered_pixel_index(self.N)
         x_stddev= sigma_X / self.pixel_size
         y_stddev= sigma_Y / self.pixel_size
         theta = angle
@@ -408,22 +453,34 @@ def longExposurePsf(mask, psd, otf_tel = None):
         print('otf_tel pixel size: ', mask.pixel_size)
         print('otf_turb pixel size: ', pitch)
         return
-    p_final_psf = mask.wvl / (pitch * mask.N)  # rad
-    result = Field(mask.wvl, mask.N, psd.N * p_final_psf, unit='rad')
+
+    psd_sampling = _remove_even_spectrum_nyquist(psd.sampling, xp)
+    work_n = psd_sampling.shape[0]
+    p_final_psf = mask.wvl / (pitch * work_n)  # rad
+    result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
     ################################################
 
     # step 0 : compute telescope otf
     if otf_tel is None:
-        maskC = Field(mask.wvl, mask.N, pitch*mask.N)
+        maskC = Field(mask.wvl, mask.N, pitch * mask.N)
         maskC.sampling = xp.copy(mask.sampling)
         maskC.pupilToOtf()
         otf_tel = maskC.sampling
 
-    psd.sampling = zeroPad(psd.sampling, psd.sampling.shape[0]//2)
+    otf_tel = _remove_even_spectrum_nyquist(otf_tel, xp)
+    if otf_tel.shape != psd_sampling.shape:
+        target_n = min(otf_tel.shape[0], psd_sampling.shape[0])
+        otf_tel = _pad_or_crop_centered(otf_tel, target_n, xp)
+        psd_sampling = _pad_or_crop_centered(psd_sampling, target_n, xp)
+        work_n = target_n
+        p_final_psf = mask.wvl / (pitch * work_n)
+        result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
+
+    psd_padded = zeroPad(psd_sampling, psd_sampling.shape[0] // 2, xp)
 
     # step 1 : compute phase autocorrelation
     coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
-    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling))) * coeff
+    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd_padded))) * coeff
     b0 = B_phi[0, 0]
     B_phi = xp.fft.fftshift(B_phi)
 
@@ -434,13 +491,13 @@ def longExposurePsf(mask, psd, otf_tel = None):
     # step 3 : compute turbolence otf
     otf_turb = xp.exp(-0.5 * D_phi)
     # p_otft_turb = pitch
-    otf_turb = congrid(otf_turb, [otf_turb.shape[0]//2, otf_turb.shape[0]//2])
+    otf_turb = congrid(otf_turb, [work_n, work_n])
 
     # step 4 : combine telescope and turbolence otfs
     otf_system = otf_turb * otf_tel
 
     # step 5 : system otf to system psf
-    result.sampling = xp.real(ft_ft2(otf_system))
+    result.sampling = xp.real(ft_ft2(otf_system, xp))
 
     return result
 
@@ -497,7 +554,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         dtype = np.float64
 
     i_complex = defaultArrayCDtype(1j)
-    wavelength = np.atleast_1d(wavelength)  # Assicura che sia un array
+    wavelength = np.atleast_1d(wavelength)  # Ensure it is an array
     multi_wave = len(wavelength) > 1
 
     oversampling = np.atleast_1d(oversampling)
@@ -515,14 +572,17 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             oRatio = np.ceil(pixRatio) / pixRatio
             ovrsmp *= np.ceil(pixRatio)
             ovrsmp = int(ovrsmp)
-            nPad = int(np.round(N * oRatio / 2) * 2)
+            nPad = int(np.ceil(N * oRatio))
+            if nPad % 2 != N % 2:
+                nPad += 1
+            nPad = max(nPad, N)
         else:
             nPad = N
 
         maskField = Field(wvl, nPad, grid_diameter)
         if not isinstance(mask, list):
             maskField.sampling = congrid(mask, [nPixPup, nPixPup])
-            maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
+            maskField.sampling = _pad_or_crop_centered(maskField.sampling, nPad, xp=maskField.xp)
 
         if xp is None:
             xp = maskField.xp
@@ -538,7 +598,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
             phaseStat = coeff * opdMap
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
-            phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
+            phaseStat = _pad_or_crop_centered(phaseStat, nPad, xp)
             if mask is None or not isinstance(mask, list):
                 maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                 maskOtf.pupilToOtf()
@@ -550,7 +610,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         for i, computedPSD in enumerate(inputPSDs):
             if isinstance(mask, list):
                 maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
-                maskField.sampling = zeroPad(maskField.sampling, (nPad - nPixPup) // 2)
+                maskField.sampling = _pad_or_crop_centered(maskField.sampling, nPad, xp)
                 if opdMap is not None:
                     maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                     maskOtf.pupilToOtf()
@@ -559,24 +619,27 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 
             psd = Field(wvl, N, freq_range, 'rad')
             psd.sampling = computedPSD / dk**2
-            if nPad>N:
-                psd.sampling = zeroPad(psd.sampling, (nPad-N)//2)
-                psd.width = psd.width * nPad/N
+            if nPad > N:
+                psd.sampling = _pad_or_crop_centered(psd.sampling, nPad, xp)
+                psd.width = psd.width * nPad / N
 
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
             # enlarge the PSF to get a side multiple of ovrsmp
-            nBig = int(np.ceil(psfLE.N/ovrsmp/2)*ovrsmp*2)
-            if nBig > psfLE.N:
-                psfLE.sampling = zeroPad(psfLE.sampling, (nBig-psfLE.N)//2)
+            nOvr = max(1, int(ovrsmp))
+            nBig = int(np.ceil(psfLE.N / nOvr) * nOvr)
+            if nBig != psfLE.N:
+                _set_sampling_preserve_pixel_size(
+                    psfLE,
+                    _pad_or_crop_centered(psfLE.sampling, nBig, xp)
+                )
             # resample the PSF to get the not oversampled pixel scale
             if ovrsmp > 1 and not skip_reshape:
-                nOvr = int(ovrsmp)
                 nOut = int(psfLE.sampling.shape[0] / nOvr)
 
                 # shift the PSF to get it centered on one pixel
-                delta = (ovrsmp-1)/2
-                if ovrsmp % 2:
+                delta = (ovrsmp - 1) / 2
+                if nOvr % 2:
                     # integer shifts
                     psfLE.sampling = xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
                 else:
@@ -584,12 +647,15 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                     psfLE.sampling = a_shift(psfLE.sampling, (delta, delta), order=3, mode='constant')
 
                 # rebin the PSF
+                psf_width = psfLE.width
                 psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr, nOut, nOvr)).mean(3).mean(1)
-            # cut the PSF to get the desired size
-            if psfLE.N > nPixPsf:
-                start_x = (psfLE.N - nPixPsf) // 2
-                start_y = (psfLE.N - nPixPsf) // 2
-                psfLE.sampling = psfLE.sampling[start_x:start_x + nPixPsf, start_y:start_y + nPixPsf]
+                psfLE.width = psf_width
+            # cut or pad the PSF to get the desired size
+            if psfLE.N != nPixPsf:
+                _set_sampling_preserve_pixel_size(
+                    psfLE,
+                    _pad_or_crop_centered(psfLE.sampling, nPixPsf, xp)
+                )
 
             psfMultiWave.append(psfLE)
 
