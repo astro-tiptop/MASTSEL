@@ -126,7 +126,7 @@ else:
     # works for now, to be checked in different cases
     def congrid(a, newdims):
 
-        a = np.asarray(a)
+        a = cp.asarray(a)
         newdims = np.asarray(newdims, dtype=int)
         r1 = a.shape[0]/newdims[0]
         r2 = a.shape[1]/newdims[1]
