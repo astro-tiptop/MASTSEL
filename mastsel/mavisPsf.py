@@ -76,6 +76,7 @@ def KernelConvolve(in1, kernel, xp=defaultArrayBackend):
 
 
 def zeroPad(input_grid, n, xp=defaultArrayBackend):
+    input_grid = xp.asarray(input_grid)
     N = input_grid.shape[0]
     output_grid = xp.zeros((N + 2 * n, N + 2 * n), dtype=input_grid.dtype)
     output_grid[n:N + n, n:N + n] = input_grid
@@ -106,6 +107,7 @@ def centeredPixelCoords(n):
 
 
 def _pad_or_crop_centered(input_grid, target_n, xp=defaultArrayBackend):
+    input_grid = xp.asarray(input_grid)
     if input_grid.ndim != 2 or input_grid.shape[0] != input_grid.shape[1]:
         raise ValueError('Expected a square 2D array.')
 

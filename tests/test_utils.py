@@ -61,7 +61,7 @@ class TestMastselUtils(unittest.TestCase):
             image[n // 2, n // 2] = 1.0
             transformed = ft_ft2(defaultArrayBackend.asarray(image), xp=defaultArrayBackend)
             restored = ft_ift2(transformed, xp=defaultArrayBackend)
-            np.testing.assert_allclose(np.asarray(restored), image, atol=1e-10)
+            np.testing.assert_allclose(np.asarray(lo_cpuArray(restored)), image, atol=1e-10)
 
     def test_psd_set_to_psf_set_handles_even_and_odd_psd_shapes(self):
         cases = [
@@ -99,7 +99,7 @@ class TestMastselUtils(unittest.TestCase):
 
                 for sampling in samplings:
                     self.assertEqual(sampling.shape, (16, 16))
-                    self.assertTrue(np.isfinite(np.asarray(sampling)).all())
+                    self.assertTrue(np.isfinite(np.asarray(lo_cpuArray(sampling))).all())
 
 
 if __name__ == '__main__':
