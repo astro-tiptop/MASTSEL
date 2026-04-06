@@ -96,6 +96,15 @@ def centralSquare(input_grid, n, xp=defaultArrayBackend):
     return input_grid[start:stop, start:stop]
 
 
+def centeredPixelIndex(n):
+    return _centered_pixel_index(n)
+
+
+def centeredPixelCoords(n):
+    center = centeredPixelIndex(n)
+    return center, center
+
+
 def _pad_or_crop_centered(input_grid, target_n, xp=defaultArrayBackend):
     if input_grid.ndim != 2 or input_grid.shape[0] != input_grid.shape[1]:
         raise ValueError('Expected a square 2D array.')
@@ -115,6 +124,10 @@ def _pad_or_crop_centered(input_grid, target_n, xp=defaultArrayBackend):
     stop = start + current_n
     output_grid[start:stop, start:stop] = input_grid
     return output_grid
+
+
+def padOrCropCentered(input_grid, target_n, xp=defaultArrayBackend):
+    return _pad_or_crop_centered(input_grid, target_n, xp)
 
 
 def _remove_even_spectrum_nyquist(input_grid, xp=defaultArrayBackend):
