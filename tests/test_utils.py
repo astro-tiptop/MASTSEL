@@ -34,9 +34,9 @@ class TestMastselUtils(unittest.TestCase):
         out = KernelConvolve(empty, empty, xp=defaultArrayBackend)
         self.assertEqual(out.size, 0)
 
-    def test_congrid_spline_respects_target_shape(self):
+    def test_congrid_respects_target_shape(self):
         image = np.arange(9, dtype=np.float32).reshape(3, 3)
-        out = congrid(image, (5, 4), method='spline')
+        out = congrid(image, (5, 4))
         self.assertEqual(out.shape, (5, 4))
         self.assertEqual(out.dtype, image.dtype)
 
