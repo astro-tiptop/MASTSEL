@@ -182,26 +182,43 @@ class TestBiasAndVariance(TestMavisLO):
 
 
 class TestPsfExtrapolation(unittest.TestCase):
-    def test_round_exponent_to_thirds(self):
+    def test_estimate_exponent_from_fraction(self):
         r = np.arange(1.0, 31.0, dtype=np.float64)
         true_exponent = -3.27
         psf = 2.5 * r**true_exponent
+        fraction = (0.4, 0.8)
 
-        _, _, exponent_raw, _ = extrapolate_psf_profile(
-            r, psf, r_max=40, power_fit=True, verbose=False
+        _, _, exponent_est, normalization_est = extrapolate_psf_profile(
+            r, psf, r_max=40, fraction=fraction, verbose=False
         )
-        _, _, exponent_rounded, _ = extrapolate_psf_profile(
+
+        self.assertAlmostEqual(exponent_est, true_exponent, places=2)
+        self.assertAlmostEqual(normalization_est, 2.5, places=2)
+
+    def test_forced_exponent_preserves_continuity_on_fit_interval(self):
+        r = np.arange(1.0, 31.0, dtype=np.float64)
+        psf = 2.5 * r**(-3.27)
+        forced_exponent = -11 / 3
+        fraction = (0.5, 0.75)
+
+        r_extended, psf_extended, exponent_out, normalization_out = extrapolate_psf_profile(
             r,
             psf,
             r_max=40,
-            power_fit=True,
+            power_law_exponent=forced_exponent,
+            fraction=fraction,
             verbose=False,
-            round_exponent_to_thirds=True,
         )
 
-        expected = np.round(exponent_raw * 3) / 3
-        self.assertAlmostEqual(exponent_raw, true_exponent, places=2)
-        self.assertAlmostEqual(exponent_rounded, expected)
+        idx_start = int(len(r) * fraction[0])
+        idx_end = max(int(len(r) * fraction[1]), idx_start + 2)
+        idx_end = min(idx_end, len(r))
+
+        self.assertAlmostEqual(exponent_out, forced_exponent)
+        self.assertGreater(normalization_out, 0)
+        self.assertAlmostEqual(psf_extended[idx_start], psf[idx_start])
+        self.assertAlmostEqual(psf_extended[idx_end - 1], psf[idx_end - 1])
+        self.assertEqual(len(r_extended), len(psf_extended))
 
 
 def suite():
@@ -211,7 +228,8 @@ def suite():
     suite.addTest(TestNoiseResiduals('test_noise_residuals'))
     suite.addTest(TestWindResiduals('test_wind_residuals'))
     suite.addTest(TestBiasAndVariance('test_bias_and_variance'))
-    suite.addTest(TestPsfExtrapolation('test_round_exponent_to_thirds'))
+    suite.addTest(TestPsfExtrapolation('test_estimate_exponent_from_fraction'))
+    suite.addTest(TestPsfExtrapolation('test_forced_exponent_preserves_continuity_on_fit_interval'))
     return suite
 
 
