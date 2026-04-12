@@ -201,7 +201,7 @@ class TestPsfExtrapolation(unittest.TestCase):
         forced_exponent = -11 / 3
         fraction = (0.5, 0.75)
 
-        r_extended, psf_extended, exponent_out, normalization_out = extrapolate_psf_profile(
+        _, psf_extended, exponent_out, normalization_out = extrapolate_psf_profile(
             r,
             psf,
             r_max=40,
@@ -210,9 +210,7 @@ class TestPsfExtrapolation(unittest.TestCase):
             verbose=False,
         )
 
-        idx_start = int(len(r) * fraction[0])
-        idx_end = max(int(len(r) * fraction[1]), idx_start + 2)
-        idx_end = min(idx_end, len(r))
+        idx_start, idx_end = fraction_to_index_range(len(r), fraction)
 
         self.assertAlmostEqual(exponent_out, forced_exponent)
         self.assertGreater(normalization_out, 0)
@@ -233,9 +231,7 @@ class TestPsfExtrapolation(unittest.TestCase):
             verbose=False,
         )
 
-        idx_start = int(len(r) * fraction[0])
-        idx_end = max(int(len(r) * fraction[1]), idx_start + 2)
-        idx_end = min(idx_end, len(r))
+        idx_start, idx_end = fraction_to_index_range(len(r), fraction)
 
         self.assertAlmostEqual(exponent_out, -3.0)
         self.assertGreater(normalization_out, 0)
