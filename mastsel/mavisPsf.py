@@ -771,30 +771,103 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
     return exponent, normalization, r_fit_pos, psf_fit_pos
 
 
+def _last_positive_sample(r, psf, xp=np):
+    """Return the last strictly positive ``(r, psf)`` pair, or ``(None, None)``."""
+    valid_idx = xp.where((r > 0) & (psf > 0))[0]
+    if len(valid_idx) == 0:
+        return None, None
+
+    idx_last = int(valid_idx[-1])
+    return r[idx_last], psf[idx_last]
+
+
 def continuity_preserving_normalization(r, psf, exponent, fraction=(0.5, 0.75), xp=np):
     """Match the power-law tail to the end of the selected fitting interval."""
     r = xp.asarray(r)
     psf = xp.asarray(psf)
 
     idx_start, idx_end = _fraction_to_index_range(len(r), fraction)
-    r_fit = r[idx_start:idx_end]
-    psf_fit = psf[idx_start:idx_end]
+    r_anchor, psf_anchor = _last_positive_sample(
+        r[idx_start:idx_end],
+        psf[idx_start:idx_end],
+        xp=xp,
+    )
 
-    valid_idx = xp.where((r_fit > 0) & (psf_fit > 0))[0]
-    if len(valid_idx) == 0:
-        valid_idx = xp.where((r > 0) & (psf > 0))[0]
-        if len(valid_idx) == 0:
-            return 1.0
-        idx_last = int(valid_idx[-1])
-        return psf[idx_last] / (r[idx_last]**exponent)
+    if r_anchor is None:
+        r_anchor, psf_anchor = _last_positive_sample(r, psf, xp=xp)
+    if r_anchor is None:
+        return 1.0
 
-    idx_last = int(valid_idx[-1])
-    return psf_fit[idx_last] / (r_fit[idx_last]**exponent)
+    return psf_anchor / (r_anchor**exponent)
+
+
+def _clip_power_law_exponent(exponent, power_law_min_max, verbose=True):
+    """Clip an estimated exponent to the allowed interval."""
+    if len(power_law_min_max) != 2:
+        raise ValueError("power_law_min_max must contain exactly two values")
+
+    lower, upper = power_law_min_max
+    if lower > upper:
+        raise ValueError("power_law_min_max must be ordered as (min, max)")
+
+    clipped_exponent = min(max(exponent, lower), upper)
+    if verbose and clipped_exponent != exponent:
+        print(
+            f'Estimated exponent {exponent:.3f} is outside the allowed range '
+            f'{power_law_min_max}. It will be clipped.'
+        )
+
+    return clipped_exponent, clipped_exponent != exponent
+
+
+def _resolve_power_law_parameters(r_input, psf_input, power_law_exponent,
+                                  power_law_normalization, power_law_min_max,
+                                  fraction=(0.5, 0.75), verbose=True, xp=np):
+    """Resolve the exponent and normalization used for the extrapolated tail."""
+    user_forced_exponent = power_law_exponent is not None
+    exponent_was_clipped = False
+    estimated_normalization = None
+
+    if power_law_exponent is None or power_law_normalization is None:
+        estimated_exponent, estimated_normalization, _, _ = estimate_power_law_exponent(
+            r_input,
+            psf_input,
+            fraction=fraction,
+            verbose=verbose,
+            xp=xp,
+        )
+        if power_law_exponent is None:
+            power_law_exponent, exponent_was_clipped = _clip_power_law_exponent(
+                estimated_exponent,
+                power_law_min_max,
+                verbose=verbose,
+            )
+
+    use_continuity_normalization = user_forced_exponent or exponent_was_clipped
+    if use_continuity_normalization and (power_law_normalization is None or exponent_was_clipped):
+        power_law_normalization = continuity_preserving_normalization(
+            r_input,
+            psf_input,
+            power_law_exponent,
+            fraction=fraction,
+            xp=xp,
+        )
+        if verbose:
+            print(
+                'Using continuity-preserving power-law normalization: '
+                f'k = {float(power_law_normalization):.6e}'
+            )
+
+    if power_law_normalization is None:
+        power_law_normalization = estimated_normalization
+
+    return power_law_exponent, power_law_normalization
 
 
 def extrapolate_psf_profile(r_input, psf_input, r_max=10000,
                             power_law_exponent=None,
                             power_law_normalization=None,
+                            power_law_min_max = (-11/3, -3),
                             smooth_transition=True,
                             verbose=True, xp=np,
                             fraction=(0.5, 0.75)):
@@ -815,6 +888,12 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000,
         Power-law normalization. If None, estimated automatically. When an
         exponent is explicitly imposed, the normalization is recomputed from
         the last positive sample to preserve continuity.
+    power_law_min_max : tuple of float
+        Minimum and maximum allowed values for the power-law exponent when
+        automatically estimated. If the estimated exponent is outside this range,
+        it will be clipped to the nearest bound.
+        -11/3 corresponds to the Kolmogorov turbulence expectation,
+        while -3 is the upper bound given by spider diffraction.
     smooth_transition : bool
         If True, smoothly blend the original profile with the power-law over the
         interval selected by ``fraction``.
@@ -843,26 +922,17 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000,
     if verbose:
         print(f'Median step of r_input: {float(r_step):.6f} mas')
 
-    # Estimate exponent and normalization if not provided
-    user_forced_exponent = power_law_exponent is not None
-    if power_law_exponent is None or power_law_normalization is None:
-        exponent, normalization, r_fit_pos, psf_fit_pos = estimate_power_law_exponent(
-            r_input, psf_input, fraction=fraction, verbose=verbose, xp=xp
-        )
-        if power_law_exponent is None:
-            power_law_exponent = exponent
-        if power_law_normalization is None:
-            if user_forced_exponent:
-                power_law_normalization = continuity_preserving_normalization(
-                    r_input, psf_input, power_law_exponent, fraction=fraction, xp=xp
-                )
-                if verbose:
-                    print(
-                        'Using continuity-preserving power-law normalization: '
-                        f'k = {float(power_law_normalization):.6e}'
-                    )
-            else:
-                power_law_normalization = normalization
+    # Estimate or validate the tail parameters.
+    power_law_exponent, power_law_normalization = _resolve_power_law_parameters(
+        r_input,
+        psf_input,
+        power_law_exponent,
+        power_law_normalization,
+        power_law_min_max,
+        fraction=fraction,
+        verbose=verbose,
+        xp=xp,
+    )
 
     # Generate new extrapolated points
     r_extrapolated = xp.arange(float(r_input[-1] + r_step), float(r_max + r_step), float(r_step))

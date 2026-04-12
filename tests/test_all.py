@@ -218,6 +218,29 @@ class TestPsfExtrapolation(unittest.TestCase):
         self.assertGreater(normalization_out, 0)
         self.assertAlmostEqual(psf_extended[idx_start], psf[idx_start])
         self.assertAlmostEqual(psf_extended[idx_end - 1], psf[idx_end - 1])
+
+    def test_auto_exponent_is_clipped_to_bounds(self):
+        r = np.arange(1.0, 31.0, dtype=np.float64)
+        psf = 1.7 * r**(-2.4)
+        fraction = (0.5, 0.75)
+
+        r_extended, psf_extended, exponent_out, normalization_out = extrapolate_psf_profile(
+            r,
+            psf,
+            r_max=40,
+            power_law_min_max=(-11 / 3, -3),
+            fraction=fraction,
+            verbose=False,
+        )
+
+        idx_start = int(len(r) * fraction[0])
+        idx_end = max(int(len(r) * fraction[1]), idx_start + 2)
+        idx_end = min(idx_end, len(r))
+
+        self.assertAlmostEqual(exponent_out, -3.0)
+        self.assertGreater(normalization_out, 0)
+        self.assertAlmostEqual(psf_extended[idx_start], psf[idx_start])
+        self.assertAlmostEqual(psf_extended[idx_end - 1], psf[idx_end - 1])
         self.assertEqual(len(r_extended), len(psf_extended))
 
 
@@ -230,6 +253,7 @@ def suite():
     suite.addTest(TestBiasAndVariance('test_bias_and_variance'))
     suite.addTest(TestPsfExtrapolation('test_estimate_exponent_from_fraction'))
     suite.addTest(TestPsfExtrapolation('test_forced_exponent_preserves_continuity_on_fit_interval'))
+    suite.addTest(TestPsfExtrapolation('test_auto_exponent_is_clipped_to_bounds'))
     return suite
 
 
