@@ -685,8 +685,25 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 # ------- Functions for PSF extrapolation and normalization -------
 
 
+def fraction_to_index_range(n_points, fraction):
+    """Convert a fractional interval into a safe integer index range."""
+    if len(fraction) != 2 or not (0.0 <= fraction[0] < fraction[1] <= 1.0):
+        raise ValueError("fraction must be a tuple (start, end) with 0 <= start < end <= 1")
+
+    idx_start = int(n_points * fraction[0])
+    idx_end = int(n_points * fraction[1])
+    idx_end = max(idx_end, idx_start + 2)
+    idx_end = min(idx_end, n_points)
+    return idx_start, idx_end
+
+
+# Backward-compatible alias used by older internal call sites.
+def _fraction_to_index_range(n_points, fraction):
+    return fraction_to_index_range(n_points, fraction)
+
+
 def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
-                                power_fit=False, verbose=True, xp=np):
+                                verbose=True, xp=np):
     """
     Estimate the power-law exponent and normalization from the final part of the PSF profile.
     Fit: psf = k * r^exponent
@@ -699,9 +716,6 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
         PSF values array
     fraction : tuple of float
         Fraction of the profile to use for fitting (default: (0.5, 0.75) = second half to 75%)
-    power_fit : bool
-        If True, perform a linear fit in log-log space to estimate the exponent and normalization.
-        If False, use the last point to estimate normalization and set exponent to -10/3.
     verbose : bool
         If True, print fitting information
     xp : module
@@ -718,8 +732,7 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
     psf_fit_pos : array
         PSF values used for fitting
     """
-    idx_start = int(len(r) * fraction[0])
-    idx_end = int(len(r) * fraction[1])
+    idx_start, idx_end = fraction_to_index_range(len(r), fraction)
     r_fit = r[idx_start:idx_end]
     psf_fit = psf[idx_start:idx_end]
 
@@ -736,7 +749,7 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
         r_fit_np = r_fit_pos
         psf_fit_np = psf_fit_pos
 
-    if power_fit and len(r_fit_pos) > 5:
+    if len(r_fit_pos) > 5:
         # Linear fit in log-log: log(psf) = log(k) + exponent * log(r)
         coeffs = np.polyfit(np.log10(r_fit_np), np.log10(psf_fit_np), 1)
         exponent = coeffs[0]
@@ -757,21 +770,112 @@ def estimate_power_law_exponent(r, psf, fraction=(0.5, 0.75),
         if verbose:
             print(f'Fit R²: {r_squared:.4f}')
     else:
-        exponent = -10/3
-        if verbose:
-            if power_fit:
-                print('Warning: not enough points for fitting, using -10/3')
-            else:
-                print('Using default power-law exponent: -10/3')
-        normalization = psf_fit_pos[-1] / (r_fit_pos[-1]**exponent) if len(r_fit_pos) > 0 else 1.0
+        raise ValueError("Not enough positive samples in the fitting"
+                         " range to estimate power-law exponent.")
 
     return exponent, normalization, r_fit_pos, psf_fit_pos
 
 
-def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=None,
-                            power_law_normalization=None, smooth_transition=True,
-                            power_fit=False, verbose=True, xp=np,
-                            round_exponent_to_thirds=False):
+def _last_positive_sample(r, psf, xp=np):
+    """Return the last strictly positive ``(r, psf)`` pair, or ``(None, None)``."""
+    valid_idx = xp.where((r > 0) & (psf > 0))[0]
+    if len(valid_idx) == 0:
+        return None, None
+
+    idx_last = int(valid_idx[-1])
+    return r[idx_last], psf[idx_last]
+
+
+def continuity_preserving_normalization(r, psf, exponent, fraction=(0.5, 0.75), xp=np):
+    """Match the power-law tail to the end of the selected fitting interval."""
+    r = xp.asarray(r)
+    psf = xp.asarray(psf)
+
+    idx_start, idx_end = fraction_to_index_range(len(r), fraction)
+    r_anchor, psf_anchor = _last_positive_sample(
+        r[idx_start:idx_end],
+        psf[idx_start:idx_end],
+        xp=xp,
+    )
+
+    if r_anchor is None:
+        r_anchor, psf_anchor = _last_positive_sample(r, psf, xp=xp)
+    if r_anchor is None:
+        return 1.0
+
+    return psf_anchor / (r_anchor**exponent)
+
+
+def _clip_power_law_exponent(exponent, exponent_bounds, verbose=True):
+    """Clip an estimated exponent to the configured ``(min, max)`` interval."""
+    if len(exponent_bounds) != 2:
+        raise ValueError("power_law_min_max must contain exactly two values")
+
+    lower, upper = exponent_bounds
+    if lower > upper:
+        raise ValueError("power_law_min_max must be ordered as (min, max)")
+
+    clipped_exponent = min(max(exponent, lower), upper)
+    if verbose and clipped_exponent != exponent:
+        print(
+            f'Estimated exponent {exponent:.3f} is outside the allowed range '
+            f'{exponent_bounds}. It will be clipped.'
+        )
+
+    return clipped_exponent, clipped_exponent != exponent
+
+
+def _resolve_power_law_parameters(r_input, psf_input, power_law_exponent,
+                                  power_law_normalization, exponent_bounds,
+                                  fraction=(0.5, 0.75), verbose=True, xp=np):
+    """Resolve the exponent and normalization used for the extrapolated tail."""
+    user_forced_exponent = power_law_exponent is not None
+    exponent_was_clipped = False
+    estimated_normalization = None
+
+    if power_law_exponent is None or power_law_normalization is None:
+        estimated_exponent, estimated_normalization, _, _ = estimate_power_law_exponent(
+            r_input,
+            psf_input,
+            fraction=fraction,
+            verbose=verbose,
+            xp=xp,
+        )
+        if power_law_exponent is None:
+            power_law_exponent, exponent_was_clipped = _clip_power_law_exponent(
+                estimated_exponent,
+                exponent_bounds,
+                verbose=verbose,
+            )
+
+    use_continuity_normalization = user_forced_exponent or exponent_was_clipped
+    if use_continuity_normalization and (power_law_normalization is None or exponent_was_clipped):
+        power_law_normalization = continuity_preserving_normalization(
+            r_input,
+            psf_input,
+            power_law_exponent,
+            fraction=fraction,
+            xp=xp,
+        )
+        if verbose:
+            print(
+                'Using continuity-preserving power-law normalization: '
+                f'k = {float(power_law_normalization):.6e}'
+            )
+
+    if power_law_normalization is None:
+        power_law_normalization = estimated_normalization
+
+    return power_law_exponent, power_law_normalization
+
+
+def extrapolate_psf_profile(r_input, psf_input, r_max=10000,
+                            power_law_exponent=None,
+                            power_law_normalization=None,
+                            power_law_min_max=(-11/3, -3),
+                            smooth_transition=True,
+                            verbose=True, xp=np,
+                            fraction=(0.5, 0.75)):
     """
     Extrapolate the PSF profile up to r_max using a power-law.
     
@@ -786,18 +890,25 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
     power_law_exponent : float, optional
         Power-law exponent. If None, estimated automatically.
     power_law_normalization : float, optional
-        Power-law normalization. If None, estimated automatically.
+        Power-law normalization. If None, estimated automatically. When an
+        exponent is explicitly imposed, the normalization is recomputed from
+        the selected fit interval endpoint to preserve continuity.
+    power_law_min_max : tuple of float
+        Minimum and maximum allowed values for the power-law exponent when
+        automatically estimated. If the estimated exponent is outside this range,
+        it will be clipped to the nearest bound.
+        -11/3 corresponds to the Kolmogorov turbulence expectation,
+        while -3 is the upper bound given by spider diffraction.
     smooth_transition : bool
-        If True, smoothly blend the last quarter of original profile with extrapolation
-    power_fit : bool
-        If True, perform a linear fit in log-log space to estimate the exponent and normalization.
+        If True, smoothly blend the original profile with the power-law over the
+        interval selected by ``fraction``.
     verbose : bool
         If True, print extrapolation information
     xp : module
         Array backend (numpy or cupy)
-    round_exponent_to_thirds : bool
-        If True and ``power_law_exponent`` is None, round the estimated exponent
-        to the nearest multiple of 1/3 and recompute the normalization accordingly.
+    fraction : tuple of float
+        Fraction of the profile to use for fitting the power-law exponent
+        (default: (0.5, 0.75) = second half to 75%)
     
     Returns:
     --------
@@ -816,28 +927,17 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
     if verbose:
         print(f'Median step of r_input: {float(r_step):.6f} mas')
 
-    # Estimate exponent and normalization if not provided
-    if power_law_exponent is None or power_law_normalization is None:
-        exponent, normalization, r_fit_pos, psf_fit_pos = estimate_power_law_exponent(
-            r_input, psf_input, power_fit=power_fit, verbose=verbose, xp=xp
-        )
-        if power_law_exponent is None:
-            power_law_exponent = exponent
-            if round_exponent_to_thirds:
-                rounded_exponent = np.round(float(power_law_exponent) * 3) / 3
-                if verbose:
-                    print(
-                        'Rounded estimated power-law exponent to nearest 1/3: '
-                        f'{float(power_law_exponent):.3f} -> {rounded_exponent:.3f}'
-                    )
-                power_law_exponent = rounded_exponent
-        if power_law_normalization is None:
-            if round_exponent_to_thirds and power_law_exponent is not None and len(r_fit_pos) > 0:
-                power_law_normalization = xp.median(
-                    psf_fit_pos / (r_fit_pos**power_law_exponent)
-                )
-            else:
-                power_law_normalization = normalization
+    # Estimate or validate the tail parameters.
+    power_law_exponent, power_law_normalization = _resolve_power_law_parameters(
+        r_input,
+        psf_input,
+        power_law_exponent,
+        power_law_normalization,
+        exponent_bounds=power_law_min_max,
+        fraction=fraction,
+        verbose=verbose,
+        xp=xp,
+    )
 
     # Generate new extrapolated points
     r_extrapolated = xp.arange(float(r_input[-1] + r_step), float(r_max + r_step), float(r_step))
@@ -855,25 +955,25 @@ def extrapolate_psf_profile(r_input, psf_input, r_max=10000, power_law_exponent=
     psf_extended = xp.zeros_like(r_extended)
     psf_extended[:len(r_input)] = psf_input
 
-    # Smooth transition: blend last N points of original profile with power-law
+    # Smooth transition: blend over the same interval used for the fit.
     if smooth_transition:
-        N = len(r_input) // 4  # Last quarter for smooth transition
-        idx_start = len(r_input) - N
+        idx_start, idx_end = fraction_to_index_range(len(r_input), fraction)
+        transition_len = idx_end - idx_start
 
-        # Calculate power-law values for transition region
+        # Calculate power-law values from the start of the transition region onward.
         psf_powerlaw = power_law_normalization * r_extended[idx_start:]**power_law_exponent
 
-        # Create blending weights (linear transition from 0 to 1)
-        weights = xp.linspace(0, 1, N)
+        # Create blending weights (linear transition from 0 to 1).
+        weights = xp.linspace(0, 1, transition_len)
 
-        # Blend original and power-law in transition region
-        psf_extended[idx_start:len(r_input)] = (
-            (1 - weights) * psf_input[idx_start:] +
-            weights * psf_powerlaw[:N]
+        # Blend original and power-law across the selected interval.
+        psf_extended[idx_start:idx_end] = (
+            (1 - weights) * psf_input[idx_start:idx_end] +
+            weights * psf_powerlaw[:transition_len]
         )
 
-        # Use pure power-law for extrapolated region
-        psf_extended[len(r_input):] = psf_powerlaw[N:]
+        # Use the pure power-law after the transition interval.
+        psf_extended[idx_end:] = psf_powerlaw[transition_len:]
     else:
         # Simple extrapolation: psf = k * r^exponent
         psf_extended[len(r_input):] = (
