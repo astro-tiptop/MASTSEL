@@ -132,19 +132,6 @@ def padOrCropCentered(input_grid, target_n, xp=defaultArrayBackend):
     return _pad_or_crop_centered(input_grid, target_n, xp)
 
 
-def _remove_even_spectrum_nyquist(input_grid, xp=defaultArrayBackend):
-    """
-    For fftshift-centered even-sized PSD/OTF arrays, remove the unique Nyquist
-    row/column (index 0 after fftshift) so the zero-frequency sample lies on a
-    perfectly symmetric odd grid.
-    """
-    if input_grid.ndim != 2 or input_grid.shape[0] != input_grid.shape[1]:
-        raise ValueError('Expected a square 2D array.')
-    if input_grid.shape[0] % 2 == 0:
-        return _pad_or_crop_centered(input_grid, input_grid.shape[0] - 1, xp)
-    return input_grid
-
-
 def _set_sampling_preserve_pixel_size(field, sampling):
     pixel_size = field.pixel_size
     field.sampling = sampling
@@ -469,8 +456,7 @@ def longExposurePsf(mask, psd, otf_tel = None):
         print('otf_turb pixel size: ', pitch)
         return
 
-    psd_sampling = _remove_even_spectrum_nyquist(psd.sampling, xp)
-    work_n = psd_sampling.shape[0]
+    work_n = psd.N
     p_final_psf = mask.wvl / (pitch * work_n)  # rad
     result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
     ################################################
@@ -482,16 +468,7 @@ def longExposurePsf(mask, psd, otf_tel = None):
         maskC.pupilToOtf()
         otf_tel = maskC.sampling
 
-    otf_tel = _remove_even_spectrum_nyquist(otf_tel, xp)
-    if otf_tel.shape != psd_sampling.shape:
-        target_n = min(otf_tel.shape[0], psd_sampling.shape[0])
-        otf_tel = _pad_or_crop_centered(otf_tel, target_n, xp)
-        psd_sampling = _pad_or_crop_centered(psd_sampling, target_n, xp)
-        work_n = target_n
-        p_final_psf = mask.wvl / (pitch * work_n)
-        result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
-
-    psd_padded = zeroPad(psd_sampling, psd_sampling.shape[0] // 2, xp)
+    psd_padded = zeroPad(psd.sampling, psd.sampling.shape[0] // 2, xp)
 
     # step 1 : compute phase autocorrelation
     coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
@@ -506,7 +483,9 @@ def longExposurePsf(mask, psd, otf_tel = None):
     # step 3 : compute turbolence otf
     otf_turb = xp.exp(-0.5 * D_phi)
     # p_otft_turb = pitch
-    otf_turb = congrid(otf_turb, [work_n, work_n])
+    target_n = otf_tel.shape[0]
+    if otf_turb.shape[0] != target_n:
+        otf_turb = congrid(otf_turb, [target_n, target_n])
 
     # step 4 : combine telescope and turbolence otfs
     otf_system = otf_turb * otf_tel
@@ -611,7 +590,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         else:
             maskOtf = Field(wvl, nPad, grid_diameter)
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
-            phaseStat = coeff * opdMap
+            opd_map_backend = defaultArrayBackend.asarray(opdMap, dtype=defaultArrayDtype)
+            phaseStat = coeff * opd_map_backend
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = _pad_or_crop_centered(phaseStat, nPad, xp)
             if mask is None or not isinstance(mask, list):
