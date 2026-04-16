@@ -603,7 +603,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         else:
             maskOtf = Field(wvl, nPad, grid_diameter)
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
-            phaseStat = coeff * opdMap
+            opd_map_backend = defaultArrayBackend.asarray(opdMap, dtype=defaultArrayDtype)
+            phaseStat = coeff * opd_map_backend
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = _pad_or_crop_centered(phaseStat, nPad, xp)
             if mask is None or not isinstance(mask, list):

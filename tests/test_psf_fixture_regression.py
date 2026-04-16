@@ -6,6 +6,7 @@ import unittest
 
 import numpy as np
 
+from mastsel.mavisLO import cpuArray as lo_cpuArray
 from mastsel.mavisPsf import Field, congrid, psdSetToPsfSet, zeroPad
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "psd")
@@ -42,7 +43,7 @@ def _load_fixture_paths():
 
 
 def _pad_or_crop_centered(arr, target_n):
-    arr = np.asarray(arr)
+    arr = np.asarray(lo_cpuArray(arr))
     n = arr.shape[0]
     if n == target_n:
         return arr
@@ -73,8 +74,8 @@ def _expand_with_nyquist_row_col(psd):
 
 
 def _peak_rel_diff(psf_a, psf_b):
-    a = np.asarray(psf_a, dtype=np.float64)
-    b = np.asarray(psf_b, dtype=np.float64)
+    a = np.asarray(lo_cpuArray(psf_a)).astype(np.float64, copy=False)
+    b = np.asarray(lo_cpuArray(psf_b)).astype(np.float64, copy=False)
     a = a / a.sum()
     b = b / b.sum()
     return abs(b.max() - a.max()) / max(a.max(), 1e-20)
@@ -126,7 +127,8 @@ def _psdset_old_reference(
 
             maskOtf = Field(wvl, nPad, grid_diameter)
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
-            phaseStat = coeff * opd_map
+            opd_map_backend = defaultArrayBackend.asarray(opd_map, dtype=defaultArrayDtype)
+            phaseStat = coeff * opd_map_backend
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
             phaseStat = zeroPad(phaseStat, (nPad - nPixPup) // 2)
             i_complex = defaultArrayCDtype(1j)

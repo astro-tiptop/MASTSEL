@@ -6,6 +6,7 @@ import unittest
 
 import numpy as np
 
+from mastsel.mavisLO import cpuArray as lo_cpuArray
 from mastsel.mavisPsf import psdSetToPsfSet
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "psd")
@@ -28,16 +29,16 @@ def _flatten_psf_set(psf_set):
 
 
 def _peak_rel_diff(psf_a, psf_b):
-    a = np.asarray(psf_a, dtype=np.float64)
-    b = np.asarray(psf_b, dtype=np.float64)
+    a = np.asarray(lo_cpuArray(psf_a)).astype(np.float64, copy=False)
+    b = np.asarray(lo_cpuArray(psf_b)).astype(np.float64, copy=False)
     a = a / a.sum()
     b = b / b.sum()
     return abs(b.max() - a.max()) / max(a.max(), 1e-20)
 
 
 def _l2_rel_diff(psf_a, psf_b):
-    a = np.asarray(psf_a, dtype=np.float64)
-    b = np.asarray(psf_b, dtype=np.float64)
+    a = np.asarray(lo_cpuArray(psf_a)).astype(np.float64, copy=False)
+    b = np.asarray(lo_cpuArray(psf_b)).astype(np.float64, copy=False)
     a = a / a.sum()
     b = b / b.sum()
     denom = np.linalg.norm(a)
@@ -47,7 +48,7 @@ def _l2_rel_diff(psf_a, psf_b):
 
 
 def _pad_or_crop_centered(arr, target_n):
-    arr = np.asarray(arr)
+    arr = np.asarray(lo_cpuArray(arr))
     n = arr.shape[0]
     if n == target_n:
         return arr
@@ -211,7 +212,7 @@ class TestNyquistZeroingImpact(unittest.TestCase):
             self.assertEqual(len(base_psfs), len(expanded_psfs), msg=f"{case_name}: PSF count mismatch")
 
             for idx, (psf_base, psf_expanded) in enumerate(zip(base_psfs, expanded_psfs)):
-                psf_expanded_aligned = _pad_or_crop_centered(psf_expanded, np.asarray(psf_base).shape[0])
+                psf_expanded_aligned = _pad_or_crop_centered(psf_expanded, np.asarray(lo_cpuArray(psf_base)).shape[0])
                 peak_diff = _peak_rel_diff(psf_base, psf_expanded_aligned)
                 l2_diff = _l2_rel_diff(psf_base, psf_expanded_aligned)
                 self.assertTrue(np.isfinite(peak_diff), msg=f"{case_name} psf#{idx}: non-finite peak diff")
