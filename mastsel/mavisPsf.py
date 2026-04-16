@@ -132,19 +132,6 @@ def padOrCropCentered(input_grid, target_n, xp=defaultArrayBackend):
     return _pad_or_crop_centered(input_grid, target_n, xp)
 
 
-def _remove_even_spectrum_nyquist(input_grid, xp=defaultArrayBackend):
-    """
-    For fftshift-centered even-sized PSD/OTF arrays, remove the unique Nyquist
-    row/column (index 0 after fftshift) so the zero-frequency sample lies on a
-    perfectly symmetric odd grid.
-    """
-    if input_grid.ndim != 2 or input_grid.shape[0] != input_grid.shape[1]:
-        raise ValueError('Expected a square 2D array.')
-    if input_grid.shape[0] % 2 == 0:
-        return _pad_or_crop_centered(input_grid, input_grid.shape[0] - 1, xp)
-    return input_grid
-
-
 def _set_sampling_preserve_pixel_size(field, sampling):
     pixel_size = field.pixel_size
     field.sampling = sampling
