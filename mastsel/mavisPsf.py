@@ -469,8 +469,7 @@ def longExposurePsf(mask, psd, otf_tel = None):
         print('otf_turb pixel size: ', pitch)
         return
 
-    psd_sampling = _remove_even_spectrum_nyquist(psd.sampling, xp)
-    work_n = psd_sampling.shape[0]
+    work_n = psd.N
     p_final_psf = mask.wvl / (pitch * work_n)  # rad
     result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
     ################################################
@@ -482,16 +481,7 @@ def longExposurePsf(mask, psd, otf_tel = None):
         maskC.pupilToOtf()
         otf_tel = maskC.sampling
 
-    otf_tel = _remove_even_spectrum_nyquist(otf_tel, xp)
-    if otf_tel.shape != psd_sampling.shape:
-        target_n = min(otf_tel.shape[0], psd_sampling.shape[0])
-        otf_tel = _pad_or_crop_centered(otf_tel, target_n, xp)
-        psd_sampling = _pad_or_crop_centered(psd_sampling, target_n, xp)
-        work_n = target_n
-        p_final_psf = mask.wvl / (pitch * work_n)
-        result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
-
-    psd_padded = zeroPad(psd_sampling, psd_sampling.shape[0] // 2, xp)
+    psd_padded = zeroPad(psd.sampling, psd.sampling.shape[0] // 2, xp)
 
     # step 1 : compute phase autocorrelation
     coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
@@ -506,7 +496,9 @@ def longExposurePsf(mask, psd, otf_tel = None):
     # step 3 : compute turbolence otf
     otf_turb = xp.exp(-0.5 * D_phi)
     # p_otft_turb = pitch
-    otf_turb = congrid(otf_turb, [work_n, work_n])
+    target_n = otf_tel.shape[0]
+    if otf_turb.shape[0] != target_n:
+        otf_turb = congrid(otf_turb, [target_n, target_n])
 
     # step 4 : combine telescope and turbolence otfs
     otf_system = otf_turb * otf_tel
