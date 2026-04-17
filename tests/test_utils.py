@@ -206,6 +206,57 @@ class TestMastselUtils(unittest.TestCase):
 
         self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
 
+    def test_psd_set_to_psf_set_even_legacy_raises_on_parity_mismatch_without_oversampling(self):
+        n = 33
+        requested_npix = 32  # mismatch on purpose
+        n_pix_pup = 29
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        with self.assertRaisesRegex(ValueError, 'nPixPsf parity must match PSD parity'):
+            psdSetToPsfSet(
+                [psd],
+                mask,
+                1.65e-6,
+                n,
+                n_pix_pup,
+                grid_diameter,
+                freq_range,
+                1.0,
+                requested_npix,
+                1.65e-6,
+                1,
+                internal_grid_mode='even_legacy',
+            )
+
+    def test_psd_set_to_psf_set_odd_internal_accepts_odd_input_grid(self):
+        n = 33
+        requested_npix = 33
+        n_pix_pup = 29
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        out = psdSetToPsfSet(
+            [psd],
+            mask,
+            1.65e-6,
+            n,
+            n_pix_pup,
+            grid_diameter,
+            freq_range,
+            1.0,
+            requested_npix,
+            1.65e-6,
+            1,
+            internal_grid_mode='odd_internal',
+        )
+
+        self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
+
     def test_psd_set_to_psf_set_odd_internal_keeps_requested_size_with_oversampling(self):
         n = 32
         requested_npix = 16
