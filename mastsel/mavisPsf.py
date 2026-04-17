@@ -537,9 +537,68 @@ def maskSA(nSA, nMask, telPupil):
             mask = maskI
     return mask
 
+
+def _expand_even_psd_to_odd_centered(psd, xp=defaultArrayBackend):
+    """Convert an even fftshift-centered PSD to odd size by appending Nyquist edge.
+
+    This preserves the centered origin position and is used only when the
+    internal grid mode explicitly requests odd-sized processing.
+    """
+    arr = xp.asarray(psd)
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError('PSD must be a square 2D array.')
+    n = arr.shape[0]
+    if n % 2 != 0:
+        return xp.array(arr, copy=True)
+
+    out = xp.zeros((n + 1, n + 1), dtype=arr.dtype)
+    out[:n, :n] = arr
+    out[n, :n] = arr[0, :]
+    out[:n, n] = arr[:, 0]
+    out[n, n] = arr[0, 0]
+    return out
+
+
+def _expand_odd_psd_to_even_with_zero_nyquist(psd, xp=defaultArrayBackend):
+    """Convert an odd fftshift-centered PSD to even legacy by adding zero Nyquist line."""
+    arr = xp.asarray(psd)
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError('PSD must be a square 2D array.')
+    n = arr.shape[0]
+    if n % 2 == 0:
+        return xp.array(arr, copy=True)
+
+    out = xp.zeros((n + 1, n + 1), dtype=arr.dtype)
+    out[1:, 1:] = arr
+    return out
+
+
+def _resolve_target_psf_size(nPixPsf, parity_reference_n, oversampling, skip_reshape):
+    """Validate requested PSF size coherence with the selected parity reference.
+
+    The output size is user-driven by nPixPsf. Without oversampling rebin,
+    parity mismatch is treated as a configuration error rather than silently
+    changing the output size.
+    """
+    target = int(nPixPsf)
+    if target <= 0:
+        raise ValueError('nPixPsf must be a positive integer.')
+
+    # When oversampling rebin is active, keep the requested external size.
+    if oversampling > 1 and not skip_reshape:
+        return target
+
+    # Otherwise, enforce parity coherence explicitly.
+    if target % 2 != parity_reference_n % 2:
+        raise ValueError(
+            'nPixPsf parity must match PSD parity when oversampling '
+            'rebin is disabled. Adjust nPixPsf or enable oversampling.'
+        )
+    return target
+
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_range,
                    dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
-                   skip_reshape=False):
+                   skip_reshape=False, internal_grid_mode='even_legacy'):
 
 
     if defaultArrayDtype == defaultArrayBackend.float32:
@@ -556,22 +615,52 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         oversampling = np.full_like(wavelength, oversampling[0],
                                     dtype=dtype)
 
+    if internal_grid_mode not in ('even_legacy', 'odd_internal'):
+        raise ValueError("internal_grid_mode must be 'even_legacy' or 'odd_internal'.")
+
     psfLongExpArr = []
 
     xp = None
 
     for wvl, ovrsmp in zip(wavelength, oversampling):
+        n_input = int(N)
+        n_internal = n_input
+        if internal_grid_mode == 'odd_internal':
+            if n_internal % 2 == 0:
+                n_internal += 1
+        else:  # even_legacy
+            if n_internal % 2 != 0:
+                n_internal += 1
+
+        # Keep frequency step consistent when internal grid size changes.
+        freq_step = float(freq_range) / float(N)
+        freq_range_internal = freq_step * n_internal
+
         if padPSD:
             pixRatio = wvlRef / wvl
             oRatio = np.ceil(pixRatio) / pixRatio
             ovrsmp *= np.ceil(pixRatio)
             ovrsmp = int(ovrsmp)
-            nPad = int(np.ceil(N * oRatio))
-            if nPad % 2 != N % 2:
+            nPad = int(np.ceil(n_internal * oRatio))
+            if nPad % 2 != n_internal % 2:
                 nPad += 1
-            nPad = max(nPad, N)
+            nPad = max(nPad, n_internal)
         else:
-            nPad = N
+            nPad = n_internal
+
+        # even_legacy may convert odd PSD grids to even internal arrays.
+        # Keep nPixPsf coherence tied to the input PSD parity expected by callers.
+        if internal_grid_mode == 'even_legacy':
+            parity_reference_n = n_input
+        else:
+            parity_reference_n = n_internal
+
+        nPixPsf_target = _resolve_target_psf_size(
+            nPixPsf,
+            parity_reference_n,
+            ovrsmp,
+            skip_reshape,
+        )
 
         maskField = Field(wvl, nPad, grid_diameter)
         if not isinstance(mask, list):
@@ -612,11 +701,18 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
 
-            psd = Field(wvl, N, freq_range, 'rad')
-            psd.sampling = computedPSD / dk**2
-            if nPad > N:
+            psd_sampling = xp.asarray(computedPSD) / dk**2
+            if n_internal != n_input:
+                if internal_grid_mode == 'odd_internal':
+                    psd_sampling = _expand_even_psd_to_odd_centered(psd_sampling, xp=xp)
+                else:
+                    psd_sampling = _expand_odd_psd_to_even_with_zero_nyquist(psd_sampling, xp=xp)
+
+            psd = Field(wvl, n_internal, freq_range_internal, 'rad')
+            psd.sampling = psd_sampling
+            if nPad > n_internal:
                 psd.sampling = _pad_or_crop_centered(psd.sampling, nPad, xp)
-                psd.width = psd.width * nPad / N
+                psd.width = psd.width * nPad / n_internal
 
             psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
 
@@ -646,10 +742,10 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr, nOut, nOvr)).mean(3).mean(1)
                 psfLE.width = psf_width
             # cut or pad the PSF to get the desired size
-            if psfLE.N != nPixPsf:
+            if psfLE.N != nPixPsf_target:
                 _set_sampling_preserve_pixel_size(
                     psfLE,
-                    _pad_or_crop_centered(psfLE.sampling, nPixPsf, xp)
+                    _pad_or_crop_centered(psfLE.sampling, nPixPsf_target, xp)
                 )
 
             psfMultiWave.append(psfLE)
