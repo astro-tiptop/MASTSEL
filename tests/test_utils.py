@@ -10,6 +10,7 @@ from mastsel.mavisLO import cpuArray as lo_cpuArray, resolve_config_path
 from mastsel.mavisPsf import (
     FFTConvolve,
     KernelConvolve,
+    _expand_odd_psd_to_even_with_zero_nyquist,
     defaultArrayBackend,
     ft_ft2,
     ft_ift2,
@@ -20,6 +21,35 @@ from mastsel.mavisUtilities import congrid
 
 
 class TestMastselUtils(unittest.TestCase):
+    def test_expand_odd_psd_to_even_with_zero_nyquist_values(self):
+        odd = np.array(
+            [
+                [1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
+                [7.0, 8.0, 9.0],
+            ],
+            dtype=np.float64,
+        )
+        converted = _expand_odd_psd_to_even_with_zero_nyquist(odd, xp=defaultArrayBackend)
+        converted = np.asarray(lo_cpuArray(converted))
+
+        expected = np.array(
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 2.0, 3.0],
+                [0.0, 4.0, 5.0, 6.0],
+                [0.0, 7.0, 8.0, 9.0],
+            ],
+            dtype=np.float64,
+        )
+        np.testing.assert_allclose(converted, expected, atol=0.0, rtol=0.0)
+
+    def test_expand_odd_psd_to_even_with_zero_nyquist_even_passthrough(self):
+        even = np.arange(16, dtype=np.float64).reshape(4, 4)
+        converted = _expand_odd_psd_to_even_with_zero_nyquist(even, xp=defaultArrayBackend)
+        converted = np.asarray(lo_cpuArray(converted))
+        np.testing.assert_allclose(converted, even, atol=0.0, rtol=0.0)
+
     def test_cpu_array_accepts_python_containers(self):
         values = [1, 2, 3]
         self.assertEqual(lo_cpuArray(values), values)
@@ -100,6 +130,158 @@ class TestMastselUtils(unittest.TestCase):
                 for sampling in samplings:
                     self.assertEqual(sampling.shape, (16, 16))
                     self.assertTrue(np.isfinite(np.asarray(lo_cpuArray(sampling))).all())
+
+    def test_psd_set_to_psf_set_internal_grid_mode_defaults_to_even_legacy(self):
+        n = 32
+        n_pix_pup = 28
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        out = psdSetToPsfSet(
+            [psd],
+            mask,
+            1.65e-6,
+            n,
+            n_pix_pup,
+            grid_diameter,
+            freq_range,
+            1.0,
+            16,
+            1.65e-6,
+            1,
+        )
+
+        self.assertEqual(out[0].sampling.shape, (16, 16))
+
+    def test_psd_set_to_psf_set_odd_internal_raises_on_parity_mismatch_without_oversampling(self):
+        n = 32
+        requested_npix = 16  # even on purpose
+        n_pix_pup = 28
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        with self.assertRaisesRegex(ValueError, 'nPixPsf parity must match PSD parity'):
+            psdSetToPsfSet(
+                [psd],
+                mask,
+                1.65e-6,
+                n,
+                n_pix_pup,
+                grid_diameter,
+                freq_range,
+                1.0,
+                requested_npix,
+                1.65e-6,
+                1,
+                internal_grid_mode='odd_internal',
+            )
+
+    def test_psd_set_to_psf_set_even_legacy_accepts_odd_input_grid(self):
+        n = 33
+        requested_npix = 33
+        n_pix_pup = 29
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        out = psdSetToPsfSet(
+            [psd],
+            mask,
+            1.65e-6,
+            n,
+            n_pix_pup,
+            grid_diameter,
+            freq_range,
+            1.0,
+            requested_npix,
+            1.65e-6,
+            1,
+            internal_grid_mode='even_legacy',
+        )
+
+        self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
+
+    def test_psd_set_to_psf_set_even_legacy_raises_on_parity_mismatch_without_oversampling(self):
+        n = 33
+        requested_npix = 32  # mismatch on purpose
+        n_pix_pup = 29
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        with self.assertRaisesRegex(ValueError, 'nPixPsf parity must match PSD parity'):
+            psdSetToPsfSet(
+                [psd],
+                mask,
+                1.65e-6,
+                n,
+                n_pix_pup,
+                grid_diameter,
+                freq_range,
+                1.0,
+                requested_npix,
+                1.65e-6,
+                1,
+                internal_grid_mode='even_legacy',
+            )
+
+    def test_psd_set_to_psf_set_odd_internal_accepts_odd_input_grid(self):
+        n = 33
+        requested_npix = 33
+        n_pix_pup = 29
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        out = psdSetToPsfSet(
+            [psd],
+            mask,
+            1.65e-6,
+            n,
+            n_pix_pup,
+            grid_diameter,
+            freq_range,
+            1.0,
+            requested_npix,
+            1.65e-6,
+            1,
+            internal_grid_mode='odd_internal',
+        )
+
+        self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
+
+    def test_psd_set_to_psf_set_odd_internal_keeps_requested_size_with_oversampling(self):
+        n = 32
+        requested_npix = 16
+        n_pix_pup = 28
+        grid_diameter = 8.0
+        freq_range = n / grid_diameter
+        mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        psd = np.zeros((n, n), dtype=np.float64)
+
+        out = psdSetToPsfSet(
+            [psd],
+            mask,
+            1.65e-6,
+            n,
+            n_pix_pup,
+            grid_diameter,
+            freq_range,
+            1.0,
+            requested_npix,
+            1.65e-6,
+            2,
+            internal_grid_mode='odd_internal',
+        )
+
+        self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
 
 
 if __name__ == '__main__':

@@ -18,11 +18,11 @@ PEAK_TOL = 1.0e-3
 # tests/report_nyquist_zeroing_impact.py (mode=expand_to_n_plus_1),
 # converted from percent to fractional units.
 ODD_EVEN_PEAK_TOL_BY_CASE = {
-    "ERIS": 0.624960 / 100.0,
-    "HARMONI_SCAO": 1.536845 / 100.0,
-    "MAVIS": 4.959511 / 100.0,
-    "SOUL": 0.466357 / 100.0,
-    "SPHERE": 0.401884 / 100.0,
+    "ERIS": 1.489364 / 100.0,
+    "HARMONI_SCAO": 0.600631 / 100.0,
+    "MAVIS": 0.637478 / 100.0,
+    "SOUL": 1.453162 / 100.0,
+    "SPHERE": 1.446788 / 100.0,
 }
 # Small absolute safety margin for numerical drift across environments.
 ODD_EVEN_TOL_MARGIN = 1.0e-3
@@ -65,11 +65,13 @@ def _expand_with_nyquist_row_col(psd):
     if n % 2 != 0:
         return arr.copy()
 
+    # Keep the fftshift-centered origin fixed (no index shift) and append the
+    # missing +Nyquist row/column at the high-index edge.
     out = np.zeros((n + 1, n + 1), dtype=arr.dtype)
-    out[1:, 1:] = arr
-    out[0, 1:] = arr[0, :]
-    out[1:, 0] = arr[:, 0]
-    out[0, 0] = arr[0, 0]
+    out[:n, :n] = arr
+    out[n, :n] = arr[0, :]
+    out[:n, n] = arr[:, 0]
+    out[n, n] = arr[0, 0]
     return out
 
 

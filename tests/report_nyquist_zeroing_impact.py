@@ -83,12 +83,27 @@ def _expand_with_nyquist_row_col(psd):
     if n % 2 != 0:
         return arr.copy()
 
+    # Keep the fftshift-centered origin fixed (no index shift) and append the
+    # missing +Nyquist row/column at the high-index edge.
     out = np.zeros((n + 1, n + 1), dtype=arr.dtype)
-    out[1:, 1:] = arr
-    out[0, 1:] = arr[0, :]
-    out[1:, 0] = arr[:, 0]
-    out[0, 0] = arr[0, 0]
+    out[:n, :n] = arr
+    out[n, :n] = arr[0, :]
+    out[:n, n] = arr[:, 0]
+    out[n, n] = arr[0, 0]
     return out
+
+
+def _shrink_drop_nyquist_row_col(psd):
+    arr = np.asarray(psd)
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError("PSD must be a square 2D array")
+    n = arr.shape[0]
+    if n % 2 != 0:
+        return arr.copy()
+
+    # Remove the unique Nyquist line representation (index 0 for fftshift-
+    # centered even grids), yielding an odd-sized centered grid (N-1).
+    return arr[1:, 1:].copy()
 
 
 def _run_reference(data):
@@ -142,13 +157,13 @@ def _run_zeroed_case(data):
     return _flatten_psf_set(zeroed)
 
 
-def _run_expanded_case(data):
+def _run_expanded_case(data, fixed_npixpsf=False):
     N = int(data["N"])
     input_psds = np.asarray(data["input_psds"])
     expanded_psds = np.asarray([_expand_with_nyquist_row_col(psd) for psd in input_psds])
 
     odd_N = N + 1
-    odd_nPixPsf = int(data["nPixPsf"]) + 1
+    odd_nPixPsf = int(data["nPixPsf"]) if fixed_npixpsf else int(data["nPixPsf"]) + 1
     odd_nPixPup = int(data["nPixPup"])
     odd_grid = float(data["grid_diameter"])
     psd_step = float(data["freq_range"]) / float(N)
@@ -173,6 +188,39 @@ def _run_expanded_case(data):
 
     expanded = psdSetToPsfSet(expanded_psds, **kwargs)
     return _flatten_psf_set(expanded)
+
+
+def _run_shrunk_case(data, fixed_npixpsf=False):
+    N = int(data["N"])
+    input_psds = np.asarray(data["input_psds"])
+    shrunk_psds = np.asarray([_shrink_drop_nyquist_row_col(psd) for psd in input_psds])
+
+    odd_N = N - 1
+    shrunk_nPixPsf = int(data["nPixPsf"]) if fixed_npixpsf else max(1, int(data["nPixPsf"]) - 1)
+    odd_nPixPup = int(data["nPixPup"])
+    odd_grid = float(data["grid_diameter"])
+    psd_step = float(data["freq_range"]) / float(N)
+    odd_freq = odd_N * psd_step
+
+    kwargs = dict(
+        mask=np.asarray(data["mask"]),
+        wavelength=np.asarray(data["wavelength"]),
+        N=odd_N,
+        nPixPup=odd_nPixPup,
+        grid_diameter=odd_grid,
+        freq_range=odd_freq,
+        dk=float(data["dk"]),
+        nPixPsf=shrunk_nPixPsf,
+        wvlRef=float(data["wvlRef"]),
+        oversampling=float(data["oversampling"]),
+        padPSD=bool(data["padPSD"]),
+    )
+    has_opd = bool(data["has_opd"])
+    if has_opd:
+        kwargs["opdMap"] = np.asarray(data["opd_map"])
+
+    shrunk = psdSetToPsfSet(shrunk_psds, **kwargs)
+    return _flatten_psf_set(shrunk)
 
 
 def _diff_rows(base_psfs, other_psfs, mode_name):
@@ -254,28 +302,67 @@ def _print_summary(rows):
         )
 
 
+def _print_trend_summary(rows):
+    mode_rank = {
+        "zero_row_col": 0,
+        "shrink_to_n_minus_1": 1,
+        "expand_to_n_plus_1": 2,
+    }
+    grouped = {}
+    for row in rows:
+        grouped.setdefault((row["case"], row["mode"]), []).append(row)
+
+    print("\nTrend by case (max peak rel diff %)" )
+    print("case | zero_row_col | shrink_to_n_minus_1 | expand_to_n_plus_1 | monotonic")
+    cases = sorted({case for case, _ in grouped.keys()})
+    for case in cases:
+        vals = {}
+        for mode in mode_rank:
+            items = grouped.get((case, mode), [])
+            if items:
+                arr = np.asarray([100.0 * r["peak_rel_diff"] for r in items], dtype=np.float64)
+                vals[mode] = float(arr.max())
+            else:
+                vals[mode] = np.nan
+
+        seq = [vals[m] for m in ("zero_row_col", "shrink_to_n_minus_1", "expand_to_n_plus_1")]
+        finite = [v for v in seq if np.isfinite(v)]
+        monotonic = "n/a"
+        if len(finite) == 3:
+            monotonic = "yes" if (seq[0] <= seq[1] <= seq[2]) else "no"
+
+        def fmt(v):
+            return f"{v:.6f}" if np.isfinite(v) else "n/a"
+
+        print(
+            f"{case} | {fmt(vals['zero_row_col'])} | "
+            f"{fmt(vals['shrink_to_n_minus_1'])} | {fmt(vals['expand_to_n_plus_1'])} | {monotonic}"
+        )
+
+
 def _safe_filename(name):
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)
 
 
 def _plot_psf_triptych(row, output_dir):
     import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
 
     base = row["base_psf"]
     other = row["other_psf"]
-    diff = other - base
+    diff = np.abs(other - base)
     vmax = max(float(np.max(np.abs(diff))), 1e-20)
 
     fig, axs = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
-    im0 = axs[0].imshow(base, origin="lower")
+    im0 = axs[0].imshow(base, origin="lower", norm=LogNorm(vmin=base.max()*1e-6, vmax=base.max()))
     axs[0].set_title("baseline")
     plt.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
 
-    im1 = axs[1].imshow(other, origin="lower")
+    im1 = axs[1].imshow(other, origin="lower", norm=LogNorm(vmin=other.max()*1e-6, vmax=other.max()))
     axs[1].set_title(row["mode"])
     plt.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04)
 
-    im2 = axs[2].imshow(diff, origin="lower", cmap="coolwarm", vmin=-vmax, vmax=vmax)
+    im2 = axs[2].imshow(diff, origin="lower", cmap="coolwarm", norm=LogNorm(vmin=diff.max()*1e-6, vmax=diff.max()))
     axs[2].set_title("difference")
     plt.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04)
 
@@ -335,6 +422,7 @@ def main():
     parser.add_argument("--format", choices=["table", "csv"], default="table", help="Output format")
     parser.add_argument("--plot-psf", action="store_true", help="Save baseline/other/difference PSF images")
     parser.add_argument("--plot-peaks", action="store_true", help="Save 1D peak summary plots")
+    parser.add_argument("--fixed-npixpsf", action="store_true", help="Use the baseline nPixPsf also for N+1 and N-1 runs")
     parser.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "report_plots"), help="Directory for optional plots")
     parser.add_argument("--max-psf-plots", type=int, default=20, help="Maximum number of PSF triptych plots to generate")
     args = parser.parse_args()
@@ -353,7 +441,8 @@ def main():
 
         base_psfs = _run_reference(data)
         rows = _diff_rows(base_psfs, _run_zeroed_case(data), "zero_row_col")
-        rows.extend(_diff_rows(base_psfs, _run_expanded_case(data), "expand_to_n_plus_1"))
+        rows.extend(_diff_rows(base_psfs, _run_shrunk_case(data, fixed_npixpsf=args.fixed_npixpsf), "shrink_to_n_minus_1"))
+        rows.extend(_diff_rows(base_psfs, _run_expanded_case(data, fixed_npixpsf=args.fixed_npixpsf), "expand_to_n_plus_1"))
         for row in rows:
             row["case"] = case_name
             row["N"] = N
@@ -370,6 +459,7 @@ def main():
     else:
         _print_table(rows_all)
         _print_summary(rows_all)
+        _print_trend_summary(rows_all)
 
     if args.plot_psf or args.plot_peaks:
         os.makedirs(args.output_dir, exist_ok=True)

@@ -86,11 +86,13 @@ def _expand_with_nyquist_row_col(psd):
     if n % 2 != 0:
         return arr.copy()
 
+    # Keep the fftshift-centered origin fixed (no index shift) and append the
+    # missing +Nyquist row/column at the high-index edge.
     out = np.zeros((n + 1, n + 1), dtype=arr.dtype)
-    out[1:, 1:] = arr
-    out[0, 1:] = arr[0, :]
-    out[1:, 0] = arr[:, 0]
-    out[0, 0] = arr[0, 0]
+    out[:n, :n] = arr
+    out[n, :n] = arr[0, :]
+    out[:n, n] = arr[:, 0]
+    out[n, n] = arr[0, 0]
     return out
 
 
