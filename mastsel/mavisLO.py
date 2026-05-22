@@ -1194,11 +1194,11 @@ class MavisLO(object):
             resultTilt_coarse = xp.absolute((xp.sum(
                 self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1))))
 
-            minTipIdx_coarse = xp.where(resultTip_coarse == xp.nanmin(resultTip_coarse))
-            minTiltIdx_coarse = xp.where(resultTilt_coarse == xp.nanmin(resultTilt_coarse))
+            minTipIdx_coarse = xp.nanargmin(resultTip_coarse)
+            minTiltIdx_coarse = xp.nanargmin(resultTilt_coarse)
 
-            bestTipGain_coarse = g0g_coarse[minTipIdx_coarse[0][0]]
-            bestTiltGain_coarse = g0g_coarse[minTiltIdx_coarse[0][0]]
+            bestTipGain_coarse = g0g_coarse[minTipIdx_coarse]
+            bestTiltGain_coarse = g0g_coarse[minTiltIdx_coarse]
 
             # Step 2: Fine search around the coarse minimum
             fine_range = 0.1 * maxG
@@ -1240,8 +1240,8 @@ class MavisLO(object):
             resultTilt = xp.absolute((xp.sum(
                 self.fTiltS_lambda1(g0g_ext, psd_freq_ext, psd_tilt_turb_ext), axis=(1)) ) )
 
-        minTipIdx = xp.where(resultTip == xp.nanmin(resultTip))
-        minTiltIdx = xp.where(resultTilt == xp.nanmin(resultTilt))
+        minTipIdx = xp.nanargmin(resultTip)
+        minTiltIdx = xp.nanargmin(resultTilt)
 
         if self.plot4debug:
             g_plot_tip = g0g_ext_tip if self.LoopGain_LO == 'optimize' else g0g_ext
@@ -1269,11 +1269,11 @@ class MavisLO(object):
 
         if self.verbose:
             print('    best tip & tilt gain (noise):',
-                  "%.3f" % g0g_tip[minTipIdx[0][0]], "%.3f" % g0g_tilt[minTiltIdx[0][0]])
+                  "%.3f" % g0g_tip[minTipIdx], "%.3f" % g0g_tilt[minTiltIdx])
         if self.platformlib==gpulib and gpuEnabled:
-            return cp.asnumpy(resultTip[minTipIdx[0][0]]), cp.asnumpy(resultTilt[minTiltIdx[0][0]])
+            return cp.asnumpy(resultTip[minTipIdx]), cp.asnumpy(resultTilt[minTiltIdx])
         else:
-            return (resultTip[minTipIdx[0][0]], resultTilt[minTiltIdx[0][0]])
+            return (resultTip[minTipIdx], resultTilt[minTiltIdx])
 
 
     def computeFocusNoiseResidual(self, fmin, fmax, freq_samples, varX, bias):
@@ -2049,9 +2049,15 @@ class MavisLO(object):
             CtotDiff = C2 + C3 - self.CtotL
 
             if self.verbose:
+                # Estrae gli scalari nativi Python con .item() dopo aver applicato maximum e sqrt
+                res_CtotDiff = np.sqrt(np.maximum(CtotDiff, 0)).item()
+                res_C2       = np.sqrt(np.maximum(C2, 0)).item()
+                res_C3       = np.sqrt(np.maximum(C3, 0)).item()
+                res_CtotL    = np.sqrt(np.maximum(self.CtotL, 0)).item()
+                
                 print('    focus residual (tomo., tur.+noi., LGS) [nm]:',
-                      "%.2f" % np.sqrt(CtotDiff), '(', "%.2f" % np.sqrt(C2),
-                      ',', "%.2f" % np.sqrt(C3), ',', "%.2f" % np.sqrt(self.CtotL),')')
+                      "%.2f" % res_CtotDiff, '(', "%.2f" % res_C2,
+                      ',', "%.2f" % res_C3, ',', "%.2f" % res_CtotL, ')')
 
             return CtotDiff
         else:
