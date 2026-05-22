@@ -197,26 +197,27 @@ class MavisLO(object):
     def check_section_key(self, primary):
         if self.configType == 'ini':
             return self.config.has_section(primary)
-        elif self.configType == 'yml':
-            return primary in self.my_yaml_dict.keys()
+        elif self.configType == 'dict':
+            return primary in self.config_data.keys()
 
     def check_config_key(self, primary, secondary):
         if self.configType == 'ini':
             return self.config.has_option(primary, secondary)
-        elif self.configType == 'yml':
-            if primary in self.my_yaml_dict.keys():
-                return secondary in self.my_yaml_dict[primary].keys()
+        elif self.configType == 'dict':
+            if primary in self.config_data.keys():
+                return secondary in self.config_data[primary].keys()
             else:
                 return False
 
     def get_config_value(self, primary, secondary):
         if self.configType == 'ini':
             return parse_config_value(self.config[primary][secondary])
-        if self.configType == 'yml':
-            return self.my_yaml_dict[primary][secondary]
+        if self.configType == 'dict':
+            return self.config_data[primary][secondary]
         raise ValueError(f"Unsupported config type: {self.configType}")
 
-    def __init__(self, path, parametersFile, verbose=False):
+    # Added an optional config_dict parameter and made path/parametersFile optional
+    def __init__(self, path=None, parametersFile=None, verbose=False, config_dict=None):
 
         self.verbose = verbose
         self.plot4debug = False
@@ -224,24 +225,38 @@ class MavisLO(object):
 
         if self.verbose: np.set_printoptions(precision=3)
 
-        filename_ini = os.path.join(path, parametersFile + '.ini')
-        filename_yml = os.path.join(path, parametersFile + '.yml')
-
         self.error = False
-        if os.path.exists(filename_yml):
-            self.configType = 'yml'
-            with open(filename_yml, encoding='utf-8') as f:
-                self.my_yaml_dict = yaml.safe_load(f)
-        elif os.path.exists(filename_ini):
-            self.configType = 'ini'
-            self.config = ConfigParser()
-            self.config.optionxform = str
-            self.config.read(filename_ini)
+        
+        # 1. TIPTOP Mode: If a configuration dictionary is provided, use it directly (Single Source of Truth)
+        if config_dict is not None:
+            self.configType = 'dict'
+            self.config_data = config_dict
+            
+        # 2. Standalone Mode: Fallback to reading from disk for external scripts or legacy use cases
         else:
-            print('%%%%%%%% ERROR %%%%%%%%')
-            print('The .ini or .yml file does not exist\n')
-            self.error = True
-            return
+            if path is None or parametersFile is None:
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('Either config_dict or both path and parametersFile must be provided.\n')
+                self.error = True
+                return
+                
+            filename_ini = os.path.join(path, parametersFile + '.ini')
+            filename_yml = os.path.join(path, parametersFile + '.yml')
+
+            if os.path.exists(filename_yml):
+                self.configType = 'dict' # YML parsing outputs a dictionary, so we use the dict logic path
+                with open(filename_yml, encoding='utf-8') as f:
+                    self.config_data = yaml.safe_load(f)
+            elif os.path.exists(filename_ini):
+                self.configType = 'ini'
+                self.config = ConfigParser()
+                self.config.optionxform = str
+                self.config.read(filename_ini)
+            else:
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('The .ini or .yml file does not exist\n')
+                self.error = True
+                return
 
         self.TelescopeDiameter      = self.get_config_value('telescope','TelescopeDiameter')
         self.ZenithAngle            = self.get_config_value('telescope','ZenithAngle')
