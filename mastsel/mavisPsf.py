@@ -34,11 +34,12 @@ def mastselPsfPrecision(precision=None, dtype=None):
     else:
         raise ValueError("Precision must be either 'single' or 'double'.")
 
+  
 def hostData(_data):
-    if defaultArrayBackend == cp and gpuEnabled:
-        return cp.asnumpy(_data)
-    else:
-        return _data
+    """Safely transfers an array to the host CPU regardless of its current backend."""
+    if hasattr(_data, 'get'):
+        return _data.get()
+    return np.asarray(_data)
 
 
 def ft_ift2(G, xp=defaultArrayBackend):
@@ -198,12 +199,6 @@ class Field(object):
     def half_pixel_size(self):
         return self.__half_pixel_size
 
-    def hostData(self, _data):
-        if self.xp == cp and gpuEnabled:
-            return cp.asnumpy(_data)
-        else:
-            return _data
-
     def gModel1(self, x, y, sigma_X, sigma_Y, angle):
         A = 1.0
         x0 = _centered_pixel_index(self.N)
@@ -305,7 +300,7 @@ class Field(object):
         else:
             s1 = centralSquare(self.sampling, fit_window_max_size, self.xp)
         nn = min(fit_window_max_size, self.N)
-        z = self.hostData(self.xp.copy(s1))
+        z = hostData(self.xp.copy(s1))
         y, x = np.mgrid[:nn, :nn]
         fit_p, p_init = fitGaussian(z)
         p = fit_p(p_init, x, y, z)
@@ -346,7 +341,7 @@ class Field(object):
         else:
             s1 = centralSquare(self.sampling, fit_window_max_size, self.xp)
         nn = min(fit_window_max_size, self.N)
-        z = self.hostData(self.xp.copy(s1))
+        z = hostData(self.xp.copy(s1))
         y, x = np.mgrid[:nn, :nn]
         fit_p, p_init = fitGaussian(z)
         p = fit_p(p_init, x, y, z)
@@ -363,13 +358,17 @@ class Field(object):
         self.width *= factor
 
     def standardPlot(self, log=False, zoom=1):
-        img1 = self.xp.copy(self.sampling)
-        if log:
-            img1 = np.log(np.absolute(self.sampling))
+        img1 = self.sampling
         if zoom > 1:
             img1 = centralSquare(img1, int(self.N / zoom / 2), self.xp)
 
-        img2 = self.hostData(img1)
+        # Transfer to CPU for plotting
+        img2 = hostData(img1)
+        
+        if log:
+            # Safe CPU-side logarithm with epsilon to avert log(0) warnings
+            img2 = np.log(np.absolute(img2) + 1e-20)
+            
         standardPsfPlot(img2)
 
     def printStatus(self):
