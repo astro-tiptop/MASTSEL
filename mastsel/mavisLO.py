@@ -2064,7 +2064,6 @@ class MavisLO(object):
             CtotDiff = C2 + C3 - self.CtotL
 
             if self.verbose:
-                # Estrae gli scalari nativi Python con .item() dopo aver applicato maximum e sqrt
                 res_CtotDiff = np.sqrt(np.maximum(CtotDiff, 0)).item()
                 res_C2       = np.sqrt(np.maximum(C2, 0)).item()
                 res_C3       = np.sqrt(np.maximum(C3, 0)).item()
