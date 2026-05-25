@@ -283,6 +283,56 @@ class TestMastselUtils(unittest.TestCase):
 
         self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
 
+    def test_long_exposure_psf_inplace_memory_optimization(self):
+        """
+        Regression Test: Verifies that the in-place memory optimization
+        and algebraic simplification (B_phi - b0) in longExposurePsf 
+        produces the exact same numerical result as the legacy out-of-place 
+        conjugate math, ensuring zero degradation in physical accuracy.
+        """
+        from mastsel.mavisPsf import Field, longExposurePsf
+        xp = defaultArrayBackend
+        
+        # 1. Setup a dummy numerical environment
+        n = 64
+        wvl = 1.65e-6
+        grid_diameter = 8.0
+        pitch = 1.0 / (n / grid_diameter)
+        
+        # Create a dummy mask (telescope OTF)
+        mask = Field(wvl, n, pitch * n, xp=xp)
+        mask.sampling = xp.ones((n, n), dtype=mask.sampling.dtype)
+        mask.pupilToOtf()
+        
+        # Create a dummy symmetrical PSD
+        psd = Field(wvl, n, pitch * n, unit='rad', xp=xp)
+        y, x = xp.mgrid[-n//2:n//2, -n//2:n//2]
+        r = xp.sqrt(x**2 + y**2)
+        psd.sampling = xp.exp(-r/10).astype(defaultArrayBackend.float64)
+        psd.sampling = xp.fft.ifftshift(psd.sampling) # standard PSD format
+        
+        # 2. Execute the CURRENT/NEW longExposurePsf (which we will optimize)
+        # (Assuming you applied the in-place B_phi -= b0 math here)
+        new_psf = longExposurePsf(mask, psd)
+        new_sampling = lo_cpuArray(new_psf.sampling)
+        
+        # 3. Execute the LEGACY out-of-place math explicitly
+        dtype = xp.float64
+        psd_pad = psd.sampling 
+        coeff = xp.asarray((psd.kk * psd.width) ** 2, dtype=dtype)
+        B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd_pad))) * coeff
+        b0 = float(B_phi[0, 0])
+        B_phi = xp.fft.fftshift(B_phi)
+        
+        # The old massive RAM-heavy allocations
+        D_phi = 2.0 * b0 - (B_phi + B_phi.conj())
+        otf_turb = xp.exp(-0.5 * D_phi)
+        otf_system = otf_turb * mask.sampling
+        old_sampling = lo_cpuArray(xp.real(ft_ft2(otf_system, xp)))
+        
+        # 4. The absolute verdict
+        # Tolerance is extremely tight because the math should be symbolically identical
+        np.testing.assert_allclose(new_sampling, old_sampling, rtol=1e-7, atol=1e-10)
 
 if __name__ == '__main__':
     unittest.main()

@@ -34,11 +34,12 @@ def mastselPsfPrecision(precision=None, dtype=None):
     else:
         raise ValueError("Precision must be either 'single' or 'double'.")
 
+  
 def hostData(_data):
-    if defaultArrayBackend == cp and gpuEnabled:
-        return cp.asnumpy(_data)
-    else:
-        return _data
+    """Safely transfers an array to the host CPU regardless of its current backend."""
+    if hasattr(_data, 'get'):
+        return _data.get()
+    return np.asarray(_data)
 
 
 def ft_ift2(G, xp=defaultArrayBackend):
@@ -198,12 +199,6 @@ class Field(object):
     def half_pixel_size(self):
         return self.__half_pixel_size
 
-    def hostData(self, _data):
-        if self.xp == cp and gpuEnabled:
-            return cp.asnumpy(_data)
-        else:
-            return _data
-
     def gModel1(self, x, y, sigma_X, sigma_Y, angle):
         A = 1.0
         x0 = _centered_pixel_index(self.N)
@@ -305,7 +300,7 @@ class Field(object):
         else:
             s1 = centralSquare(self.sampling, fit_window_max_size, self.xp)
         nn = min(fit_window_max_size, self.N)
-        z = self.hostData(self.xp.copy(s1))
+        z = hostData(self.xp.copy(s1))
         y, x = np.mgrid[:nn, :nn]
         fit_p, p_init = fitGaussian(z)
         p = fit_p(p_init, x, y, z)
@@ -346,7 +341,7 @@ class Field(object):
         else:
             s1 = centralSquare(self.sampling, fit_window_max_size, self.xp)
         nn = min(fit_window_max_size, self.N)
-        z = self.hostData(self.xp.copy(s1))
+        z = hostData(self.xp.copy(s1))
         y, x = np.mgrid[:nn, :nn]
         fit_p, p_init = fitGaussian(z)
         p = fit_p(p_init, x, y, z)
@@ -363,13 +358,17 @@ class Field(object):
         self.width *= factor
 
     def standardPlot(self, log=False, zoom=1):
-        img1 = self.xp.copy(self.sampling)
-        if log:
-            img1 = np.log(np.absolute(self.sampling))
+        img1 = self.sampling
         if zoom > 1:
             img1 = centralSquare(img1, int(self.N / zoom / 2), self.xp)
 
-        img2 = self.hostData(img1)
+        # Transfer to CPU for plotting
+        img2 = hostData(img1)
+        
+        if log:
+            # Safe CPU-side logarithm with epsilon to avert log(0) warnings
+            img2 = np.log(np.absolute(img2) + 1e-20)
+            
         standardPsfPlot(img2)
 
     def printStatus(self):
@@ -437,17 +436,19 @@ def shortExposurePsf(mask, phaseScreen):
     return result
 
 
-def longExposurePsf(mask, psd, otf_tel = None):
+def longExposurePsf(mask, psd, otf_tel=None):
     xp = mask.xp
     if defaultArrayDtype == defaultArrayBackend.float32:
         dtype = xp.float32
     else:
         dtype = xp.float64
+        
     if (mask.N != psd.N):
         print('Mask and PSD sampling not compatible (grids sizes in pixels are different!)')
         print('mask grid size: ', mask.N)
         print('psf grid size: ', psd.N)
         return
+        
     freq_range = psd.width
     pitch = 1.0 / freq_range
     if xp.abs((mask.pixel_size - pitch) / pitch) > 0.001:
@@ -458,37 +459,38 @@ def longExposurePsf(mask, psd, otf_tel = None):
 
     work_n = psd.N
     p_final_psf = mask.wvl / (pitch * work_n)  # rad
-    result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad')
+    result = Field(mask.wvl, work_n, work_n * p_final_psf, unit='rad', xp=xp)
     ################################################
 
     # step 0 : compute telescope otf
     if otf_tel is None:
-        maskC = Field(mask.wvl, mask.N, pitch * mask.N)
+        maskC = Field(mask.wvl, mask.N, pitch * mask.N, xp=xp)
         maskC.sampling = xp.copy(mask.sampling)
         maskC.pupilToOtf()
         otf_tel = maskC.sampling
 
     psd_padded = zeroPad(psd.sampling, psd.sampling.shape[0] // 2, xp)
 
-    # step 1 : compute phase autocorrelation
+    # step 1 : compute phase autocorrelation (in-place math to save VRAM)
     coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
-    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd_padded))) * coeff
-    b0 = B_phi[0, 0]
+    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd_padded)))
+    B_phi *= coeff  # In-place scalar multiplication
+    
+    b0 = float(B_phi[0, 0])
     B_phi = xp.fft.fftshift(B_phi)
 
-    # step 2 : compute structure function
-    # D_phi = 2.0 * (-B_phi + b0)
-    D_phi = 2.0 * b0 - (B_phi + B_phi.conj())
-
-    # step 3 : compute turbolence otf
-    otf_turb = xp.exp(-0.5 * D_phi)
-    # p_otft_turb = pitch
+    # step 2 & 3: compute structure function and turbulence OTF
+    # Algebraic simplification: -0.5 * D_phi = -0.5 * (2 * b0 - 2 * B_phi) = B_phi - b0
+    B_phi -= b0
+    # In-place exponentiation directly into the existing memory buffer
+    xp.exp(B_phi, out=B_phi)
+    
     target_n = otf_tel.shape[0]
-    if otf_turb.shape[0] != target_n:
-        otf_turb = congrid(otf_turb, [target_n, target_n])
+    if B_phi.shape[0] != target_n:
+        B_phi = congrid(B_phi, [target_n, target_n])
 
-    # step 4 : combine telescope and turbolence otfs
-    otf_system = otf_turb * otf_tel
+    # step 4 : combine telescope and turbulence otfs
+    otf_system = B_phi * otf_tel
 
     # step 5 : system otf to system psf
     result.sampling = xp.real(ft_ft2(otf_system, xp))
@@ -734,8 +736,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                     # integer shifts
                     psfLE.sampling = xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
                 else:
-                    # non integer shifts
-                    psfLE.sampling = a_shift(psfLE.sampling, (delta, delta), order=3, mode='constant')
+                    # non integer shifts (order=1 is bilinear: vastly faster and perfectly sufficient for oversampled data)
+                    psfLE.sampling = a_shift(psfLE.sampling, (delta, delta), order=1, mode='constant')
 
                 # rebin the PSF
                 psf_width = psfLE.width

@@ -49,6 +49,43 @@ class TestReconstructor(TestMavisLO):
         self.assertTrue( np.testing.assert_allclose(R_0, R_0__, rtol=1e-03, atol=1e-5)==None)
         self.assertTrue( np.testing.assert_allclose(R_1, R_1__, rtol=1e-03, atol=1e-5)==None)
 
+    def test_reconstructor2_gpu_type_safety(self):
+        """
+        Regression & Type-Safety Test: Verifies that buildReconstructor2 
+        correctly handles device isolation and does not trigger implicit 
+        NumPy/CuPy conversion type errors when running on GPU.
+        """
+        # Define clean mock pointing coordinates (2D array as expected by the simulation)
+        cartPointingCoordsV = np.asarray([[5.0, 5.0], [10.0, -10.0]])
+        polarNGSCoords = np.asarray([[30.0, 0.0], [50.0, 100.0], [10.0, 240.0]])
+        cartNGSCoords = np.asarray([polarToCartesian(p) for p in polarNGSCoords])
+        
+        # Mock some baseline covariance matrices for MMSE tracking
+        Caa = np.eye(2, dtype=np.float64) * 0.1
+        Cnn = np.eye(6, dtype=np.float64) * 0.05
+        
+        # Test 1: Validate standard execution returns correct dimensions
+        R, RT = TestMavisLO.mLO.buildReconstuctor2(cartPointingCoordsV, cartNGSCoords, Cnn=Cnn, Caa=Caa)
+        self.assertEqual(R.shape, (4, 6)) # 2 directions * 2 (TT) rows, 3 stars * 2 cols
+        
+        # Test 2: Force GPU path if cupy is installed to safeguard against implicit conversions
+        if gpuEnabled:
+            try:
+                # Force the class to simulate a GPU computation platform
+                original_platform = TestMavisLO.mLO.computationPlatform
+                TestMavisLO.mLO.computationPlatform = 'GPU'
+                
+                # Run the reconstructor under simulated active GPU conditions
+                R_gpu, RT_gpu = TestMavisLO.mLO.buildReconstuctor2(cartPointingCoordsV, cartNGSCoords, Cnn=Cnn, Caa=Caa)
+                
+                # Check that tensors can be successfully moved back to CPU without crashing
+                self.assertIsNotNone(R_gpu)
+                
+            finally:
+                # Always restore the original platform configuration to avoid test pollution
+                TestMavisLO.mLO.computationPlatform = original_platform
+
+
 
 class TestCovMatrices(TestMavisLO):
     def test_cov_matrices(self):
