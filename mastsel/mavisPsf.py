@@ -643,12 +643,15 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             oRatio = np.ceil(pixRatio) / pixRatio
             ovrsmp *= np.ceil(pixRatio)
             ovrsmp = int(ovrsmp)
+            # Store the wavelength-specific oversampling for rebin (without global kRef factor)
+            wvl_ovrsmp = int(np.ceil(pixRatio))
             nPad = int(np.ceil(n_internal * oRatio))
             if nPad % 2 != n_internal % 2:
                 nPad += 1
             nPad = max(nPad, n_internal)
         else:
             nPad = n_internal
+            wvl_ovrsmp = 1
 
         # even_legacy may convert odd PSD grids to even internal arrays.
         # Keep nPixPsf coherence tied to the input PSD parity expected by callers.
@@ -728,11 +731,13 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 )
             # resample the PSF to get the not oversampled pixel scale
             if ovrsmp > 1 and not skip_reshape:
-                nOut = int(psfLE.sampling.shape[0] / nOvr)
+                # Use wavelength-specific oversampling for rebin, not total ovrsmp
+                nOvr_rebin = max(1, wvl_ovrsmp)
+                nOut = int(psfLE.sampling.shape[0] / nOvr_rebin)
 
                 # shift the PSF to get it centered on one pixel
-                delta = (ovrsmp - 1) / 2
-                if nOvr % 2:
+                delta = (nOvr_rebin - 1) / 2
+                if nOvr_rebin % 2:
                     # integer shifts
                     psfLE.sampling = xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
                 else:
@@ -741,7 +746,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 
                 # rebin the PSF
                 psf_width = psfLE.width
-                psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr, nOut, nOvr)).mean(3).mean(1)
+                psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr_rebin, nOut, nOvr_rebin)).mean(3).mean(1)
                 psfLE.width = psf_width
             # cut or pad the PSF to get the desired size
             if psfLE.N != nPixPsf_target:

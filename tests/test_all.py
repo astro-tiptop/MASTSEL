@@ -277,6 +277,85 @@ class TestPsfExtrapolation(unittest.TestCase):
         self.assertEqual(len(r_extended), len(psf_extended))
 
 
+class TestPsfPadding(unittest.TestCase):
+    """Test psdSetToPsfSet rebin logic for multi-wavelength case."""
+    
+    def test_multiwavelength_rebin_uses_wavelength_ovrsmp_not_total(self):
+        """
+        Regression test: psdSetToPsfSet with padPSD=True should use
+        wvl_ovrsmp (wavelength-only oversampling) for rebin, not total ovrsmp.
+        
+        Bug fix: mavisPsf.py lines 733-750
+        
+        Setup: Two wavelengths [1.2µm, 2.2µm] with ratio ~1.83
+        - pixRatio = 2.2/1.2 ≈ 1.83
+        - wvl_ovrsmp = ceil(1.83) = 2  
+        - kRef=2, total ovrsmp = 2*2 = 4 for shortest wavelength
+        
+        Internal PSF dimensions for shortest wavelength (1.2µm):
+        - nOtf = 256*2 = 512
+        - nBig = 2*512 = 1024
+        - psfLE.sampling after otf2psf: 1024x1024
+        
+        Before fix: nOvr=int(ovrsmp)=4, nOut = 1024/4 = 256 ❌
+        After fix: nOvr_rebin=wvl_ovrsmp=2, nOut = 1024/2 = 512 ✅
+        
+        This test uses nPixPsf=512 to match the correct rebinned size.
+        With the fix, cropping from 512→512 preserves the full PSF.
+        With the bug, padding from 256→512 loses resolution.
+        """
+        # Setup parameters matching real multi-wavelength case
+        wavelengths = [1.2e-6, 2.2e-6]  # ratio = 1.83
+        wvl_ref = 2.2e-6  # reference wavelength (longest)
+        n = 256  # PSD grid size (large enough to see rebin effects)
+        n_pix_pup = 220  # pupil size in pixels
+        grid_diameter = 8.0  # telescope diameter in meters
+        freq_range = n / grid_diameter
+        pupil_mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
+        dk = 4.0  # pixel scale in mas
+        nPixPsf = 512  # Matches correctly rebinned size (1024/2)
+        kRef = 2  # oversampling factor
+        
+        # Create PSD with delta at center (non-zero to detect rebin artifacts)
+        psd = np.zeros((n, n), dtype=np.float64)
+        psd[n//2, n//2] = 1.0  # Delta function at center
+        
+        # Call psdSetToPsfSet with padPSD=True (multi-wavelength mode)
+        result = psdSetToPsfSet(
+            [psd],  # single PSD
+            pupil_mask,
+            wavelengths,  # two wavelengths
+            n,
+            n_pix_pup,
+            grid_diameter,
+            freq_range,
+            dk,  # pixel scale
+            nPixPsf,  # output PSF size
+            wvl_ref,
+            kRef,  # oversampling
+            padPSD=True  # Enable multi-wavelength mode
+        )
+        
+        # Result is [nWvl][nDir] with nWvl=2, nDir=1
+        self.assertEqual(len(result), 2, "Should have 2 wavelengths")
+        self.assertEqual(len(result[0]), 1, "Should have 1 direction")
+        
+        # Check PSF for shortest wavelength (most affected by rebin choice)
+        psf_short = result[0][0].sampling  # First wavelength (1.2µm)
+        psf_long = result[1][0].sampling   # Second wavelength (2.2µm)
+        
+        # Verify PSF is not all zeros
+        self.assertGreater(psf_short.max(), 0, "PSF should not be all zeros with delta PSD")
+        
+        # Both PSFs must be requested size
+        self.assertEqual(psf_short.shape[0], nPixPsf,
+            f"Shortest wavelength PSF has wrong size {psf_short.shape[0]} != {nPixPsf}. "
+            "Rebin should use wvl_ovrsmp, not total ovrsmp.")
+        self.assertEqual(psf_short.shape[1], nPixPsf)
+        self.assertEqual(psf_long.shape[0], nPixPsf)
+        self.assertEqual(psf_long.shape[1], nPixPsf)
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(TestReconstructor('test_reconstructor'))
@@ -287,6 +366,7 @@ def suite():
     suite.addTest(TestPsfExtrapolation('test_estimate_exponent_from_fraction'))
     suite.addTest(TestPsfExtrapolation('test_forced_exponent_preserves_continuity_on_fit_interval'))
     suite.addTest(TestPsfExtrapolation('test_auto_exponent_is_clipped_to_bounds'))
+    suite.addTest(TestPsfPadding('test_multiwavelength_rebin_uses_wavelength_ovrsmp_not_total'))
     return suite
 
 
