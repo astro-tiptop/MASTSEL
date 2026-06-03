@@ -643,7 +643,12 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             oRatio = np.ceil(pixRatio) / pixRatio
             ovrsmp *= np.ceil(pixRatio)
             ovrsmp = int(ovrsmp)
-            # Store the wavelength-specific oversampling for rebin (without global kRef factor)
+            # Store wavelength-specific oversampling factor for multi-wavelength rebinning.
+            # This is the ceil(pixRatio) component only, excluding the base kRef factor.
+            # In multi-wavelength mode, PSFs at different wavelengths are padded by
+            # different amounts to maintain consistent pixel scales. The rebinning must
+            # use this wavelength-dependent factor, not the total ovrsmp which includes
+            # both kRef and wavelength padding.
             wvl_ovrsmp = int(np.ceil(pixRatio))
             nPad = int(np.ceil(n_internal * oRatio))
             if nPad % 2 != n_internal % 2:
@@ -651,6 +656,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             nPad = max(nPad, n_internal)
         else:
             nPad = n_internal
+            # In single-wavelength mode, no wavelength-dependent padding is applied.
+            # The rebinning will use the total ovrsmp (from kRef) instead.
             wvl_ovrsmp = 1
 
         # even_legacy may convert odd PSD grids to even internal arrays.
@@ -731,8 +738,13 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 )
             # resample the PSF to get the not oversampled pixel scale
             if ovrsmp > 1 and not skip_reshape:
-                # Use wavelength-specific oversampling for rebin, not total ovrsmp
-                nOvr_rebin = max(1, wvl_ovrsmp)
+                # Choose rebin factor based on the oversampling mechanism:
+                # - padPSD=True (multi-wavelength): use wavelength-specific oversampling
+                # - padPSD=False (single-wavelength): use total oversampling from kRef
+                if padPSD:
+                    nOvr_rebin = max(1, wvl_ovrsmp)
+                else:
+                    nOvr_rebin = max(1, int(ovrsmp))
                 nOut = int(psfLE.sampling.shape[0] / nOvr_rebin)
 
                 # shift the PSF to get it centered on one pixel
