@@ -600,8 +600,12 @@ def _resolve_target_psf_size(nPixPsf, parity_reference_n, oversampling, skip_res
 
 def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_range,
                    dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
-                   skip_reshape=False, internal_grid_mode='even_legacy'):
-
+                   skip_reshape=False, internal_grid_mode='even_legacy', debug_trace=False):
+    """
+    Transforms a set of PSDs into PSFs. 
+    Applies rigorous spatial interpolation and cropping to guarantee the requested 
+    output pixel scale and Field of View, preserving the full atmospheric halo.
+    """
 
     if defaultArrayDtype == defaultArrayBackend.float32:
         dtype = np.float32
@@ -609,92 +613,79 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         dtype = np.float64
 
     i_complex = defaultArrayCDtype(1j)
-    wavelength = np.atleast_1d(wavelength)  # Ensure it is an array
+    wavelength = np.atleast_1d(wavelength)
     multi_wave = len(wavelength) > 1
+    
+    # THE GOLDEN RULE: The requested pixel scale (e.g. 4 mas) is intrinsically linked 
+    # to the minimum wavelength used to set up the P3 frequency grid.
+    wvl_min = float(np.min(wavelength))
 
     oversampling = np.atleast_1d(oversampling)
     if len(oversampling) == 1:
-        oversampling = np.full_like(wavelength, oversampling[0],
-                                    dtype=dtype)
+        oversampling = np.full_like(wavelength, oversampling[0], dtype=dtype)
 
     if internal_grid_mode not in ('even_legacy', 'odd_internal'):
         raise ValueError("internal_grid_mode must be 'even_legacy' or 'odd_internal'.")
 
     psfLongExpArr = []
-
     xp = None
 
     for wvl, ovrsmp in zip(wavelength, oversampling):
-        n_input = int(N)
-        n_internal = n_input
+        
+        # 1. DEFINE NATIVE GRID (No frequency padding applied)
+        n_internal = int(N)
         if internal_grid_mode == 'odd_internal':
-            if n_internal % 2 == 0:
-                n_internal += 1
-        else:  # even_legacy
-            if n_internal % 2 != 0:
-                n_internal += 1
+            if n_internal % 2 == 0: n_internal += 1
+        else:
+            if n_internal % 2 != 0: n_internal += 1
 
-        # Keep frequency step consistent when internal grid size changes.
         freq_step = float(freq_range) / float(N)
         freq_range_internal = freq_step * n_internal
+        
+        effective_ovrsmp = float(ovrsmp) if not skip_reshape else 1.0
+        
+        # 2. CALCULATE EXACT PIXEL SCALES
+        # Native pixel scale in radians (direct output of the FFT)
+        native_ps_rad = wvl * (freq_range_internal / n_internal)
+        
+        # Target pixel scale in radians (The 4 mas requested by baseSimulation)
+        target_ps_rad = wvl_min * (freq_range_internal / n_internal) * effective_ovrsmp
+        
+        # Spatial scaling factor (e.g., ~0.91 for 2.2um, ~0.5 for 1.2um)
+        zoom_factor = native_ps_rad / target_ps_rad 
+        
+        if debug_trace:
+            print(f"\n--- [DEBUG] Spatial Interpolation Trace ---")
+            print(f"Wavelength       : {wvl*1e9:.1f} nm")
+            print(f"Native Pix Scale : {native_ps_rad * 206265 * 1000:.4f} mas/pix")
+            print(f"Target Pix Scale : {target_ps_rad * 206265 * 1000:.4f} mas/pix")
+            print(f"Zoom Factor      : {zoom_factor:.4f}")
+            print(f"Native Grid      : {n_internal} x {n_internal}")
+            print(f"Target FoV Grid  : {int(nPixPsf)} x {int(nPixPsf)}")
+            print(f"-------------------------------------------")
 
-        if padPSD:
-            pixRatio = wvlRef / wvl
-            oRatio = np.ceil(pixRatio) / pixRatio
-            ovrsmp *= np.ceil(pixRatio)
-            ovrsmp = int(ovrsmp)
-            # Store wavelength-specific oversampling factor for multi-wavelength rebinning.
-            # This is the ceil(pixRatio) component only, excluding the base kRef factor.
-            # In multi-wavelength mode, PSFs at different wavelengths are padded by
-            # different amounts to maintain consistent pixel scales. The rebinning must
-            # use this wavelength-dependent factor, not the total ovrsmp which includes
-            # both kRef and wavelength padding.
-            wvl_ovrsmp = int(np.ceil(pixRatio))
-            nPad = int(np.ceil(n_internal * oRatio))
-            if nPad % 2 != n_internal % 2:
-                nPad += 1
-            nPad = max(nPad, n_internal)
-        else:
-            nPad = n_internal
-            # In single-wavelength mode, no wavelength-dependent padding is applied.
-            # The rebinning will use the total ovrsmp (from kRef) instead.
-            wvl_ovrsmp = 1
-
-        # even_legacy may convert odd PSD grids to even internal arrays.
-        # Keep nPixPsf coherence tied to the input PSD parity expected by callers.
-        if internal_grid_mode == 'even_legacy':
-            parity_reference_n = n_input
-        else:
-            parity_reference_n = n_internal
-
-        nPixPsf_target = _resolve_target_psf_size(
-            nPixPsf,
-            parity_reference_n,
-            ovrsmp,
-            skip_reshape,
-        )
-
-        maskField = Field(wvl, nPad, grid_diameter)
+        # 3. PREPARE OPTICAL ELEMENTS AT NATIVE RESOLUTION
+        maskField = Field(wvl, n_internal, grid_diameter)
         if not isinstance(mask, list):
             maskField.sampling = congrid(mask, [nPixPup, nPixPup])
-            maskField.sampling = _pad_or_crop_centered(maskField.sampling, nPad, xp=maskField.xp)
+            maskField.sampling = _pad_or_crop_centered(maskField.sampling, n_internal, xp=maskField.xp)
 
         if xp is None:
             xp = maskField.xp
             if xp == cp and gpuEnabled:
-                from cupyx.scipy.ndimage import shift as a_shift
+                from cupyx.scipy.ndimage import map_coordinates as a_map_coordinates
             else:
-                from scipy.ndimage import shift as a_shift
+                from scipy.ndimage import map_coordinates as a_map_coordinates
 
         if opdMap is None:
             otf_tel = None
         else:
-            maskOtf = Field(wvl, nPad, grid_diameter)
+            maskOtf = Field(wvl, n_internal, grid_diameter)
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
             opd_map_backend = defaultArrayBackend.asarray(opdMap, dtype=defaultArrayDtype)
             phaseStat = coeff * opd_map_backend
             phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
-            phaseStat = _pad_or_crop_centered(phaseStat, nPad, xp)
+            phaseStat = _pad_or_crop_centered(phaseStat, n_internal, xp)
             if mask is None or not isinstance(mask, list):
                 maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                 maskOtf.pupilToOtf()
@@ -703,18 +694,21 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 
         psfMultiWave = []
 
+        # 4. LOOP OVER PSDs AND GENERATE PSFs
         for i, computedPSD in enumerate(inputPSDs):
+            
             if isinstance(mask, list):
                 maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
-                maskField.sampling = _pad_or_crop_centered(maskField.sampling, nPad, xp)
+                maskField.sampling = _pad_or_crop_centered(maskField.sampling, n_internal, xp)
                 if opdMap is not None:
                     maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                     maskOtf.pupilToOtf()
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
 
+            # Load PSD without any artificial zero-padding that would destroy the halo
             psd_sampling = xp.asarray(computedPSD) / dk**2
-            if n_internal != n_input:
+            if n_internal != int(N):
                 if internal_grid_mode == 'odd_internal':
                     psd_sampling = _expand_even_psd_to_odd_centered(psd_sampling, xp=xp)
                 else:
@@ -722,51 +716,54 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
 
             psd = Field(wvl, n_internal, freq_range_internal, 'rad')
             psd.sampling = psd_sampling
-            if nPad > n_internal:
-                psd.sampling = _pad_or_crop_centered(psd.sampling, nPad, xp)
-                psd.width = psd.width * nPad / n_internal
+            
+            # Execute Fourier propagation at Native Scale
+            psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel)
 
-            psfLE = longExposurePsf(maskField, psd, otf_tel = otf_tel)
-
-            # enlarge the PSF to get a side multiple of ovrsmp
-            nOvr = max(1, int(ovrsmp))
-            nBig = int(np.ceil(psfLE.N / nOvr) * nOvr)
-            if nBig != psfLE.N:
-                _set_sampling_preserve_pixel_size(
-                    psfLE,
-                    _pad_or_crop_centered(psfLE.sampling, nBig, xp)
-                )
-            # resample the PSF to get the not oversampled pixel scale
-            if ovrsmp > 1 and not skip_reshape:
-                # Choose rebin factor based on the oversampling mechanism:
-                # - padPSD=True (multi-wavelength): use wavelength-specific oversampling
-                # - padPSD=False (single-wavelength): use total oversampling from kRef
-                if padPSD:
-                    nOvr_rebin = max(1, wvl_ovrsmp)
-                else:
-                    nOvr_rebin = max(1, int(ovrsmp))
-                nOut = int(psfLE.sampling.shape[0] / nOvr_rebin)
-
-                # shift the PSF to get it centered on one pixel
-                delta = (nOvr_rebin - 1) / 2
-                if nOvr_rebin % 2:
-                    # integer shifts
-                    psfLE.sampling = xp.roll(psfLE.sampling, (int(delta), int(delta)), axis=(0, 1))
-                else:
-                    # non integer shifts (order=1 is bilinear: vastly faster and perfectly sufficient for oversampled data)
-                    psfLE.sampling = a_shift(psfLE.sampling, (delta, delta), order=1, mode='constant')
-
-                # rebin the PSF
-                psf_width = psfLE.width
-                psfLE.sampling = psfLE.sampling.reshape((nOut, nOvr_rebin, nOut, nOvr_rebin)).mean(3).mean(1)
-                psfLE.width = psf_width
-            # cut or pad the PSF to get the desired size
-            if psfLE.N != nPixPsf_target:
-                _set_sampling_preserve_pixel_size(
-                    psfLE,
-                    _pad_or_crop_centered(psfLE.sampling, nPixPsf_target, xp)
-                )
-
+            # 5. SPATIAL INTERPOLATION & CROP/PAD
+            if abs(zoom_factor - 1.0) > 1e-6 or psfLE.N != int(nPixPsf):
+                
+                # Measure total flux before interpolation
+                native_flux = psfLE.sampling.sum()
+                
+                N_out = int(nPixPsf)
+                
+                # Create 1D target coordinates to save memory
+                y_out = xp.arange(N_out, dtype=defaultArrayDtype)
+                x_out = xp.arange(N_out, dtype=defaultArrayDtype)
+                Y_out, X_out = xp.meshgrid(y_out, x_out, indexing='ij')
+                
+                # Align optical centers
+                cy_out = N_out // 2
+                cx_out = N_out // 2
+                cy_in = n_internal // 2
+                cx_in = n_internal // 2
+                
+                # Map target grid directly onto native grid
+                Y_in = (Y_out - cy_out) / zoom_factor + cy_in
+                X_in = (X_out - cx_out) / zoom_factor + cx_in
+                coords = xp.stack((Y_in, X_in))
+                
+                # Execute Cubic Spline Interpolation. 
+                # mode='constant' + cval=0.0 automatically handles spatial padding for the FoV
+                resampled = a_map_coordinates(psfLE.sampling, coords, order=3, mode='constant', cval=0.0)
+                
+                # Cubic splines can generate tiny negative ripples at the edges; clip them to 0
+                resampled = xp.clip(resampled, 0.0, None)
+                
+                # 6. RIGOROUS FLUX NORMALIZATION
+                resampled_flux = resampled.sum()
+                if resampled_flux > 0:
+                    resampled *= (native_flux / resampled_flux)
+                    
+                if debug_trace:
+                    print(f"  [PSD {i}] Native Flux : {native_flux:.6e}")
+                    print(f"  [PSD {i}] Output Flux : {resampled.sum():.6e}")
+                
+                # Update the Field object with the new geometric properties
+                psfLE.sampling = resampled
+                psfLE.width = N_out * target_ps_rad
+                
             psfMultiWave.append(psfLE)
 
         if multi_wave:
@@ -775,7 +772,6 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             psfLongExpArr = psfMultiWave
 
     return psfLongExpArr
-
 
 # ------- Functions for PSF extrapolation and normalization -------
 

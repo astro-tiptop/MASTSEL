@@ -277,147 +277,87 @@ class TestPsfExtrapolation(unittest.TestCase):
         self.assertEqual(len(r_extended), len(psf_extended))
 
 
-class TestPsfPadding(unittest.TestCase):
-    """Test psdSetToPsfSet rebin logic for multi-wavelength case."""
+class TestPsfSpatialResampling(unittest.TestCase):
+    """Test the spatial interpolation and cropping logic in psdSetToPsfSet."""
     
-    def test_multiwavelength_rebin_uses_wavelength_ovrsmp_not_total(self):
+    def setUp(self):
+        self.wavelengths = [1.2e-6, 2.2e-6]
+        self.n = 256
+        self.n_pix_pup = 220
+        self.grid_diameter = 8.0
+        self.freq_range = self.n / self.grid_diameter
+        self.pupil_mask = np.ones((self.n_pix_pup, self.n_pix_pup), dtype=np.float64)
+        self.dk = 4.0
+        self.nPixPsf = 512
+        self.wvl_ref = 2.2e-6
+        self.kRef = 2
+        
+        # Create a simple delta PSD to track energy conservation
+        self.psd = np.zeros((self.n, self.n), dtype=np.float64)
+        self.psd[self.n//2, self.n//2] = 1.0
+
+    def test_output_dimensions_are_strictly_target_fov(self):
         """
-        Regression test: psdSetToPsfSet with padPSD=True should use
-        wvl_ovrsmp (wavelength-only oversampling) for rebin, not total ovrsmp.
-        
-        Bug fix: mavisPsf.py lines 733-750
-        
-        Setup: Two wavelengths [1.2µm, 2.2µm] with ratio ~1.83
-        - pixRatio = 2.2/1.2 ≈ 1.83
-        - wvl_ovrsmp = ceil(1.83) = 2  
-        - kRef=2, total ovrsmp = 2*2 = 4 for shortest wavelength
-        
-        Internal PSF dimensions for shortest wavelength (1.2µm):
-        - nOtf = 256*2 = 512
-        - nBig = 2*512 = 1024
-        - psfLE.sampling after otf2psf: 1024x1024
-        
-        Before fix: nOvr=int(ovrsmp)=4, nOut = 1024/4 = 256 ❌
-        After fix: nOvr_rebin=wvl_ovrsmp=2, nOut = 1024/2 = 512 ✅
-        
-        This test uses nPixPsf=512 to match the correct rebinned size.
-        With the fix, cropping from 512→512 preserves the full PSF.
-        With the bug, padding from 256→512 loses resolution.
+        Verify that regardless of the wavelength and the native FFT scaling,
+        the output arrays are strictly of shape (nPixPsf, nPixPsf).
         """
-        # Setup parameters matching real multi-wavelength case
-        wavelengths = [1.2e-6, 2.2e-6]  # ratio = 1.83
-        wvl_ref = 2.2e-6  # reference wavelength (longest)
-        n = 256  # PSD grid size (large enough to see rebin effects)
-        n_pix_pup = 220  # pupil size in pixels
-        grid_diameter = 8.0  # telescope diameter in meters
-        freq_range = n / grid_diameter
-        pupil_mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
-        dk = 4.0  # pixel scale in mas
-        nPixPsf = 512  # Matches correctly rebinned size (1024/2)
-        kRef = 2  # oversampling factor
-        
-        # Create PSD with delta at center (non-zero to detect rebin artifacts)
-        psd = np.zeros((n, n), dtype=np.float64)
-        psd[n//2, n//2] = 1.0  # Delta function at center
-        
-        # Call psdSetToPsfSet with padPSD=True (multi-wavelength mode)
         result = psdSetToPsfSet(
-            [psd],  # single PSD
-            pupil_mask,
-            wavelengths,  # two wavelengths
-            n,
-            n_pix_pup,
-            grid_diameter,
-            freq_range,
-            dk,  # pixel scale
-            nPixPsf,  # output PSF size
-            wvl_ref,
-            kRef,  # oversampling
-            padPSD=True  # Enable multi-wavelength mode
+            [self.psd], self.pupil_mask, self.wavelengths, self.n, self.n_pix_pup,
+            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
+            self.wvl_ref, self.kRef, padPSD=True
         )
         
-        # Result is [nWvl][nDir] with nWvl=2, nDir=1
-        self.assertEqual(len(result), 2, "Should have 2 wavelengths")
-        self.assertEqual(len(result[0]), 1, "Should have 1 direction")
+        psf_short = result[0][0] # 1.2um
+        psf_long = result[1][0]  # 2.2um
         
-        # Check PSF for shortest wavelength (most affected by rebin choice)
-        psf_short = result[0][0].sampling  # First wavelength (1.2µm)
-        psf_long = result[1][0].sampling   # Second wavelength (2.2µm)
-        
-        # Verify PSF is not all zeros
-        self.assertGreater(psf_short.max(), 0, "PSF should not be all zeros with delta PSD")
-        
-        # Both PSFs must be requested size
-        self.assertEqual(psf_short.shape[0], nPixPsf,
-            f"Shortest wavelength PSF has wrong size {psf_short.shape[0]} != {nPixPsf}. "
-            "Rebin should use wvl_ovrsmp, not total ovrsmp.")
-        self.assertEqual(psf_short.shape[1], nPixPsf)
-        self.assertEqual(psf_long.shape[0], nPixPsf)
-        self.assertEqual(psf_long.shape[1], nPixPsf)
+        self.assertEqual(psf_short.sampling.shape[0], self.nPixPsf)
+        self.assertEqual(psf_short.sampling.shape[1], self.nPixPsf)
+        self.assertEqual(psf_long.sampling.shape[0], self.nPixPsf)
+        self.assertEqual(psf_long.sampling.shape[1], self.nPixPsf)
 
-    def test_singlewavelength_rebin_uses_total_ovrsmp(self):
+    def test_flux_conservation_after_interpolation(self):
         """
-        Regression test: psdSetToPsfSet with padPSD=False (single-wavelength)
-        should use total ovrsmp for rebin, not wvl_ovrsmp.
-
-        In single-wavelength mode (padPSD=False), wvl_ovrsmp is set to 1,
-        but ovrsmp can still be > 1 due to kRef (Nyquist oversampling).
-        The rebinning must use ovrsmp to avoid losing the intended downsampling.
-
-        Setup: Single wavelength with kRef=2
-        - ovrsmp = kRef = 2
-        - wvl_ovrsmp = 1 (no wavelength-dependent padding)
-        - nBig = 1024 (after padding to multiple of ovrsmp)
-
-        Correct behavior: nOvr_rebin = int(ovrsmp) = 2, nOut = 1024/2 = 512 ✅
-        Bug would be: nOvr_rebin = wvl_ovrsmp = 1, no rebin → PSF stays 1024 ❌
-
-        This ensures single-wavelength PSF generation behaves as before the fix.
+        Verify that the spatial interpolation mathematically conserves 
+        the total energy of the PSF.
         """
-        # Setup parameters for single-wavelength case
-        wavelength = 1.2e-6  # Single wavelength
-        n = 256
-        n_pix_pup = 220
-        grid_diameter = 8.0
-        freq_range = n / grid_diameter
-        pupil_mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
-        dk = 4.0
-        nPixPsf = 512  # Expected output size after 2x rebinning
-        kRef = 2  # Oversampling factor
-
-        # Create simple PSD
-        psd = np.zeros((n, n), dtype=np.float64)
-        psd[n//2, n//2] = 1.0
-
-        # Call psdSetToPsfSet with padPSD=False (single-wavelength mode)
-        result = psdSetToPsfSet(
-            [psd],
-            pupil_mask,
-            [wavelength],  # Single wavelength
-            n,
-            n_pix_pup,
-            grid_diameter,
-            freq_range,
-            dk,
-            nPixPsf,
-            wavelength,  # wvl_ref = wavelength
-            kRef,
-            padPSD=False  # Single-wavelength mode
+        # Run in mono-mode so native = target, ensuring baseline flux is stable
+        result_mono = psdSetToPsfSet(
+            [self.psd], self.pupil_mask, [self.wavelengths[1]], self.n, self.n_pix_pup,
+            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
+            self.wvl_ref, self.kRef, padPSD=False
         )
 
-        # Result is a flat list with single wavelength
-        self.assertEqual(len(result), 1, "Should have 1 wavelength")
+        # Run in multi-mode where the 2.2um PSF will be heavily interpolated
+        result_multi = psdSetToPsfSet(
+            [self.psd], self.pupil_mask, self.wavelengths, self.n, self.n_pix_pup,
+            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
+            self.wvl_ref, self.kRef, padPSD=True
+        )
 
-        psf = result[0].sampling
+        flux_mono = float(result_mono[0].sampling.sum())
+        flux_multi = float(result_multi[1][0].sampling.sum())
+        
+        self.assertAlmostEqual(flux_mono, flux_multi, places=5, 
+                               msg="Flux was not conserved during spatial interpolation")
 
-        # Verify PSF has correct size (rebinning was applied)
-        self.assertEqual(psf.shape[0], nPixPsf,
-            f"PSF has wrong size {psf.shape[0]} != {nPixPsf}. "
-            "Single-wavelength mode should rebin using total ovrsmp, not wvl_ovrsmp.")
-        self.assertEqual(psf.shape[1], nPixPsf)
-
-        # Verify PSF is not all zeros
-        self.assertGreater(psf.max(), 0, "PSF should not be all zeros with delta PSD")
+    def test_target_pixel_scale_is_tied_to_minimum_wavelength(self):
+        """
+        Verify that the geometric width (Field of View in radians) of the output 
+        Field object correctly scales based on the minimum wavelength in the batch,
+        rather than the reference wavelength.
+        """
+        result = psdSetToPsfSet(
+            [self.psd], self.pupil_mask, self.wavelengths, self.n, self.n_pix_pup,
+            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
+            self.wvl_ref, self.kRef, padPSD=True
+        )
+        
+        psf_short = result[0][0]
+        psf_long = result[1][0]
+        
+        # Both output PSFs should have the exact same physical width in radians,
+        # dictated by the target pixel scale derived from the 1.2um wavelength.
+        self.assertEqual(psf_short.width, psf_long.width)
 
 
 class TestStrehlRatioConsistency(unittest.TestCase):
@@ -520,8 +460,9 @@ def suite():
     suite.addTest(TestPsfExtrapolation('test_estimate_exponent_from_fraction'))
     suite.addTest(TestPsfExtrapolation('test_forced_exponent_preserves_continuity_on_fit_interval'))
     suite.addTest(TestPsfExtrapolation('test_auto_exponent_is_clipped_to_bounds'))
-    suite.addTest(TestPsfPadding('test_multiwavelength_rebin_uses_wavelength_ovrsmp_not_total'))
-    suite.addTest(TestPsfPadding('test_singlewavelength_rebin_uses_total_ovrsmp'))
+    suite.addTest(TestPsfSpatialResampling('test_output_dimensions_are_strictly_target_fov'))
+    suite.addTest(TestPsfSpatialResampling('test_flux_conservation_after_interpolation'))
+    suite.addTest(TestPsfSpatialResampling('test_target_pixel_scale_is_tied_to_minimum_wavelength'))
     suite.addTest(TestStrehlRatioConsistency('test_marechal_formula_correctness'))
     suite.addTest(TestStrehlRatioConsistency('test_psd_variance_computation'))
     return suite
