@@ -744,12 +744,10 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                 X_in = (X_out - cx_out) / zoom_factor + cx_in
                 coords = xp.stack((Y_in, X_in))
                 
-                # Execute Cubic Spline Interpolation. 
+                # Execute Bilinear Interpolation. 
+                # order=1 avoids ringing and is optimal for downsampling.
                 # mode='constant' + cval=0.0 automatically handles spatial padding for the FoV
-                resampled = a_map_coordinates(psfLE.sampling, coords, order=3, mode='constant', cval=0.0)
-                
-                # Cubic splines can generate tiny negative ripples at the edges; clip them to 0
-                resampled = xp.clip(resampled, 0.0, None)
+                resampled = a_map_coordinates(psfLE.sampling, coords, order=1, mode='constant', cval=0.0)
                 
                 # 6. RIGOROUS FLUX NORMALIZATION
                 resampled_flux = resampled.sum()
