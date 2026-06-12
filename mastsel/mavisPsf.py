@@ -627,6 +627,9 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
     if internal_grid_mode not in ('even_legacy', 'odd_internal'):
         raise ValueError("internal_grid_mode must be 'even_legacy' or 'odd_internal'.")
 
+    # Calculate the base target pixel scale (without oversampling) once
+    base_target_ps_rad = wvl_min * (freq_range_internal / n_internal)
+
     psfLongExpArr = []
     xp = None
 
@@ -648,8 +651,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         # Native pixel scale in radians (direct output of the FFT)
         native_ps_rad = wvl * (freq_range_internal / n_internal)
         
-        # Target pixel scale in radians (The 4 mas requested by baseSimulation)
-        target_ps_rad = wvl_min * (freq_range_internal / n_internal) * effective_ovrsmp
+        # Apply the specific oversampling factor for this wavelength
+        target_ps_rad = base_target_ps_rad * effective_ovrsmp
         
         # Spatial scaling factor (e.g., ~0.91 for 2.2um, ~0.5 for 1.2um)
         zoom_factor = native_ps_rad / target_ps_rad 
@@ -706,7 +709,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
                     maskOtf.sampling /= maskOtf.sampling.max()
                     otf_tel = maskOtf.sampling
 
-            # Load PSD without any artificial zero-padding that would destroy the halo
+            # Load PSD
             psd_sampling = xp.asarray(computedPSD) / dk**2
             if n_internal != int(N):
                 if internal_grid_mode == 'odd_internal':
