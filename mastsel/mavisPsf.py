@@ -673,9 +673,9 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         if xp is None:
             xp = maskField.xp
             if xp == cp and gpuEnabled:
-                from cupyx.scipy.ndimage import map_coordinates as a_map_coordinates
+                from cupyx.scipy.ndimage import affine_transform as a_affine_transform
             else:
-                from scipy.ndimage import map_coordinates as a_map_coordinates
+                from scipy.ndimage import affine_transform as a_affine_transform
 
         if opdMap is None:
             otf_tel = None
@@ -720,43 +720,44 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
             # Execute Fourier propagation at Native Scale
             psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel)
 
-            # 5. SPATIAL INTERPOLATION & CROP/PAD
+            # 5. SPATIAL INTERPOLATION & CROP/PAD (Zero-Allocation VRAM optimization)
             if abs(zoom_factor - 1.0) > 1e-6 or psfLE.N != int(nPixPsf):
                 
                 # Measure total flux before interpolation
-                native_flux = psfLE.sampling.sum()
+                native_flux = float(psfLE.sampling.sum())
                 
                 N_out = int(nPixPsf)
+                cy_out, cx_out = N_out // 2, N_out // 2
+                cy_in, cx_in = n_internal // 2, n_internal // 2
                 
-                # Create 1D target coordinates to save memory
-                y_out = xp.arange(N_out, dtype=defaultArrayDtype)
-                x_out = xp.arange(N_out, dtype=defaultArrayDtype)
-                Y_out, X_out = xp.meshgrid(y_out, x_out, indexing='ij')
+                # Calculate affine mapping parameters: input_coord = output_coord * scale + offset
+                scale = 1.0 / zoom_factor
+                offset_y = cy_in - (cy_out * scale)
+                offset_x = cx_in - (cx_out * scale)
                 
-                # Align optical centers
-                cy_out = N_out // 2
-                cx_out = N_out // 2
-                cy_in = n_internal // 2
-                cx_in = n_internal // 2
+                # CuPy STRICTLY requires the transformation matrix to be an array, not a python list.
+                # We use xp.asarray to make it perfectly compatible with both numpy and cupy backends.
+                transform_matrix = xp.asarray([scale, scale], dtype=defaultArrayDtype)
                 
-                # Map target grid directly onto native grid
-                Y_in = (Y_out - cy_out) / zoom_factor + cy_in
-                X_in = (X_out - cx_out) / zoom_factor + cx_in
-                coords = xp.stack((Y_in, X_in))
+                # affine_transform avoids creating coordinate grids in memory.
+                resampled = a_affine_transform(
+                    psfLE.sampling,
+                    matrix=transform_matrix,
+                    offset=[offset_y, offset_x],
+                    output_shape=(N_out, N_out),
+                    order=1,
+                    mode='constant',
+                    cval=0.0
+                )
                 
-                # Execute Bilinear Interpolation. 
-                # order=1 avoids ringing and is optimal for downsampling.
-                # mode='constant' + cval=0.0 automatically handles spatial padding for the FoV
-                resampled = a_map_coordinates(psfLE.sampling, coords, order=1, mode='constant', cval=0.0)
-                
-                # 6. RIGOROUS FLUX NORMALIZATION
-                resampled_flux = resampled.sum()
+                # 6. RIGOROUS FLUX NORMALIZATION (In-place operation)
+                resampled_flux = float(resampled.sum())
                 if resampled_flux > 0:
                     resampled *= (native_flux / resampled_flux)
                     
                 if debug_trace:
                     print(f"  [PSD {i}] Native Flux : {native_flux:.6e}")
-                    print(f"  [PSD {i}] Output Flux : {resampled.sum():.6e}")
+                    print(f"  [PSD {i}] Output Flux : {resampled_flux:.6e}")
                 
                 # Update the Field object with the new geometric properties
                 psfLE.sampling = resampled
