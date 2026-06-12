@@ -627,8 +627,9 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
     if internal_grid_mode not in ('even_legacy', 'odd_internal'):
         raise ValueError("internal_grid_mode must be 'even_legacy' or 'odd_internal'.")
 
+    freq_step = float(freq_range) / float(N)
     # Calculate the base target pixel scale (without oversampling) once
-    base_target_ps_rad = wvl_min * (freq_range_internal / n_internal)
+    base_target_ps_rad = wvl_min * freq_step
 
     psfLongExpArr = []
     xp = None
@@ -642,14 +643,13 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         else:
             if n_internal % 2 != 0: n_internal += 1
 
-        freq_step = float(freq_range) / float(N)
         freq_range_internal = freq_step * n_internal
         
         effective_ovrsmp = float(ovrsmp) if not skip_reshape else 1.0
         
         # 2. CALCULATE EXACT PIXEL SCALES
         # Native pixel scale in radians (direct output of the FFT)
-        native_ps_rad = wvl * (freq_range_internal / n_internal)
+        native_ps_rad = wvl * freq_step
         
         # Apply the specific oversampling factor for this wavelength
         target_ps_rad = base_target_ps_rad * effective_ovrsmp
