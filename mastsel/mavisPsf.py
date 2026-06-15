@@ -643,13 +643,14 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         else:
             if n_internal % 2 != 0: n_internal += 1
 
-        freq_range_internal = freq_step * n_internal
+        freq_step_wvl = float(freq_range) / float(N)
+        freq_range_internal = freq_step_wvl * n_internal
         
         effective_ovrsmp = float(ovrsmp) if not skip_reshape else 1.0
         
         # 2. CALCULATE EXACT PIXEL SCALES
         # Native pixel scale in radians (direct output of the FFT)
-        native_ps_rad = wvl * freq_step
+        native_ps_rad = wvl * freq_step_wvl
         
         # Apply the specific oversampling factor for this wavelength
         target_ps_rad = base_target_ps_rad * effective_ovrsmp
