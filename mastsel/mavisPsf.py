@@ -575,37 +575,16 @@ def _expand_odd_psd_to_even_with_zero_nyquist(psd, xp=defaultArrayBackend):
     return out
 
 
-def _resolve_target_psf_size(nPixPsf, parity_reference_n, oversampling, skip_reshape):
-    """Validate requested PSF size coherence with the selected parity reference.
-
-    The output size is user-driven by nPixPsf. Without oversampling rebin,
-    parity mismatch is treated as a configuration error rather than silently
-    changing the output size.
+def psdSetToPsfSet(inputPSDs, mask, wavelength, nPixPup, freq_range,
+                   dk, nPixPsf, oversampling, opdMap=None,
+                   internal_grid_mode='even_legacy', debug_trace=False):
     """
-    target = int(nPixPsf)
-    if target <= 0:
-        raise ValueError('nPixPsf must be a positive integer.')
-
-    # When oversampling rebin is active, keep the requested external size.
-    if oversampling > 1 and not skip_reshape:
-        return target
-
-    # Otherwise, enforce parity coherence explicitly.
-    if target % 2 != parity_reference_n % 2:
-        raise ValueError(
-            'nPixPsf parity must match PSD parity when oversampling '
-            'rebin is disabled. Adjust nPixPsf or enable oversampling.'
-        )
-    return target
-
-def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_range,
-                   dk, nPixPsf, wvlRef, oversampling, opdMap=None, padPSD=False,
-                   skip_reshape=False, internal_grid_mode='even_legacy', debug_trace=False):
-    """
-    Transforms a set of PSDs into PSFs. 
-    Applies rigorous spatial interpolation and cropping to guarantee the requested 
+    Transforms a set of PSDs into PSFs.
+    Applies rigorous spatial interpolation and cropping to guarantee the requested
     output pixel scale and Field of View, preserving the full atmospheric halo.
     """
+    N = inputPSDs[0].shape[0]
+    grid_diameter = N / float(freq_range)
 
     if defaultArrayDtype == defaultArrayBackend.float32:
         dtype = np.float32
@@ -646,7 +625,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength, N, nPixPup, grid_diameter, freq_
         freq_step_wvl = float(freq_range) / float(N)
         freq_range_internal = freq_step_wvl * n_internal
         
-        effective_ovrsmp = float(ovrsmp) if not skip_reshape else 1.0
+        effective_ovrsmp = float(ovrsmp)
         
         # 2. CALCULATE EXACT PIXEL SCALES
         # Native pixel scale in radians (direct output of the FFT)
