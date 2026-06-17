@@ -575,16 +575,43 @@ def _expand_odd_psd_to_even_with_zero_nyquist(psd, xp=defaultArrayBackend):
     return out
 
 
-def psdSetToPsfSet(inputPSDs, mask, wavelength, nPixPup, freq_range,
-                   dk, nPixPsf, oversampling, opdMap=None,
+def psdSetToPsfSet(inputPSDs, mask, wavelength,
+                   N=None, nPixPup=None, grid_diameter=None, freq_range=None,
+                   dk=None, nPixPsf=None, wvlRef=None, oversampling=1,
+                   opdMap=None, padPSD=False, skip_reshape=False,
                    internal_grid_mode='even_legacy', debug_trace=False):
     """
     Transforms a set of PSDs into PSFs.
     Applies rigorous spatial interpolation and cropping to guarantee the requested
     output pixel scale and Field of View, preserving the full atmospheric halo.
+
+    Required: inputPSDs, mask, wavelength, nPixPup (or N as 4th positional arg),
+              freq_range, dk, nPixPsf, oversampling.
+    Legacy-only (accepted and ignored): N, grid_diameter, wvlRef, padPSD.
+    skip_reshape=True sets oversampling=1 (backward-compatible shortcut).
     """
+    # Backward compatibility: N was the 4th positional arg in the old interface;
+    # nPixPup is the equivalent in the new keyword interface.
+    if nPixPup is None:
+        if N is None:
+            raise ValueError("nPixPup (number of pupil pixels) is required.")
+        nPixPup = N
+
+    if freq_range is None:
+        raise ValueError("freq_range is required.")
+    if dk is None:
+        raise ValueError("dk is required.")
+    if nPixPsf is None:
+        raise ValueError("nPixPsf is required.")
+
+    # grid_diameter and wvlRef are redundant (computed internally); accepted for
+    # backward compatibility with callers that pass them positionally.
     N = inputPSDs[0].shape[0]
     grid_diameter = N / float(freq_range)
+
+    # skip_reshape=True was the old way to request oversampling=1 for LO/Focus PSFs.
+    if skip_reshape:
+        oversampling = 1.0
 
     if defaultArrayDtype == defaultArrayBackend.float32:
         dtype = np.float32
