@@ -44,24 +44,18 @@ class TestMultiWavelengthPsfSetNotNone(unittest.TestCase):
     """
 
     def _run_and_check(self, wavelengths, oversampling, nPixPsf=32):
-        N = 128
         wvl_min = float(np.min(wavelengths))
-        psd, mask, freq_range, dk, grid_diameter, nPixPup = _make_synthetic_inputs(
-            N=N, wvl_ref=wvl_min
-        )
+        psd, mask, freq_range, dk, _, nPixPup = _make_synthetic_inputs(wvl_ref=wvl_min)
 
         result = psdSetToPsfSet(
-            [psd],
-            mask,
-            wavelengths,
-            N,
-            nPixPup,
-            grid_diameter,
-            freq_range,
-            dk,
-            nPixPsf,
-            wvl_min,
-            oversampling,
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=wavelengths,
+            nPixPup=nPixPup,
+            freq_range=freq_range,
+            dk=dk,
+            nPixPsf=nPixPsf,
+            oversampling=oversampling,
             debug_trace=False,
         )
 

@@ -113,15 +113,11 @@ def _run_reference(data):
     kwargs = dict(
         mask=np.asarray(data["mask"]),
         wavelength=np.asarray(data["wavelength"]),
-        N=N,
         nPixPup=int(data["nPixPup"]),
-        grid_diameter=float(data["grid_diameter"]),
         freq_range=float(data["freq_range"]),
         dk=float(data["dk"]),
         nPixPsf=int(data["nPixPsf"]),
-        wvlRef=float(data["wvlRef"]),
         oversampling=float(data["oversampling"]),
-        padPSD=bool(data["padPSD"]),
     )
     has_opd = bool(data["has_opd"])
     if has_opd:
@@ -139,15 +135,11 @@ def _run_zeroed_case(data):
     kwargs = dict(
         mask=np.asarray(data["mask"]),
         wavelength=np.asarray(data["wavelength"]),
-        N=N,
         nPixPup=int(data["nPixPup"]),
-        grid_diameter=float(data["grid_diameter"]),
         freq_range=float(data["freq_range"]),
         dk=float(data["dk"]),
         nPixPsf=int(data["nPixPsf"]),
-        wvlRef=float(data["wvlRef"]),
         oversampling=float(data["oversampling"]),
-        padPSD=bool(data["padPSD"]),
     )
     has_opd = bool(data["has_opd"])
     if has_opd:
@@ -172,15 +164,11 @@ def _run_expanded_case(data, fixed_npixpsf=False):
     kwargs = dict(
         mask=np.asarray(data["mask"]),
         wavelength=np.asarray(data["wavelength"]),
-        N=odd_N,
         nPixPup=odd_nPixPup,
-        grid_diameter=odd_grid,
         freq_range=odd_freq,
         dk=float(data["dk"]),
         nPixPsf=odd_nPixPsf,
-        wvlRef=float(data["wvlRef"]),
         oversampling=float(data["oversampling"]),
-        padPSD=bool(data["padPSD"]),
     )
     has_opd = bool(data["has_opd"])
     if has_opd:
@@ -205,15 +193,11 @@ def _run_shrunk_case(data, fixed_npixpsf=False):
     kwargs = dict(
         mask=np.asarray(data["mask"]),
         wavelength=np.asarray(data["wavelength"]),
-        N=odd_N,
         nPixPup=odd_nPixPup,
-        grid_diameter=odd_grid,
         freq_range=odd_freq,
         dk=float(data["dk"]),
         nPixPsf=shrunk_nPixPsf,
-        wvlRef=float(data["wvlRef"]),
         oversampling=float(data["oversampling"]),
-        padPSD=bool(data["padPSD"]),
     )
     has_opd = bool(data["has_opd"])
     if has_opd:

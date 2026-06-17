@@ -240,19 +240,15 @@ class TestPsfFixtureRegression(unittest.TestCase):
                 padPSD,
             )
             new_set = psdSetToPsfSet(
-                input_psds,
-                mask,
-                wavelength,
-                N,
-                nPixPup,
-                grid_diameter,
-                freq_range,
-                dk,
-                nPixPsf,
-                wvlRef,
-                oversampling,
+                inputPSDs=input_psds,
+                mask=mask,
+                wavelength=wavelength,
+                nPixPup=nPixPup,
+                freq_range=freq_range,
+                dk=dk,
+                nPixPsf=nPixPsf,
+                oversampling=oversampling,
                 opdMap=opd_map if has_opd else None,
-                padPSD=padPSD,
             )
 
             if isinstance(new_set[0], list):
@@ -286,26 +282,20 @@ class TestPsfFixtureRegression(unittest.TestCase):
             freq_range = float(data["freq_range"])
             dk = float(data["dk"])
             nPixPsf = int(data["nPixPsf"])
-            wvlRef = float(data["wvlRef"])
             oversampling = float(data["oversampling"])
-            padPSD = bool(data["padPSD"])
             has_opd = bool(data["has_opd"])
             opd_map = np.asarray(data["opd_map"]) if has_opd else None
 
             even_psf_set = psdSetToPsfSet(
-                input_psds,
-                mask,
-                wavelength,
-                N,
-                nPixPup,
-                grid_diameter,
-                freq_range,
-                dk,
-                nPixPsf,
-                wvlRef,
-                oversampling,
+                inputPSDs=input_psds,
+                mask=mask,
+                wavelength=wavelength,
+                nPixPup=nPixPup,
+                freq_range=freq_range,
+                dk=dk,
+                nPixPsf=nPixPsf,
+                oversampling=oversampling,
                 opdMap=opd_map,
-                padPSD=padPSD,
             )
             if isinstance(even_psf_set[0], list):
                 even_psfs = [item.sampling for row in even_psf_set for item in row]
@@ -323,19 +313,15 @@ class TestPsfFixtureRegression(unittest.TestCase):
             odd_opd = opd_map
 
             odd_psf_set = psdSetToPsfSet(
-                odd_psds,
-                odd_mask,
-                wavelength,
-                odd_N,
-                odd_nPixPup,
-                odd_grid,
-                odd_freq,
-                dk,
-                odd_nPixPsf,
-                wvlRef,
-                oversampling,
+                inputPSDs=odd_psds,
+                mask=odd_mask,
+                wavelength=wavelength,
+                nPixPup=odd_nPixPup,
+                freq_range=odd_freq,
+                dk=dk,
+                nPixPsf=odd_nPixPsf,
+                oversampling=oversampling,
                 opdMap=odd_opd,
-                padPSD=padPSD,
             )
             if isinstance(odd_psf_set[0], list):
                 odd_psfs = [item.sampling for row in odd_psf_set for item in row]

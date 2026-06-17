@@ -95,8 +95,8 @@ class TestMastselUtils(unittest.TestCase):
 
     def test_psd_set_to_psf_set_handles_even_and_odd_psd_shapes(self):
         cases = [
-            (1.65e-6, 1.65e-6, False),
-            ([1.65e-6, 2.2e-6], 2.2e-6, True),
+            1.65e-6,
+            [1.65e-6, 2.2e-6],
         ]
 
         for n in (32, 33):
@@ -106,23 +106,20 @@ class TestMastselUtils(unittest.TestCase):
             mask = np.ones((n_pix_pup, n_pix_pup), dtype=np.float64)
             psd = np.zeros((n, n), dtype=np.float64)
 
-            for wavelength, wvl_ref, pad_psd in cases:
+            for wavelength in cases:
+                multi_wave = isinstance(wavelength, list)
                 out = psdSetToPsfSet(
-                    [psd],
-                    mask,
-                    wavelength,
-                    n,
-                    n_pix_pup,
-                    grid_diameter,
-                    freq_range,
-                    1.0,
-                    16,
-                    wvl_ref,
-                    2,
-                    padPSD=pad_psd,
+                    inputPSDs=[psd],
+                    mask=mask,
+                    wavelength=wavelength,
+                    nPixPup=n_pix_pup,
+                    freq_range=freq_range,
+                    dk=1.0,
+                    nPixPsf=16,
+                    oversampling=2,
                 )
 
-                if pad_psd:
+                if multi_wave:
                     samplings = [item.sampling for row in out for item in row]
                 else:
                     samplings = [item.sampling for item in out]
@@ -140,17 +137,14 @@ class TestMastselUtils(unittest.TestCase):
         psd = np.zeros((n, n), dtype=np.float64)
 
         out = psdSetToPsfSet(
-            [psd],
-            mask,
-            1.65e-6,
-            n,
-            n_pix_pup,
-            grid_diameter,
-            freq_range,
-            1.0,
-            16,
-            1.65e-6,
-            1,
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=1.65e-6,
+            nPixPup=n_pix_pup,
+            freq_range=freq_range,
+            dk=1.0,
+            nPixPsf=16,
+            oversampling=1,
         )
 
         self.assertEqual(out[0].sampling.shape, (16, 16))
@@ -165,17 +159,14 @@ class TestMastselUtils(unittest.TestCase):
         psd = np.zeros((n, n), dtype=np.float64)
 
         out = psdSetToPsfSet(
-            [psd],
-            mask,
-            1.65e-6,
-            n,
-            n_pix_pup,
-            grid_diameter,
-            freq_range,
-            1.0,
-            requested_npix,
-            1.65e-6,
-            1,
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=1.65e-6,
+            nPixPup=n_pix_pup,
+            freq_range=freq_range,
+            dk=1.0,
+            nPixPsf=requested_npix,
+            oversampling=1,
             internal_grid_mode='even_legacy',
         )
 
@@ -193,8 +184,15 @@ class TestMastselUtils(unittest.TestCase):
         psd = np.zeros((n, n), dtype=np.float64)
 
         out = psdSetToPsfSet(
-            [psd], mask, 1.65e-6, n, n_pix_pup, grid_diameter, freq_range, 
-            1.0, requested_npix, 1.65e-6, 1, internal_grid_mode='odd_internal'
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=1.65e-6,
+            nPixPup=n_pix_pup,
+            freq_range=freq_range,
+            dk=1.0,
+            nPixPsf=requested_npix,
+            oversampling=1,
+            internal_grid_mode='odd_internal',
         )
         self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
 
@@ -209,8 +207,15 @@ class TestMastselUtils(unittest.TestCase):
         psd = np.zeros((n, n), dtype=np.float64)
 
         out = psdSetToPsfSet(
-            [psd], mask, 1.65e-6, n, n_pix_pup, grid_diameter, freq_range, 
-            1.0, requested_npix, 1.65e-6, 1, internal_grid_mode='even_legacy'
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=1.65e-6,
+            nPixPup=n_pix_pup,
+            freq_range=freq_range,
+            dk=1.0,
+            nPixPsf=requested_npix,
+            oversampling=1,
+            internal_grid_mode='even_legacy',
         )
         self.assertEqual(out[0].sampling.shape, (requested_npix, requested_npix))
 
@@ -224,17 +229,14 @@ class TestMastselUtils(unittest.TestCase):
         psd = np.zeros((n, n), dtype=np.float64)
 
         out = psdSetToPsfSet(
-            [psd],
-            mask,
-            1.65e-6,
-            n,
-            n_pix_pup,
-            grid_diameter,
-            freq_range,
-            1.0,
-            requested_npix,
-            1.65e-6,
-            1,
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=1.65e-6,
+            nPixPup=n_pix_pup,
+            freq_range=freq_range,
+            dk=1.0,
+            nPixPsf=requested_npix,
+            oversampling=1,
             internal_grid_mode='odd_internal',
         )
 
@@ -250,17 +252,14 @@ class TestMastselUtils(unittest.TestCase):
         psd = np.zeros((n, n), dtype=np.float64)
 
         out = psdSetToPsfSet(
-            [psd],
-            mask,
-            1.65e-6,
-            n,
-            n_pix_pup,
-            grid_diameter,
-            freq_range,
-            1.0,
-            requested_npix,
-            1.65e-6,
-            2,
+            inputPSDs=[psd],
+            mask=mask,
+            wavelength=1.65e-6,
+            nPixPup=n_pix_pup,
+            freq_range=freq_range,
+            dk=1.0,
+            nPixPsf=requested_npix,
+            oversampling=2,
             internal_grid_mode='odd_internal',
         )
 

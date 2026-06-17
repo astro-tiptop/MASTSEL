@@ -289,9 +289,8 @@ class TestPsfSpatialResampling(unittest.TestCase):
         self.pupil_mask = np.ones((self.n_pix_pup, self.n_pix_pup), dtype=np.float64)
         self.dk = 4.0
         self.nPixPsf = 512
-        self.wvl_ref = 2.2e-6
         self.kRef = 2
-        
+
         # Create a simple delta PSD to track energy conservation
         self.psd = np.zeros((self.n, self.n), dtype=np.float64)
         self.psd[self.n//2, self.n//2] = 1.0
@@ -302,14 +301,19 @@ class TestPsfSpatialResampling(unittest.TestCase):
         the output arrays are strictly of shape (nPixPsf, nPixPsf).
         """
         result = psdSetToPsfSet(
-            [self.psd], self.pupil_mask, self.wavelengths, self.n, self.n_pix_pup,
-            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
-            self.wvl_ref, self.kRef, padPSD=True
+            inputPSDs=[self.psd],
+            mask=self.pupil_mask,
+            wavelength=self.wavelengths,
+            nPixPup=self.n_pix_pup,
+            freq_range=self.freq_range,
+            dk=self.dk,
+            nPixPsf=self.nPixPsf,
+            oversampling=self.kRef,
         )
-        
-        psf_short = result[0][0] # 1.2um
-        psf_long = result[1][0]  # 2.2um
-        
+
+        psf_short = result[0][0]  # 1.2um
+        psf_long = result[1][0]   # 2.2um
+
         self.assertEqual(psf_short.sampling.shape[0], self.nPixPsf)
         self.assertEqual(psf_short.sampling.shape[1], self.nPixPsf)
         self.assertEqual(psf_long.sampling.shape[0], self.nPixPsf)
@@ -317,44 +321,57 @@ class TestPsfSpatialResampling(unittest.TestCase):
 
     def test_flux_conservation_after_interpolation(self):
         """
-        Verify that the spatial interpolation mathematically conserves 
+        Verify that the spatial interpolation mathematically conserves
         the total energy of the PSF.
         """
-        # Run in mono-mode so native = target, ensuring baseline flux is stable
         result_mono = psdSetToPsfSet(
-            [self.psd], self.pupil_mask, [self.wavelengths[1]], self.n, self.n_pix_pup,
-            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
-            self.wvl_ref, self.kRef, padPSD=False
+            inputPSDs=[self.psd],
+            mask=self.pupil_mask,
+            wavelength=[self.wavelengths[1]],
+            nPixPup=self.n_pix_pup,
+            freq_range=self.freq_range,
+            dk=self.dk,
+            nPixPsf=self.nPixPsf,
+            oversampling=self.kRef,
         )
 
-        # Run in multi-mode where the 2.2um PSF will be heavily interpolated
         result_multi = psdSetToPsfSet(
-            [self.psd], self.pupil_mask, self.wavelengths, self.n, self.n_pix_pup,
-            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
-            self.wvl_ref, self.kRef, padPSD=True
+            inputPSDs=[self.psd],
+            mask=self.pupil_mask,
+            wavelength=self.wavelengths,
+            nPixPup=self.n_pix_pup,
+            freq_range=self.freq_range,
+            dk=self.dk,
+            nPixPsf=self.nPixPsf,
+            oversampling=self.kRef,
         )
 
         flux_mono = float(result_mono[0].sampling.sum())
         flux_multi = float(result_multi[1][0].sampling.sum())
-        
-        self.assertAlmostEqual(flux_mono, flux_multi, places=5, 
+
+        self.assertAlmostEqual(flux_mono, flux_multi, places=5,
                                msg="Flux was not conserved during spatial interpolation")
 
     def test_target_pixel_scale_is_tied_to_minimum_wavelength(self):
         """
-        Verify that the geometric width (Field of View in radians) of the output 
+        Verify that the geometric width (Field of View in radians) of the output
         Field object correctly scales based on the minimum wavelength in the batch,
         rather than the reference wavelength.
         """
         result = psdSetToPsfSet(
-            [self.psd], self.pupil_mask, self.wavelengths, self.n, self.n_pix_pup,
-            self.grid_diameter, self.freq_range, self.dk, self.nPixPsf, 
-            self.wvl_ref, self.kRef, padPSD=True
+            inputPSDs=[self.psd],
+            mask=self.pupil_mask,
+            wavelength=self.wavelengths,
+            nPixPup=self.n_pix_pup,
+            freq_range=self.freq_range,
+            dk=self.dk,
+            nPixPsf=self.nPixPsf,
+            oversampling=self.kRef,
         )
-        
+
         psf_short = result[0][0]
         psf_long = result[1][0]
-        
+
         # Both output PSFs should have the exact same physical width in radians,
         # dictated by the target pixel scale derived from the 1.2um wavelength.
         self.assertEqual(psf_short.width, psf_long.width)

@@ -117,15 +117,11 @@ class TestNyquistZeroingImpact(unittest.TestCase):
             kwargs = dict(
                 mask=np.asarray(data["mask"]),
                 wavelength=np.asarray(data["wavelength"]),
-                N=N,
                 nPixPup=int(data["nPixPup"]),
-                grid_diameter=float(data["grid_diameter"]),
                 freq_range=float(data["freq_range"]),
                 dk=float(data["dk"]),
                 nPixPsf=int(data["nPixPsf"]),
-                wvlRef=float(data["wvlRef"]),
                 oversampling=float(data["oversampling"]),
-                padPSD=bool(data["padPSD"]),
             )
             has_opd = bool(data["has_opd"])
             if has_opd:
@@ -165,15 +161,11 @@ class TestNyquistZeroingImpact(unittest.TestCase):
             base_kwargs = dict(
                 mask=np.asarray(data["mask"]),
                 wavelength=np.asarray(data["wavelength"]),
-                N=N,
                 nPixPup=int(data["nPixPup"]),
-                grid_diameter=float(data["grid_diameter"]),
                 freq_range=float(data["freq_range"]),
                 dk=float(data["dk"]),
                 nPixPsf=int(data["nPixPsf"]),
-                wvlRef=float(data["wvlRef"]),
                 oversampling=float(data["oversampling"]),
-                padPSD=bool(data["padPSD"]),
             )
             has_opd = bool(data["has_opd"])
             if has_opd:
@@ -196,15 +188,11 @@ class TestNyquistZeroingImpact(unittest.TestCase):
             expanded_kwargs = dict(
                 mask=odd_mask,
                 wavelength=np.asarray(data["wavelength"]),
-                N=odd_N,
                 nPixPup=odd_nPixPup,
-                grid_diameter=odd_grid,
                 freq_range=odd_freq,
                 dk=float(data["dk"]),
                 nPixPsf=odd_nPixPsf,
-                wvlRef=float(data["wvlRef"]),
                 oversampling=float(data["oversampling"]),
-                padPSD=bool(data["padPSD"]),
             )
             if has_opd:
                 expanded_kwargs["opdMap"] = np.asarray(data["opd_map"])
