@@ -14,10 +14,13 @@ the target pixel scale exactly -- see fourierModel.py/frequencyDomain.py in
 P3 for how nOtf_i = nPixPsf * k_i is guaranteed.
 """
 
+import os
 import unittest
 import numpy as np
 
 from mastsel.mavisPsf import psdSetToPsfSet, _exact_block_decimate
+
+MULTIWVL_FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "psd_multiwavelength")
 
 
 def _make_psd_and_mask(N, nPixPup, PSDstep, value=1e-4):
@@ -199,6 +202,73 @@ class TestLegacyModeStillDetectedCorrectly(unittest.TestCase):
         self.assertEqual(len(result), 2)
         for psf in result:
             self.assertEqual(psf.sampling.shape, (16, 16))
+
+
+def _load_multiwvl_fixture_paths():
+    if not os.path.isdir(MULTIWVL_FIXTURE_DIR):
+        return []
+    return [
+        os.path.join(MULTIWVL_FIXTURE_DIR, name)
+        for name in sorted(os.listdir(MULTIWVL_FIXTURE_DIR))
+        if name.endswith(".npz")
+    ]
+
+
+@unittest.skipIf(not _load_multiwvl_fixture_paths(),
+                 "No per-wavelength PSD fixtures found. Run "
+                 "TIPTOP/scripts/export_psd_fixtures.py --multi-wavelength-case "
+                 "to generate them.")
+class TestRealInstrumentMultiWavelengthFixture(unittest.TestCase):
+    """
+    Regression test using real P3/TIPTOP output (exactMultiWavelengthPSD=True
+    on MAVIS with wavelengths [450, 550, 850] nm) instead of synthetic PSDs --
+    complements TestPerWavelengthPsdSetToPsfSet above, which only exercises
+    hand-built inputs. Generated via:
+        python scripts/export_psd_fixtures.py --cases <none needed> \
+            --multi-wavelength-case MAVIS --multi-wavelength-nm 450 550 850
+    (see TIPTOP/scripts/export_psd_fixtures.py:export_multi_wavelength_case).
+    """
+
+    def test_real_fixture_produces_finite_psfs_of_requested_size(self):
+        for fixture_path in _load_multiwvl_fixture_paths():
+            with self.subTest(fixture=os.path.basename(fixture_path)):
+                data = np.load(fixture_path, allow_pickle=False)
+                n_wvl = int(data["n_wvl"])
+                wavelength = np.asarray(data["wavelength"])
+                nPixPsf = int(data["nPixPsf"])
+                mask = np.asarray(data["mask"])
+                freq_range = np.asarray(data["freq_range_per_wvl"])
+                dk = np.asarray(data["dk_per_wvl"])
+                nPixPup = np.asarray(data["nPixPup_per_wvl"])
+                has_opd = bool(data["has_opd"])
+                opd_map = np.asarray(data["opd_map"]) if has_opd else None
+
+                # Genuinely different grid shapes per wavelength -- this is
+                # real P3 output for lambda_min << lambda_max, not a synthetic
+                # stand-in for it.
+                shapes = [data[f"input_psds_{i}"].shape[-1] for i in range(n_wvl)]
+                self.assertGreater(len(set(shapes)), 1,
+                                   "expected at least two distinct grid sizes "
+                                   "across wavelengths in this fixture")
+
+                inputPSDs = [data[f"input_psds_{i}"] for i in range(n_wvl)]
+
+                kwargs = dict(
+                    nPixPup=nPixPup, freq_range=freq_range, dk=dk,
+                    nPixPsf=nPixPsf,
+                )
+                if has_opd:
+                    kwargs["opdMap"] = opd_map
+
+                result = psdSetToPsfSet(inputPSDs, mask, wavelength, **kwargs)
+
+                self.assertEqual(len(result), n_wvl)
+                for row in result:
+                    for psf in row:
+                        self.assertEqual(psf.sampling.shape, (nPixPsf, nPixPsf))
+                        arr = np.asarray(psf.sampling)
+                        self.assertTrue(np.isfinite(arr).all())
+                        self.assertGreater(float(arr.sum()), 0.0)
 
 
 if __name__ == '__main__':
