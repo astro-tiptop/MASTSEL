@@ -146,6 +146,36 @@ class TestPerWavelengthPsdSetToPsfSet(unittest.TestCase):
             psdSetToPsfSet(inputPSDs, mask, [wavelengths[0]], nPixPup=nPixPup,
                            freq_range=freq_range, dk=dk, nPixPsf=nPixPsf)
 
+    def test_nPixPup_varies_per_wavelength(self):
+        """
+        The pupil occupies a different fraction of each wavelength's own grid
+        (n_internal_i varies with k_i, the physical pupil diameter does not),
+        so nPixPup must be accepted as a per-wavelength sequence, not just a
+        shared scalar -- regression guard for a bug found during review where
+        a single nPixPup was silently reused for every wavelength.
+        """
+        nPixPsf = 32
+        inputPSDs, mask, wavelengths, freq_range, dk = _build_per_wavelength_inputs(
+            wavelengths_nm=[1200, 2200], k_list=[3, 2],
+            nPixPsf=nPixPsf, nPixPup=40, n_directions=1,
+        )
+        nPixPup_per_wvl = [40, 28]  # deliberately different per wavelength
+        result = psdSetToPsfSet(inputPSDs, mask, wavelengths, nPixPup=nPixPup_per_wvl,
+                                freq_range=freq_range, dk=dk, nPixPsf=nPixPsf)
+        self.assertEqual(len(result), 2)
+        for row in result:
+            self.assertEqual(row[0].sampling.shape, (nPixPsf, nPixPsf))
+
+    def test_mismatched_nPixPup_sequence_length_raises(self):
+        nPixPsf = 16
+        inputPSDs, mask, wavelengths, freq_range, dk = _build_per_wavelength_inputs(
+            wavelengths_nm=[1200, 2200], k_list=[2, 2],
+            nPixPsf=nPixPsf, nPixPup=24, n_directions=1,
+        )
+        with self.assertRaises(ValueError):
+            psdSetToPsfSet(inputPSDs, mask, wavelengths, nPixPup=[24, 24, 24],
+                           freq_range=freq_range, dk=dk, nPixPsf=nPixPsf)
+
 
 class TestLegacyModeStillDetectedCorrectly(unittest.TestCase):
     """

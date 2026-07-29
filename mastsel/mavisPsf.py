@@ -638,7 +638,17 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
     wavelength = np.atleast_1d(wavelength)
     multi_wave = len(wavelength) > 1
 
-    per_wavelength_psd = isinstance(inputPSDs[0], (list, tuple))
+    # Per-wavelength inputPSDs[i_wvl] can be either a Python list of 2D PSD
+    # arrays (one per direction) or a single stacked 3D array
+    # (n_directions, N, N) -- both are iterated identically below (iterating
+    # a numpy/cupy array's leading axis yields the same 2D slices a list
+    # would). The legacy convention is a flat list/array of 2D PSDs, so
+    # ndim==2 (or a list of 2D arrays) means legacy, ndim>=3 (or a list of
+    # those) means per-wavelength.
+    _first_psd_entry = inputPSDs[0]
+    per_wavelength_psd = isinstance(_first_psd_entry, (list, tuple)) or (
+        hasattr(_first_psd_entry, 'ndim') and _first_psd_entry.ndim >= 3
+    )
 
     # Backward compatibility: N was the 4th positional arg in the old interface;
     # nPixPup is the equivalent in the new keyword interface.
@@ -668,6 +678,18 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
         if len(freq_range_seq) != len(wavelength) or len(dk_seq) != len(wavelength):
             raise ValueError("freq_range/dk must be a scalar or match "
                              "len(wavelength) when inputPSDs is per-wavelength.")
+
+        # The pupil occupies a different fraction of each wavelength's own
+        # grid (n_internal_i varies with k_i while the physical pupil diameter
+        # does not), so nPixPup must vary per wavelength too here -- unlike
+        # the legacy shared-grid path, where one nPixPup is correct for every
+        # wavelength because n_internal is the same for all of them.
+        nPixPup_seq = np.atleast_1d(nPixPup)
+        if len(nPixPup_seq) == 1:
+            nPixPup_seq = np.full(len(wavelength), nPixPup_seq[0])
+        if len(nPixPup_seq) != len(wavelength):
+            raise ValueError("nPixPup must be a scalar or match len(wavelength) "
+                             "when inputPSDs is per-wavelength.")
     else:
         if freq_range is None:
             raise ValueError("freq_range is required.")
@@ -715,11 +737,13 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             wvl, wvl_psds, wvl_freq_range, wvl_dk = loop_item
             N = wvl_psds[0].shape[0]
             grid_diameter = N / float(wvl_freq_range)
+            wvl_nPixPup = int(nPixPup_seq[wvl_idx])
         else:
             wvl, ovrsmp = loop_item
             wvl_psds = inputPSDs
             wvl_freq_range = freq_range
             wvl_dk = dk
+            wvl_nPixPup = nPixPup
 
         # 1. DEFINE NATIVE GRID (No frequency padding applied)
         n_internal = int(N)
@@ -762,7 +786,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
         # 3. PREPARE OPTICAL ELEMENTS AT NATIVE RESOLUTION
         maskField = Field(wvl, n_internal, grid_diameter)
         if not isinstance(mask, list):
-            maskField.sampling = congrid(mask, [nPixPup, nPixPup])
+            maskField.sampling = congrid(mask, [wvl_nPixPup, wvl_nPixPup])
             maskField.sampling = _pad_or_crop_centered(maskField.sampling, n_internal, xp=maskField.xp)
 
         if xp is None:
@@ -780,7 +804,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
             opd_map_backend = defaultArrayBackend.asarray(opdMap, dtype=defaultArrayDtype)
             phaseStat = coeff * opd_map_backend
-            phaseStat = congrid(phaseStat, [nPixPup, nPixPup])
+            phaseStat = congrid(phaseStat, [wvl_nPixPup, wvl_nPixPup])
             phaseStat = _pad_or_crop_centered(phaseStat, n_internal, xp)
             if mask is None or not isinstance(mask, list):
                 maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
