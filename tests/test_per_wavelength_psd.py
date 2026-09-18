@@ -18,7 +18,7 @@ import os
 import unittest
 import numpy as np
 
-from mastsel.mavisPsf import psdSetToPsfSet, _exact_block_decimate
+from mastsel.mavisPsf import psdSetToPsfSet, _exact_block_decimate, hostData
 
 MULTIWVL_FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "psd_multiwavelength")
 
@@ -266,7 +266,9 @@ class TestRealInstrumentMultiWavelengthFixture(unittest.TestCase):
                 for row in result:
                     for psf in row:
                         self.assertEqual(psf.sampling.shape, (nPixPsf, nPixPsf))
-                        arr = np.asarray(psf.sampling)
+                        # psf.sampling is cupy-backed here (defaultArrayBackend=cp when GPU
+                        # is enabled); hostData() brings it to real numpy before np.asarray().
+                        arr = np.asarray(hostData(psf.sampling))
                         self.assertTrue(np.isfinite(arr).all())
                         self.assertGreater(float(arr.sum()), 0.0)
 
