@@ -291,8 +291,23 @@ class TestPsfExtrapolation(unittest.TestCase):
             )
             renorm_factors.append(renorm_factor)
 
-        self.assertAlmostEqual(renorm_factors[0], renorm_factors[1], places=3)
-        self.assertAlmostEqual(renorm_factors[0], renorm_factors[2], places=3)
+        self.assertAlmostEqual(renorm_factors[0], renorm_factors[1], places=7)
+        self.assertAlmostEqual(renorm_factors[0], renorm_factors[2], places=7)
+
+    def test_normalization_skipped_when_total_is_not_positive(self):
+        r = np.arange(0.0, 200.0, dtype=np.float64)
+        psf = (1.0 + (r / 40.0)**2)**(-11 / 6)
+
+        r_extended, psf_extended, exponent, _ = extrapolate_psf_profile(
+            r, psf, r_max=300, power_law_exponent=-11 / 3, verbose=False
+        )
+        psf_norm, renorm_factor = normalize_psf_profile(
+            r_extended, psf_extended, r, psf, verbose=False,
+            power_law_exponent=exponent, power_law_normalization=-4.3e7,
+        )
+
+        self.assertEqual(renorm_factor, 1.0)
+        self.assertTrue(np.array_equal(psf_norm, psf_extended))
 
 
 class TestPsfSpatialResampling(unittest.TestCase):

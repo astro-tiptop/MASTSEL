@@ -1271,14 +1271,19 @@ def normalize_psf_profile(r, psf, r_original, psf_original, verbose=True, xp=np,
         x=r
     )
 
-    # Flux of the power-law tail beyond r[-1]: 2π k r[-1]^(exponent+2) / -(exponent+2)
+    # Flux of the power-law tail beyond r[-1], weighted by (r + delta_r)
+    # like the discrete integrals so the total does not depend on r_max
     integral_tail = 0.0
     if power_law_exponent is not None and power_law_normalization is not None:
         exponent = float(power_law_exponent)
         if exponent >= -2:
             raise ValueError("power_law_exponent must be < -2 to include the tail flux")
-        integral_tail = (2 * np.pi * float(power_law_normalization)
-                         * float(r[-1])**(exponent + 2) / -(exponent + 2))
+        r_last = float(r[-1])
+        integral_tail = 2 * np.pi * float(power_law_normalization) * (
+            r_last**(exponent + 2) / -(exponent + 2)
+            + delta_r * r_last**(exponent + 1) / -(exponent + 1)
+        )
+    integral_total = integral_extended + integral_tail
 
     if verbose:
         print(f'\nOriginal integral: {float(integral_original):.6f}')
@@ -1287,8 +1292,8 @@ def normalize_psf_profile(r, psf, r_original, psf_original, verbose=True, xp=np,
         print(f'Tail contribution beyond r_max: {float(integral_tail):.6f}')
 
     # Check for valid integral
-    if not (xp.isnan(integral_extended) or integral_extended <= 0):
-        renorm_factor = integral_original / (integral_extended + integral_tail)
+    if xp.isfinite(integral_total) and integral_total > 0:
+        renorm_factor = integral_original / integral_total
         psf_norm = psf * renorm_factor
 
         integral_check = 2 * np.pi * simpson(
@@ -1301,7 +1306,7 @@ def normalize_psf_profile(r, psf, r_original, psf_original, verbose=True, xp=np,
             print(f'Integral after renormalization: {float(integral_check):.6f}')
     else:
         if verbose:
-            print("Warning: integral is nan or zero, skipping renormalization")
+            print("Warning: integral is not finite or not positive, skipping renormalization")
         psf_norm = psf
         renorm_factor = 1.0
 
