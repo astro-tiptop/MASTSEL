@@ -611,6 +611,30 @@ def _exact_block_decimate(sampling, nPixPsf, xp):
     return sampling.reshape(n_out, k, n_out, k).sum(axis=(1, 3))
 
 
+def pupilOnGrid(a, n_pix_pup, n_out, xp):
+    """Resample a pupil-plane map `a` (whose side spans the telescope diameter)
+    so that this diameter covers `n_pix_pup` pixels of a centred n_out x n_out grid.
+
+    Integer n_pix_pup: congrid to n_pix_pup pixels then pad, as before.
+    Non-integer n_pix_pup (the exact D * freq_range): linear resampling with the
+    exact scale, so that the diameter is not rounded to an integer number of
+    pixels (rounding changes D by up to one pixel, hence the PSF peak by ~2/n_pix_pup).
+    """
+    n_pix_pup = float(n_pix_pup)
+    if n_pix_pup.is_integer():
+        return _pad_or_crop_centered(congrid(a, [int(n_pix_pup), int(n_pix_pup)]), n_out, xp=xp)
+    if xp == cp and gpuEnabled:
+        from cupyx.scipy.ndimage import affine_transform
+    else:
+        from scipy.ndimage import affine_transform
+    a = xp.asarray(a)
+    scale = a.shape[0] / n_pix_pup                  # input pixels per output pixel
+    offset = (a.shape[0] - 1) / 2 - (n_out // 2) * scale
+    return affine_transform(a, matrix=xp.asarray([scale, scale], dtype=float),
+                            offset=[offset, offset], output_shape=(n_out, n_out),
+                            order=1, mode='constant', cval=0.0)
+
+
 def psdSetToPsfSet(inputPSDs, mask, wavelength,
                    N=None, nPixPup=None, grid_diameter=None, freq_range=None,
                    dk=None, nPixPsf=None, wvlRef=None, oversampling=1,
@@ -748,7 +772,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             wvl, wvl_psds, wvl_freq_range, wvl_dk = loop_item
             N = wvl_psds[0].shape[0]
             grid_diameter = N / float(wvl_freq_range)
-            wvl_nPixPup = int(nPixPup_seq[wvl_idx])
+            wvl_nPixPup = float(nPixPup_seq[wvl_idx])
         else:
             wvl, ovrsmp = loop_item
             wvl_psds = inputPSDs
@@ -797,8 +821,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
         # 3. PREPARE OPTICAL ELEMENTS AT NATIVE RESOLUTION
         maskField = Field(wvl, n_internal, grid_diameter)
         if not isinstance(mask, list):
-            maskField.sampling = congrid(mask, [wvl_nPixPup, wvl_nPixPup])
-            maskField.sampling = _pad_or_crop_centered(maskField.sampling, n_internal, xp=maskField.xp)
+            maskField.sampling = pupilOnGrid(mask, wvl_nPixPup, n_internal, maskField.xp)
 
         if xp is None:
             xp = maskField.xp
@@ -815,8 +838,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
             opd_map_backend = defaultArrayBackend.asarray(opdMap, dtype=defaultArrayDtype)
             phaseStat = coeff * opd_map_backend
-            phaseStat = congrid(phaseStat, [wvl_nPixPup, wvl_nPixPup])
-            phaseStat = _pad_or_crop_centered(phaseStat, n_internal, xp)
+            phaseStat = pupilOnGrid(phaseStat, wvl_nPixPup, n_internal, xp)
             if mask is None or not isinstance(mask, list):
                 maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                 maskOtf.pupilToOtf()
@@ -829,8 +851,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
         for i, computedPSD in enumerate(wvl_psds):
 
             if isinstance(mask, list):
-                maskField.sampling = congrid(mask[i], [nPixPup, nPixPup])
-                maskField.sampling = _pad_or_crop_centered(maskField.sampling, n_internal, xp)
+                maskField.sampling = pupilOnGrid(mask[i], wvl_nPixPup, n_internal, xp)
                 if opdMap is not None:
                     maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                     maskOtf.pupilToOtf()
