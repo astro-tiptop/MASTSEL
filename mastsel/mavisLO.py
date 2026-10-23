@@ -732,13 +732,13 @@ class MavisLO(object):
     def specializedNoiseFuncs(self):
         dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
         completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
-        self.fTipS_LO1 = completeIntegralTipLOandTf[0].subs(dict1).function
+        self.fTipS_LO1 = _cached_subs(completeIntegralTipLOandTf[0], dict1).function
         self.fTipS_LO1tfW = completeIntegralTipLOandTf[1]
         self.fTipS_LO1tfN = completeIntegralTipLOandTf[2]
         self.fTipS_LO1ztfW = completeIntegralTipLOandTf[3]
         self.fTipS_LO1ztfN = completeIntegralTipLOandTf[4]
         completeIntegralTiltLOandTf = self.MavisFormulas['completeIntegralTiltLOandTf']
-        self.fTiltS_LO1 = completeIntegralTiltLOandTf[0].subs(dict1).function
+        self.fTiltS_LO1 = _cached_subs(completeIntegralTiltLOandTf[0], dict1).function
         self.fTiltS_LO1tfW = completeIntegralTiltLOandTf[1]
         self.fTiltS_LO1tfN = completeIntegralTiltLOandTf[2]
         self.fTiltS_LO1ztfW = completeIntegralTiltLOandTf[3]
@@ -763,7 +763,7 @@ class MavisLO(object):
     def specializedNoiseFocusFuncs(self):
         dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_Focus, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_Focus}
         completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
-        self.fFocusS_LO1 = completeIntegralTipLOandTf[0].subs(dict1).function
+        self.fFocusS_LO1 = _cached_subs(completeIntegralTipLOandTf[0], dict1).function
         self.fFocusS_LO1tfW = completeIntegralTipLOandTf[1]
         self.fFocusS_LO1tfN = completeIntegralTipLOandTf[2]
         self.fFocusS_LO1ztfW = completeIntegralTipLOandTf[3]
@@ -781,13 +781,13 @@ class MavisLO(object):
     def specializedWindFuncs(self):
         dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
         completeIntegralTipAndTf = self.MavisFormulas['completeIntegralTipAndTf']
-        self.fTipS1 = completeIntegralTipAndTf[0].subs(dict1).function
+        self.fTipS1 = _cached_subs(completeIntegralTipAndTf[0], dict1).function
         self.fTipS1tfW = completeIntegralTipAndTf[1]
         self.fTipS1tfN = completeIntegralTipAndTf[2]
         self.fTipS1ztfW = completeIntegralTipAndTf[3]
         self.fTipS1ztfN = completeIntegralTipAndTf[4]
         completeIntegralTiltAndTf = self.MavisFormulas['completeIntegralTiltAndTf']
-        self.fTiltS1 = completeIntegralTiltAndTf[0].subs(dict1).function
+        self.fTiltS1 = _cached_subs(completeIntegralTiltAndTf[0], dict1).function
         self.fTiltS1tfW = completeIntegralTiltAndTf[1]
         self.fTiltS1tfN = completeIntegralTiltAndTf[2]
         self.fTiltS1ztfW = completeIntegralTiltAndTf[3]
