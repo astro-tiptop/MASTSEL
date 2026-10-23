@@ -1085,10 +1085,15 @@ class MavisLO(object):
         return (bias,(mux,muy),(varx,vary))
 
 
+    # The cache ignores `self`: every instance attribute the result depends on
+    # must be an argument (integration points, frequency range and dtype come
+    # from the [COMPUTATION] section and differ between configurations).
     @method_lru_cache(maxsize=None)
     def _compute_turb_psds_cached(self, fmin, fmax, freq_samples, wind_speed,
-                                  telescope_diameter, r0_value, l0):
-        _ = (wind_speed, telescope_diameter, r0_value, l0)
+                                  telescope_diameter, r0_value, l0,
+                                  psd_integration_points, max_freq_turb, dtype_name):
+        _ = (wind_speed, telescope_diameter, r0_value, l0,
+             psd_integration_points, max_freq_turb, dtype_name)
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = self.dtype((500 / 2.0 / np.pi) ** 2)  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
@@ -1117,14 +1122,17 @@ class MavisLO(object):
 
         # Pass the parameters to the cached function
         return self._compute_turb_psds_cached(
-            fmin, fmax, int(freq_samples), wind_speed, telescope_diameter, r0_value, l0
+            fmin, fmax, int(freq_samples), wind_speed, telescope_diameter, r0_value, l0,
+            self.psdIntegrationPoints, self.max_freq_turb, np.dtype(self.dtype).name
         )
 
 
     @method_lru_cache(maxsize=None)
     def _compute_focus_psds_cached(self, fmin, fmax, freq_samples, wind_speed,
-                                   telescope_diameter, r0_value, l0, zenith_angle):
-        _ = (wind_speed, telescope_diameter, r0_value, l0, zenith_angle)
+                                   telescope_diameter, r0_value, l0, zenith_angle,
+                                   psd_integration_points, max_freq_turb, dtype_name):
+        _ = (wind_speed, telescope_diameter, r0_value, l0, zenith_angle,
+             psd_integration_points, max_freq_turb, dtype_name)
         paramAndRange = ('f', fmin, fmax, freq_samples, 'linear')
         scaleFactor = (500 / 2.0 / np.pi) ** 2  # from rad**2 to nm**2
         # scale the integration points with the number of points in the frequency range
@@ -1153,7 +1161,8 @@ class MavisLO(object):
         # Pass the parameters to the cached function
         return self._compute_focus_psds_cached(
             fmin, fmax, int(freq_samples), wind_speed,
-            telescope_diameter, r0_value, l0, zenith_angle
+            telescope_diameter, r0_value, l0, zenith_angle,
+            self.psdIntegrationPoints, self.max_freq_turb, np.dtype(self.dtype).name
         )
 
 
