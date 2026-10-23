@@ -73,6 +73,11 @@ def _cached_subs(expr, subs_dict):
     return _subs_cached_impl(expr, items)
 
 
+@functools.lru_cache(maxsize=64)
+def _lambdify_cached(expr, names, use_gpulib):
+    return lambdifyByName(expr, list(names), gpulib if use_gpulib else cpulib)
+
+
 def _evaluate_config_ast(node):
     """Safely evaluate simple arithmetic and container literals from config files."""
     if isinstance(node, ast.Constant):
@@ -1187,10 +1192,10 @@ class MavisLO(object):
             {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
         self.fTiltS1 = self.fTiltS_LO.subs(
             {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-        self.fTipS_lambda1 = lambdifyByName(
-            self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-        self.fTiltS_lambda1 = lambdifyByName(
-            self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+        self.fTipS_lambda1 = self._noiseLambda(
+            self.fTipS_LO, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
+        self.fTiltS_lambda1 = self._noiseLambda(
+            self.fTiltS_LO, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], 'phi^noise_Tilt', sigma2Noise)
 
         if self.displayEquation:
             print('computeNoiseResidual')
@@ -1344,8 +1349,8 @@ class MavisLO(object):
         # must wait till this moment to substitute the noise level
         self.fFocusS1 = self.fFocusS_LO.subs(
             {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
-        self.fFocusS_lambda1 = lambdifyByName(
-            self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+        self.fFocusS_lambda1 = self._noiseLambda(
+            self.fFocusS_LO, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
 
         if self.displayEquation:
             print('computeNoiseResidual')
@@ -1428,6 +1433,16 @@ class MavisLO(object):
             return (resultFocus[minFocusIdx[0][0]])
 
 
+    def _noiseLambda(self, expr, names, noise_name, sigma2Noise):
+        """Numerical function of `names` with the noise level fixed to sigma2Noise.
+
+        Equivalent to lambdifying expr.subs({noise: sigma2Noise}), but the
+        (slow, ~25 ms) lambdify is done once per expression, with the noise
+        level as an extra argument, instead of once per NGS.
+        """
+        f = _lambdify_cached(expr, tuple(names) + (noise_name,), self.platformlib is gpulib)
+        return lambda g, freq, psd: f(g, freq, psd, sigma2Noise)
+
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias):
         """
         Compute the residual noise due to wind shake after correction by the AO loop,
@@ -1482,20 +1497,20 @@ class MavisLO(object):
                 {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
             self.fTiltS1 = self.fTiltS.subs(
                 {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName(
-                self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName(
-                self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS_lambda1 = self._noiseLambda(
+                self.fTipS, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
+            self.fTiltS_lambda1 = self._noiseLambda(
+                self.fTiltS, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], 'phi^noise_Tilt', sigma2Noise)
         else:
             # control TF in the other cases is an integrator
             self.fTipS1 = self.fTipS_LO.subs(
                 {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
             self.fTiltS1 = self.fTiltS_LO.subs(
                 {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName(
-                self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName(
-                self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS_lambda1 = self._noiseLambda(
+                self.fTipS_LO, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
+            self.fTiltS_lambda1 = self._noiseLambda(
+                self.fTiltS_LO, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], 'phi^noise_Tilt', sigma2Noise)
 
         if self.platformlib==gpulib and gpuEnabled:
             xp = cp
