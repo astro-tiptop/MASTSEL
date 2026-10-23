@@ -591,13 +591,15 @@ def _expand_odd_psd_to_even_with_zero_nyquist(psd, xp=defaultArrayBackend):
 
 def _exact_block_decimate(sampling, nPixPsf, xp):
     """
-    Flux-conserving decimation by an exact integer factor: reshape the
-    (n_out*k, n_out*k) array into (n_out, k, n_out, k) blocks and sum over
-    the k x k sub-pixels. Unlike a bilinear resize, this is exact (no
-    interpolation error) and needs no post-hoc flux renormalization, because
-    summing block sums always reproduces the total sum of the input array.
-    It is also the physically correct model of a real detector pixel
-    integrating the flux over its area.
+    Decimation by an exact integer factor k: point sampling, one native sample
+    every k, centred so that the native centre pixel n_in//2 (the PSF peak) lands
+    on the output pixel n_out//2; the result is rescaled to the native total flux.
+
+    This is the same pixel model as the shared-grid path and as the
+    point-sampled diffraction-limited reference used for the Strehl ratio.
+    Summing k x k blocks (as before) integrated the PSF over the pixel and, with
+    the peak on the corner of a block, shifted it by (k-1)/(2k) output pixels
+    (DL Strehl 0.78 at samp 1.5, 0.51 at samp 0.5; EE off-centre).
     """
     n_out = int(nPixPsf)
     n_in = sampling.shape[0]
@@ -611,7 +613,9 @@ def _exact_block_decimate(sampling, nPixPsf, xp):
             f"of nPixPsf for this wavelength."
         )
     k = n_in // n_out
-    return sampling.reshape(n_out, k, n_out, k).sum(axis=(1, 3))
+    idx = n_in // 2 + k * xp.arange(-(n_out // 2), n_out - n_out // 2)
+    out = sampling[idx][:, idx]
+    return out * (sampling.sum() / out.sum())
 
 
 def pupilOnGrid(a, n_pix_pup, n_out, xp):
@@ -876,7 +880,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel)
 
             if per_wavelength_psd:
-                # 5. EXACT INTEGER DECIMATION (flux-conserving, no interpolation)
+                # 5. EXACT INTEGER DECIMATION (centred point sampling, no interpolation)
                 if psfLE.N != int(nPixPsf):
                     native_flux = float(psfLE.sampling.sum()) if debug_trace else None
                     resampled = _exact_block_decimate(psfLE.sampling, nPixPsf, xp)
