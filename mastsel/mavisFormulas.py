@@ -1,3 +1,5 @@
+import functools
+
 import sympy as sp
 from symao.turbolence import *
 from symao.zernike import *
@@ -677,4 +679,15 @@ def createMavisFormulary():
 
     return _MavisFormulas
 
-_mavisFormulas = createMavisFormulary()
+@functools.lru_cache(maxsize=None)
+def getMavisFormulary():
+    """The MAVIS formulary, built on first use (~0.8 s of sympy work) instead of
+    at import, so that simulations without an LO part do not pay for it."""
+    return createMavisFormulary()
+
+
+def __getattr__(name):
+    # Backward compatibility: `_mavisFormulas` used to be a module attribute.
+    if name == '_mavisFormulas':
+        return getMavisFormulary()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

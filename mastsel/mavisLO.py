@@ -18,7 +18,7 @@ else:
 
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
-from mastsel.mavisFormulas import _mavisFormulas
+from mastsel.mavisFormulas import getMavisFormulary
 
 try:
     from IPython.display import display
@@ -527,7 +527,7 @@ class MavisLO(object):
         self.min_freq_turb = 1e-4
         self.max_freq_turb = 1000
 
-        self.MavisFormulas = _mavisFormulas
+        self.MavisFormulas = getMavisFormulary()
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_rh1_filt = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceDfiltered')
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
