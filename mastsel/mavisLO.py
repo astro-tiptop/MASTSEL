@@ -78,6 +78,24 @@ def _lambdify_cached(expr, names, use_gpulib):
     return lambdifyByName(expr, list(names), gpulib if use_gpulib else cpulib)
 
 
+@functools.lru_cache(maxsize=None)
+def _ellipse_lambdas():
+    """Covariance -> ellipse (theta, sigma_1, sigma_2) functions, lambdified once."""
+    theta = sp.symbols('theta')
+    sigma_1 = sp.symbols('sigma^2_1')
+    sigma_2 = sp.symbols('sigma^2_2')
+    sigma_X = sp.symbols('sigma^2_X')
+    sigma_Y = sp.symbols('sigma^2_Y')
+    sigma_XY = sp.symbols('sigma_XY')
+    eq1 = sp.Eq(theta, sp.S(1)/sp.S(2) * sp.atan( 2*sigma_XY / ( sigma_X-sigma_Y )) )
+    eq2 = sp.Eq(sigma_1, sp.S(1)/sp.S(2) * ( 2*sigma_XY / sp.sin(2*theta) + sigma_X + sigma_Y ) )
+    eq3 = sp.Eq(sigma_2, sigma_X+sigma_Y-sigma_1 )
+    leq1 = lambdifyByName( eq1.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY'], cpulib)
+    leq2 = lambdifyByName( eq2.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY', 'theta'], cpulib)
+    leq3 = lambdifyByName( eq3.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma^2_1'], cpulib)
+    return leq1, leq2, leq3
+
+
 def _evaluate_config_ast(node):
     """Safely evaluate simple arithmetic and container literals from config files."""
     if isinstance(node, ast.Constant):
@@ -2113,18 +2131,7 @@ class MavisLO(object):
             return None
 
     def ellipsesFromCovMats(self, Ctot):
-        theta = sp.symbols('theta')
-        sigma_1 = sp.symbols('sigma^2_1')
-        sigma_2 = sp.symbols('sigma^2_2')
-        sigma_X = sp.symbols('sigma^2_X')
-        sigma_Y = sp.symbols('sigma^2_Y')
-        sigma_XY = sp.symbols('sigma_XY')
-        eq1 = sp.Eq(theta, sp.S(1)/sp.S(2) * sp.atan( 2*sigma_XY / ( sigma_X-sigma_Y )) )
-        eq2 = sp.Eq(sigma_1, sp.S(1)/sp.S(2) * ( 2*sigma_XY / sp.sin(2*theta) + sigma_X + sigma_Y ) )
-        eq3 = sp.Eq(sigma_2, sigma_X+sigma_Y-sigma_1 )
-        leq1 = lambdifyByName( eq1.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY'], cpulib)
-        leq2 = lambdifyByName( eq2.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY', 'theta'], cpulib)
-        leq3 = lambdifyByName( eq3.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma^2_1'], cpulib)
+        leq1, leq2, leq3 = _ellipse_lambdas()
 
         def computeCovEllispse(CC):
             if np.abs(CC[1,0]) < 1e-20:
