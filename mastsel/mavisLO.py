@@ -7,7 +7,6 @@ from configparser import ConfigParser
 
 import numpy as np
 import yaml
-from sympy.physics.control.lti import TransferFunction
 
 from . import gpuEnabled
 
@@ -1168,6 +1167,7 @@ class MavisLO(object):
         n,d = sp.fraction(sp.simplify(zTFeq))
         # create a transfer function
         z = sp.symbols('z', real=False)
+        from sympy.physics.control.lti import TransferFunction  # deferred: ~0.17 s to import
         zTF = TransferFunction(n,d,z)
         # check stability thanks to the values of the poles
         if np.max(np.abs(zTF.poles())) > 0.99:
