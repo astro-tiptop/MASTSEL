@@ -8,16 +8,17 @@ from configparser import ConfigParser
 import numpy as np
 import yaml
 
+from mastsel.mavisUtilities import *
+from mastsel.mavisFormulas import *
+from mastsel.mavisFormulas import getMavisFormulary
+
+# After the star imports, which re-export SEEING's `cp`/`gpuEnabled` (see mavisPsf)
 from . import gpuEnabled
 
 if not gpuEnabled:
     cp = np
 else:
     import cupy as cp
-
-from mastsel.mavisUtilities import *
-from mastsel.mavisFormulas import *
-from mastsel.mavisFormulas import getMavisFormulary
 
 try:
     from IPython.display import display
