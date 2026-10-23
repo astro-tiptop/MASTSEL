@@ -511,7 +511,10 @@ def longExposurePsf(mask, psd, otf_tel=None):
 
 def residualToSpectrum(ellp, wvl, N,  pixel_scale_otf):
     convKernelFFT = Field(wvl, int(N), N*pixel_scale_otf, '')
-    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), -ellp[0])
+    # The Fourier transform of a Gaussian rotated by theta is rotated by the same
+    # theta: the angle must not change sign (with -theta the kernel was mirrored,
+    # e.g. an ellipse at +30 deg was applied at -30 deg).
+    convKernelFFT.setAsGaussianKernel(1/(2*np.pi*ellp[1]), 1/(2*np.pi*ellp[2]), ellp[0])
 
     return convKernelFFT
 
