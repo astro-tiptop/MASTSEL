@@ -489,7 +489,15 @@ def longExposurePsf(mask, psd, otf_tel=None):
     xp.exp(B_phi, out=B_phi)
     
     target_n = otf_tel.shape[0]
-    if B_phi.shape[0] != target_n:
+    if B_phi.shape[0] in (2 * target_n, 2 * target_n - 1):
+        # The lag grid is twice as fine: keep every second sample around the
+        # centre (fftshift centre B.shape//2 -> target_n//2, as otf_tel). Same
+        # samples as congrid for even sizes; for odd sizes congrid resampled by
+        # (2N-1)/N and missed the centre (OTF off by half a pixel).
+        c = B_phi.shape[0] // 2
+        idx = c + 2 * xp.arange(-(target_n // 2), target_n - target_n // 2)
+        B_phi = B_phi[idx][:, idx]
+    elif B_phi.shape[0] != target_n:
         B_phi = congrid(B_phi, [target_n, target_n])
 
     # step 4 : combine telescope and turbulence otfs
