@@ -53,6 +53,26 @@ def method_lru_cache(maxsize=None, verbose=False):
     return decorator
 
 
+@functools.lru_cache(maxsize=256)
+def _subs_cached_impl(expr, items):
+    return expr.subs({k: v for k, _, v in items})
+
+
+def _cached_subs(expr, subs_dict):
+    """expr.subs(subs_dict), memoized across MavisLO instances.
+
+    sympy expressions are immutable, so sharing the result is safe. The value
+    type is part of the key: 120 and 120.0 are equal and hash alike but sympify
+    to Integer and Float, i.e. to different expressions.
+    """
+    items = tuple((k, type(v), v) for k, v in subs_dict.items())
+    try:
+        hash(items)
+    except TypeError:  # unhashable value (e.g. an array): no caching
+        return expr.subs(subs_dict)
+    return _subs_cached_impl(expr, items)
+
+
 def _evaluate_config_ast(node):
     """Safely evaluate simple arithmetic and container literals from config files."""
     if isinstance(node, ast.Constant):
@@ -649,14 +669,14 @@ class MavisLO(object):
 
 
     def specializedTurbFuncs(self):
-        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs(
+        aTurbPSDTip = _cached_subs(self.MavisFormulas['turbPSDTip'],
             {self.MavisFormulas.symbol_map['V']:self.WindSpeed,
              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
              self.MavisFormulas.symbol_map['L_0']:self.L0,
              self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
              self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
-        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs(
+        aTurbPSDTilt = _cached_subs(self.MavisFormulas['turbPSDTilt'],
             {self.MavisFormulas.symbol_map['V']:self.WindSpeed,
              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
@@ -679,14 +699,14 @@ class MavisLO(object):
 
 
     def specializedFocusFuncs(self):
-        aTurbPSDFocus = self.MavisFormulas['turbPSDFocus'].subs(
+        aTurbPSDFocus = _cached_subs(self.MavisFormulas['turbPSDFocus'],
             {self.MavisFormulas.symbol_map['V']:self.WindSpeed,
              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
              self.MavisFormulas.symbol_map['L_0']:self.L0,
              self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
              self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
-        aSodiumPSDFocus = self.MavisFormulas['sodiumPSDFocus'].subs(
+        aSodiumPSDFocus = _cached_subs(self.MavisFormulas['sodiumPSDFocus'],
             {self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['ZenithAngle']:self.ZenithAngle})
         if self.displayEquation:
@@ -810,17 +830,17 @@ class MavisLO(object):
                     kk_value = jj             
                     nj_value, mj_value = noll_to_zern(jj_value)
                     nk_value, mk_value = noll_to_zern(kk_value)
-                    rexpr = expr.subs({self.MavisFormulas.symbol_map['j']: jj_value,
+                    rexpr = _cached_subs(expr, {self.MavisFormulas.symbol_map['j']: jj_value,
                                        self.MavisFormulas.symbol_map['k']: kk_value,
                                        self.MavisFormulas.symbol_map['n_j']: nj_value,
                                        self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                        self.MavisFormulas.symbol_map['n_k']: nk_value,
                                        self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
 
-                    aa = rexpr.subs(paramDictBaseCov)
+                    aa = _cached_subs(rexpr, paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1_filt, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
-                    aaint = aaint.subs({self.MavisFormulas.symbol_map['rho']: sp.Abs(p), self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
+                    aaint = _cached_subs(aaint, {self.MavisFormulas.symbol_map['rho']: sp.Abs(p), self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
                     cov_expr[ii+10*jj] = aaint
         else:
             paramDictBaseCov = { self.MavisFormulas.symbol_map['L_0']: self.L0,
@@ -834,17 +854,17 @@ class MavisLO(object):
                     kk_value = jj
                     nj_value, mj_value = noll_to_zern(jj_value)
                     nk_value, mk_value = noll_to_zern(kk_value)
-                    rexpr = expr.subs({self.MavisFormulas.symbol_map['j']: jj_value,
+                    rexpr = _cached_subs(expr, {self.MavisFormulas.symbol_map['j']: jj_value,
                                        self.MavisFormulas.symbol_map['k']: kk_value,
                                         self.MavisFormulas.symbol_map['n_j']: nj_value,
                                         self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                         self.MavisFormulas.symbol_map['n_k']: nk_value,
                                         self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
 
-                    aa = rexpr.subs(paramDictBaseCov)
+                    aa = _cached_subs(rexpr, paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
-                    aaint = aaint.subs({self.MavisFormulas.symbol_map['rho']: sp.Abs(p),
+                    aaint = _cached_subs(aaint, {self.MavisFormulas.symbol_map['rho']: sp.Abs(p),
                                         self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
                     cov_expr[ii+10*jj] = aaint
 
