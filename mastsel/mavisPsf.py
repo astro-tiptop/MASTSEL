@@ -1,14 +1,17 @@
 import numpy as np
 
+from mastsel.mavisUtilities import *
+from mastsel.mavisFormulas import *
+
+# After the star imports: they re-export SEEING's `cp`/`gpuEnabled` (through
+# SYMAO), which would otherwise override MASTSEL's own backend choice
+# (MASTSEL_DISABLE_GPU was ignored).
 from . import gpuEnabled
 
 if not gpuEnabled:
     cp = np
 else:
     import cupy as cp
-
-from mastsel.mavisUtilities import *
-from mastsel.mavisFormulas import *
 
 fit_window_max_size = 512
 defaultArrayBackend = cp
