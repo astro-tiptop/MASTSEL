@@ -1,6 +1,16 @@
+import functools
+
 import sympy as sp
 from symao.turbolence import *
 from symao.zernike import *
+
+def _Eq(lhs, rhs):
+    # Formula definitions: evaluate=False skips sympy's attempt to decide
+    # lhs == rhs (about half of the formulary build time). When that attempt
+    # is inconclusive, as for every definition here, sympy returns exactly
+    # Eq(lhs, rhs, evaluate=False), so the formulary is unchanged.
+    return sp.Eq(lhs, rhs, evaluate=False)
+
 
 def createMavisFormulary():
 
@@ -123,17 +133,17 @@ def createMavisFormulary():
 
     def noisePropagationCoefficient():
         expr0 = ((sp.S.Pi/(180*3600*1000) * D / (4*1e-9)))**2/Nsa
-        return sp.Eq(C, expr0)
+        return _Eq(C, expr0)
 
     def noisePSDTip():
     #    expr0 = noisePropagationCoefficient().rhs * sigma_w / (mu_w**2 * df * DF)
         expr0 = C * sigma_w / (mu_w**2 * df * DF)
-        return sp.Eq(phi_noise_tip_f, expr0)
+        return _Eq(phi_noise_tip_f, expr0)
 
     def noisePSDTilt():
     #    expr0 = noisePropagationCoefficient().rhs * sigma_w / (mu_w**2 * df * DF)
         expr0 = C * sigma_w / (mu_w**2 * df * DF)
-        return sp.Eq(phi_noise_tilt_f, expr0)
+        return _Eq(phi_noise_tilt_f, expr0)
 
     # PSD are generated follwing Conan+ 1995, see eq. (8) and (27)
     def turbPSDTip():
@@ -150,7 +160,7 @@ def createMavisFormulary():
         expr2 = sp.Integral( 16/(V*sp.pi**2*R**2*k**2)*exprW * (f/(k*V))**2 * 
                             sp.besselj(2, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
-        return sp.Eq(phi_turb_tip_f, expr2)
+        return _Eq(phi_turb_tip_f, expr2)
 
     def turbPSDTilt():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
@@ -167,7 +177,7 @@ def createMavisFormulary():
                             (1.0 - (f/(k*V))**2) * sp.besselj(2, 2*sp.pi*R*k )**2, 
                             (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
-        return sp.Eq(phi_turb_tilt_f, expr2)
+        return _Eq(phi_turb_tilt_f, expr2)
 
     def turbPSDFocus():
         k0 = 1.0 / L0 # 2 * sp.pi / L0
@@ -184,7 +194,7 @@ def createMavisFormulary():
         expr2 = sp.Integral( 12/(V*sp.pi**2*R**2*k**2)*exprW * 
                             sp.besselj(3, 2*sp.pi*R*k )**2, (k_y, k_y_min, k_y_max))
         expr2 = expr2.subs({k:expr_k})
-        return sp.Eq(phi_turb_focus_f, expr2)
+        return _Eq(phi_turb_focus_f, expr2)
     # end
 
     def sodiumPSDFocus():
@@ -198,91 +208,91 @@ def createMavisFormulary():
         focal_ratio = NaHeight*airmass/(2*R)
         expr2 = expr * ( 1/ (2.*sp.sqrt(3.)*8.*focal_ratio**2.) * 1e9 )**2.
 
-        return sp.Eq(phi_sodium_focus_f, expr2)
+        return _Eq(phi_sodium_focus_f, expr2)
 
     def residualTT():
-        return sp.Eq(res, sp.sqrt(e_tip+e_tilt))
+        return _Eq(res, sp.sqrt(e_tip+e_tilt))
 
     def residualTip():
-        return sp.Eq(e_tip, sp.Integral(phi_res_tip, (f, f_min, f_max)) )
+        return _Eq(e_tip, sp.Integral(phi_res_tip, (f, f_min, f_max)) )
 
     def residualTilt():
-        return sp.Eq(e_tilt, sp.Integral(phi_res_tilt, (f, f_min, f_max)) )
+        return _Eq(e_tilt, sp.Integral(phi_res_tilt, (f, f_min, f_max)) )
 
     def residualTipPSD():
-        return sp.Eq(phi_res_tip, sp.Abs(H_R_tip)**2 * phi_wind_tip +
+        return _Eq(phi_res_tip, sp.Abs(H_R_tip)**2 * phi_wind_tip +
                      sp.Abs(H_N_tip)**2 * phi_noise_tip)
 
     def residualTiltPSD():
-        return sp.Eq(phi_res_tilt, sp.Abs(H_R_tilt)**2 * phi_wind_tilt +
+        return _Eq(phi_res_tilt, sp.Abs(H_R_tilt)**2 * phi_wind_tilt +
                      sp.Abs(H_N_tilt)**2 * phi_noise_tilt)
 
     # 4 tf in z with 1 gain each to tune
     def ztfTipWindMono():
-        return sp.Eq(H_R_tipz, (1-z**-1)/(1-z**-1+g_0_tip*z**-d))
+        return _Eq(H_R_tipz, (1-z**-1)/(1-z**-1+g_0_tip*z**-d))
 
     def ztfTiltWindMono():
-        return sp.Eq(H_R_tiltz, (1-z**-1)/(1-z**-1+g_0_tilt*z**-d))
+        return _Eq(H_R_tiltz, (1-z**-1)/(1-z**-1+g_0_tilt*z**-d))
 
     def ztfTipNoiseMono():
-        return sp.Eq(H_N_tipz, g_0_tip*z**-d/(1-z**-1+g_0_tip*z**-d))
+        return _Eq(H_N_tipz, g_0_tip*z**-d/(1-z**-1+g_0_tip*z**-d))
 
     def ztfTiltNoiseMono():
-        return sp.Eq(H_N_tiltz, g_0_tilt*z**-d/(1-z**-1+g_0_tilt*z**-d))
+        return _Eq(H_N_tiltz, g_0_tilt*z**-d/(1-z**-1+g_0_tilt*z**-d))
     # end
 
     # 4 tf in z with 2 gains each to tune
     def ztfTipWind():
-        return sp.Eq( H_R_tipz, (1-1.9995*z**-1+0.9995*z**-2)/ \
+        return _Eq( H_R_tipz, (1-1.9995*z**-1+0.9995*z**-2)/ \
                      ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
 
     def ztfTiltWind():
-        return sp.Eq( H_R_tiltz, (1-1.9995*z**-1+0.9995*z**-2)/ \
+        return _Eq( H_R_tiltz, (1-1.9995*z**-1+0.9995*z**-2)/ \
                      ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
 
     def ztfTipNoise():
-        return sp.Eq( H_N_tipz, (g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
+        return _Eq( H_N_tipz, (g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
                      ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tip*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
 
     def ztfTiltNoise():
-        return sp.Eq( H_N_tiltz, (g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
+        return _Eq( H_N_tiltz, (g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d))/ \
                      ((1-1.9995*z**-1+0.9995*z**-2)+g_0_tilt*(1-1.3*z**-1+0.3825*z**-2)*(z**-d)) )
     # end
 
     # 4 tf in f obtained from corresponding tf in z
     def tfTipWind(ztf = ztfTipWind()):
-        return sp.Eq(H_R_tipf,
+        return _Eq(H_R_tipf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTiltWind(ztf = ztfTiltWind()):
-        return sp.Eq(H_R_tiltf,
+        return _Eq(H_R_tiltf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTipNoise(ztf = ztfTipNoise()):
-        return sp.Eq(H_N_tipf,
+        return _Eq(H_N_tipf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTiltNoise(ztf = ztfTiltNoise()):
-        return sp.Eq(H_N_tiltf,
+        return _Eq(H_N_tiltf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
     # end
 
 
     # 4 tf in f obtained from corresponding tf in z
     def tfTipWindMono(ztf = ztfTipWindMono()):
-        return sp.Eq(H_R_tipf,
+        return _Eq(H_R_tipf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTiltWindMono(ztf = ztfTiltWindMono()):
-        return sp.Eq(H_R_tiltf,
+        return _Eq(H_R_tiltf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTipNoiseMono(ztf = ztfTipNoiseMono()):
-        return sp.Eq(H_N_tipf,
+        return _Eq(H_N_tipf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
 
     def tfTiltNoiseMono(ztf = ztfTiltNoiseMono()):
-        return sp.Eq(H_N_tiltf,
+        return _Eq(H_N_tiltf,
                      subsParamsByName(ztf.rhs, {'z':sp.exp(2*sp.pi*f*sp.I/f_loop)}))
     # end
 
@@ -374,7 +384,7 @@ def createMavisFormulary():
     def zernikeCovarianceI():
         _integrand = zernikeCovarianceD().rhs
         _rhs = sp.Integral(_integrand, (f, f_min, f_max))
-        return sp.Eq(W_phi, _rhs)
+        return _Eq(W_phi, _rhs)
 
     def zernikeCovarianceD():
         f0 = (-1)**mk * sp.sqrt((nj+1)*(nk+1)) * sp.I**(nj+nk) \
@@ -391,7 +401,7 @@ def createMavisFormulary():
         f6 = sp.I**(3*sp.Abs(mj-mk)) * sp.besselj( sp.Abs(mj-mk), 2*sp.pi*f*hh*rho)
         _rhs = f0 * f1 * (psd_def * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R1) \
                                   * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R2) / f) * (f3*f4+f5*f6)
-        return sp.Eq(dW_phi, _rhs)
+        return _Eq(dW_phi, _rhs)
 
     def zernikeCovarianceDfiltered():
         f0 = (-1)**mk * sp.sqrt((nj+1)*(nk+1)) * sp.I**(nj+nk) \
@@ -445,7 +455,7 @@ def createMavisFormulary():
         f6 = sp.I**(3*sp.Abs(mj-mk)) * sp.besselj( sp.Abs(mj-mk), 2*sp.pi*f*hh*rho)
         _rhs = f0 * f1 * (psd_def * rtf * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R1) \
                                         * sp.besselj( nj+sp.Integer(1), 2*sp.pi*f*R2) / f) * (f3*f4+f5*f6)
-        return sp.Eq(dW_phi, _rhs)
+        return _Eq(dW_phi, _rhs)
 
     def expr_phi():
 
@@ -485,7 +495,7 @@ def createMavisFormulary():
         fK = expr_K_i
         _rhs = sp.Sum(fK * ( sigma_ron * f1  + (ip-b) * f2 + nu * f3 ) , (ip, 0, i_max))
         _lhs = sp.symbols('mu_k_thr')
-        return sp.Eq(_lhs, _rhs)
+        return _Eq(_lhs, _rhs)
 
     def truncatedVarianceBasic():
         expr_K_i = sp.exp(-(f_k+b)) * (f_k+b) ** ip / sp.factorial(ip)
@@ -496,7 +506,7 @@ def createMavisFormulary():
         _rhs = sp.Sum(fK * ( sigma_ron * (t+i-b) * f1 + (sigma_ron**2 + (i-b)**2) * f2 + nu**2 * f3 ) ,
                       (i, 0, i_max)) - mu_k**2
         _lhs = sp.symbols('sigma^2_k_thr')
-        return sp.Eq(_lhs, _rhs)
+        return _Eq(_lhs, _rhs)
 
 
     def truncatedMeanIntegrand():
@@ -505,7 +515,7 @@ def createMavisFormulary():
         f6 = subsParamsByName(expr_Phi(), {'x': (t-(zr-b))/sigma_ron})
         _rhs = expr_G() * ( sigma_ron * f4 + (zr-b) * f5 + nu * f6 )
         _lhs = sp.symbols('I_mu_k_thr')
-        return sp.Eq(_lhs, _rhs)
+        return _Eq(_lhs, _rhs)
 
 
     def truncatedVarianceIntegrand():
@@ -514,7 +524,7 @@ def createMavisFormulary():
         f6 = subsParamsByName(expr_Phi(), {'x': (t-(zr-b))/sigma_ron})
         _rhs = expr_G() * ( sigma_ron * (t+zr-b) * f4 + (sigma_ron**2 + (zr-b)**2) * f5 + nu**2 * f6 )
         _lhs = sp.symbols('I_sigma_k_thr')
-        return sp.Eq(_lhs, _rhs)
+        return _Eq(_lhs, _rhs)
 
 
     def truncatedMeanComponents(ii):
@@ -536,7 +546,7 @@ def createMavisFormulary():
         ip = getSymbolByName(expr_K_i, 'i_p')
         _rhs = expr10 + sp.Sum( expr_K_i *  integral , (ip, 1, i_max) )
         _lhs = sp.symbols('mu_k_thr')
-        return sp.Eq(_lhs, _rhs)
+        return _Eq(_lhs, _rhs)
 
 
     def truncatedVarianceComponents(ii):
@@ -559,7 +569,7 @@ def createMavisFormulary():
         ip = getSymbolByName(expr_K_i, 'i_p')
         _rhs = expr20 + sp.Sum(expr_K_i*integral , (ip, 1, i_max)) - mu_k**2
         _lhs = sp.symbols('sigma^2_k_thr')
-        return sp.Eq(_lhs, _rhs)
+        return _Eq(_lhs, _rhs)
 
 
     _MavisFormulas = Formulary("MAVIS",
@@ -677,4 +687,15 @@ def createMavisFormulary():
 
     return _MavisFormulas
 
-_mavisFormulas = createMavisFormulary()
+@functools.lru_cache(maxsize=None)
+def getMavisFormulary():
+    """The MAVIS formulary, built on first use (~0.8 s of sympy work) instead of
+    at import, so that simulations without an LO part do not pay for it."""
+    return createMavisFormulary()
+
+
+def __getattr__(name):
+    # Backward compatibility: `_mavisFormulas` used to be a module attribute.
+    if name == '_mavisFormulas':
+        return getMavisFormulary()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
