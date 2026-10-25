@@ -77,22 +77,27 @@ class _FusedOrPlain:
     """A lambdified elementwise expression as one fused cupy kernel.
 
     The sympy-generated code of the loop transfer functions launches a kernel per
-    operation (~2 ms per call on a 14 x 625 grid, 0.1 ms fused). Expressions that
-    cupy cannot fuse fall back to the plain function.
+    operation (~2 ms per call on a 14 x 625 grid, 0.1 ms fused). The first call
+    checks the fused kernel against the plain function, and keeps the plain one if
+    cupy cannot fuse the expression or the results differ: inside cp.fuse a ufunc
+    of a Python scalar alone (e.g. tan(0.3), from a sympy constant) is computed in
+    float16.
     """
 
     def __init__(self, f):
         self.plain = f
         self.fused = cp.fuse(kernel_name='mastsel_lo_tf')(f)
-        self.use_fused = True
+        self.use_fused = None  # unknown until the first call
 
     def __call__(self, *args):
-        if self.use_fused:
+        if self.use_fused is None:
+            ref = self.plain(*args)
             try:
-                return self.fused(*args)
+                self.use_fused = bool(cp.allclose(self.fused(*args), ref, rtol=1e-9, atol=0))
             except Exception:
                 self.use_fused = False
-        return self.plain(*args)
+            return ref
+        return self.fused(*args) if self.use_fused else self.plain(*args)
 
 
 @functools.lru_cache(maxsize=64)
