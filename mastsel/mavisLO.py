@@ -73,9 +73,34 @@ def _cached_subs(expr, subs_dict):
     return _subs_cached_impl(expr, items)
 
 
+class _FusedOrPlain:
+    """A lambdified elementwise expression as one fused cupy kernel.
+
+    The sympy-generated code of the loop transfer functions launches a kernel per
+    operation (~2 ms per call on a 14 x 625 grid, 0.1 ms fused). Expressions that
+    cupy cannot fuse fall back to the plain function.
+    """
+
+    def __init__(self, f):
+        self.plain = f
+        self.fused = cp.fuse(kernel_name='mastsel_lo_tf')(f)
+        self.use_fused = True
+
+    def __call__(self, *args):
+        if self.use_fused:
+            try:
+                return self.fused(*args)
+            except Exception:
+                self.use_fused = False
+        return self.plain(*args)
+
+
 @functools.lru_cache(maxsize=64)
 def _lambdify_cached(expr, names, use_gpulib):
-    return lambdifyByName(expr, list(names), gpulib if use_gpulib else cpulib)
+    f = lambdifyByName(expr, list(names), gpulib if use_gpulib else cpulib)
+    if use_gpulib and gpuEnabled:
+        return _FusedOrPlain(f)
+    return f
 
 
 @functools.lru_cache(maxsize=None)
