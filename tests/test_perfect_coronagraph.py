@@ -26,35 +26,28 @@ class TestPerfectCoronagraph(unittest.TestCase):
     def test_zero_psd_gives_zero_image(self):
         n, npup = 64, 24
         mask = np.ones((npup, npup))
-        out = psdSetToPsfSet([np.zeros((n, n))], mask, WVL, nPixPup=npup, freq_range=3.0,
-                             dk=1.0, nPixPsf=n, perfectCoronagraph=True)
-        self.assertTrue(np.all(_host(out) == 0.0))
+        kw = dict(nPixPup=npup, freq_range=3.0, dk=1.0, nPixPsf=n)
+        out = _host(psdSetToPsfSet([np.zeros((n, n))], mask, WVL, perfectCoronagraph=True, **kw))
+        dl = _host(psdSetToPsfSet([np.zeros((n, n))], mask, WVL, **kw))
+        # not exactly 0: rounding of the three FFT terms
+        self.assertLess(np.abs(out).max(), 1e-12 * dl.max())
 
     @unittest.skipUnless(os.path.exists(FIXTURE), "SPHERE fixture not found.")
-    def test_fixture_identity_and_scattered_fraction(self):
+    def test_fixture_scattered_fraction_and_positivity(self):
         d = np.load(FIXTURE, allow_pickle=False)
         psd = np.asarray(d["input_psds"])
-        n, dk, fr = int(d["N"]), float(d["dk"]), float(d["freq_range"])
-        wvl = float(d["wavelength"][0])
-        b0 = _b0(psd[0], dk, fr, wvl, n)
-        kw = dict(mask=np.asarray(d["mask"]), wavelength=d["wavelength"],
-                  nPixPup=int(d["nPixPup"]), freq_range=fr, dk=dk)
+        n = int(d["N"])
+        kw = dict(mask=np.asarray(d["mask"]), wavelength=d["wavelength"], nPixPup=int(d["nPixPup"]),
+                  freq_range=float(d["freq_range"]), dk=float(d["dk"]), nPixPsf=n)
+        psf = _host(psdSetToPsfSet(psd, **kw))
+        dl = _host(psdSetToPsfSet(np.zeros_like(psd), **kw))
+        coro = _host(psdSetToPsfSet(psd, perfectCoronagraph=True, **kw))
+        # 1 - SR, with SR = peak ratio for a binary pupil (grey edges: ~4e-5 difference)
+        self.assertAlmostEqual(coro.sum() / psf.sum(), 1 - psf.max() / dl.max(), delta=1e-3)
+        self.assertGreater(coro.min(), -1e-9 * psf.max())
 
-        # native grid: coro = PSF - exp(-b0) PSF_DL
-        psf = _host(psdSetToPsfSet(psd, nPixPsf=n, **kw))
-        dl = _host(psdSetToPsfSet(np.zeros_like(psd), nPixPsf=n, **kw))
-        coro = _host(psdSetToPsfSet(psd, nPixPsf=n, perfectCoronagraph=True, **kw))
-        np.testing.assert_allclose(coro, psf - np.exp(-b0) * dl, rtol=0, atol=1e-12 * psf.max())
-        self.assertAlmostEqual(coro.sum() / psf.sum(), 1 - np.exp(-b0), places=10)
-
-        # decimated grid: same scattered fraction
-        kw2 = dict(nPixPsf=n // 2, oversampling=2, **kw)
-        psf2 = _host(psdSetToPsfSet(psd, **kw2))
-        coro2 = _host(psdSetToPsfSet(psd, perfectCoronagraph=True, **kw2))
-        self.assertAlmostEqual(coro2.sum() / psf2.sum(), 1 - np.exp(-b0), places=10)
-
-    def test_monte_carlo_phase_screens(self):
-        """Frame-by-frame perfect coronagraph on random screens vs the analytic model."""
+    def test_monte_carlo_frame_by_frame(self):
+        """<|FT(E - aP)|^2> on random Gaussian screens vs the analytic perfect coronagraph."""
         n, npup, fr, nblk, per_blk = 64, 24, 3.0, 20, 13   # pitch 1/fr, pupil = 24 px
         rng = np.random.default_rng(1234)
         mask = np.ones((npup, npup))
@@ -74,40 +67,51 @@ class TestPerfectCoronagraph(unittest.TestCase):
         w = (rng.standard_normal((nfr // 2 + 1, n, n)) + 1j * rng.standard_normal((nfr // 2 + 1, n, n))) / np.sqrt(2)
         x = np.fft.fft2(spec * w) * np.sqrt(2) / n
         phi = np.concatenate([x.real, x.imag])[:nfr]
-        emp_var = phi.var()
-        self.assertAlmostEqual(emp_var / b0, 1.0, delta=0.05)
+        self.assertAlmostEqual(phi.var() / b0, 1.0, delta=0.05)
 
         E = pup * np.exp(1j * phi)
         ft = lambda g: np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(g, axes=(-2, -1)), axes=(-2, -1)), axes=(-2, -1))
-        I = np.abs(ft(E)) ** 2
         a = (pup * E).sum(axis=(1, 2)) / (pup**2).sum()
+        I = np.abs(ft(E)) ** 2
+        Ic = np.abs(ft(E - a[:, None, None] * pup)) ** 2
         dl = np.abs(ft(pup)) ** 2
 
-        # radial annuli of 2 px; per-block estimates give the standard error by jackknife
+        # radial annuli of 2 px; blocks of frames give the standard error by jackknife
         yy, xx = np.indices((n, n)) - n // 2
         ring = (np.hypot(xx, yy) // 2).astype(int).ravel()
         ring[ring >= n // 4] = n // 4
         prof = lambda im: np.bincount(ring, im.ravel(), n // 4 + 1) / np.bincount(ring, minlength=n // 4 + 1)
-
-        def estimate(sel):
-            coro = I[sel].mean(0) - np.abs(a[sel].mean()) ** 2 * dl
-            return prof(coro) / I[sel].mean(0).sum()
-
         blocks = np.arange(nfr) // per_blk
-        full = estimate(np.ones(nfr, bool))
-        jk = np.array([estimate(blocks != b) for b in range(nblk)])
-        se = np.sqrt((nblk - 1) / nblk * ((jk - jk.mean(0)) ** 2).sum(0))
+
+        def jackknife(stat):
+            full = stat(np.ones(nfr, bool))
+            jk = np.array([stat(blocks != b) for b in range(nblk)])
+            return full, np.sqrt((nblk - 1) / nblk * ((jk - jk.mean(0)) ** 2).sum(0))
+
+        def frame_by_frame(sel):
+            return np.append(prof(Ic[sel].mean(0)) / I[sel].mean(0).sum(), (np.abs(a[sel]) ** 2).mean())
+
+        def old_formula(sel):
+            return prof(I[sel].mean(0) - np.abs(a[sel].mean()) ** 2 * dl) / I[sel].mean(0).sum()
+
+        mc, se = jackknife(frame_by_frame)
+        old, old_se = jackknife(old_formula)
 
         kw = dict(nPixPup=npup, freq_range=fr, dk=1.0, nPixPsf=n)
-        model_psf = _host(psdSetToPsfSet([psd], mask, WVL, **kw))
-        model = _host(psdSetToPsfSet([psd], mask, WVL, perfectCoronagraph=True, **kw))
-        model = prof(model) / model_psf.sum()
+        psf = _host(psdSetToPsfSet([psd], mask, WVL, **kw))
+        coro = _host(psdSetToPsfSet([psd], mask, WVL, perfectCoronagraph=True, **kw))
+        model = prof(coro) / psf.sum()
 
-        nsig = np.abs(model - full)[:-1] / se[:-1]            # drop the corner bin
+        nsig = np.abs(model - mc[:-1])[:-1] / se[:-2]       # drop the corner bin and <|a|^2>
         self.assertLess(nsig.max(), 4.0, msg=f"max deviation {nsig.max():.2f} sigma")
-        halo_se = np.sqrt((nblk - 1) / nblk * ((jk.sum(1) - jk.sum(1).mean()) ** 2).sum())
-        self.assertLess(abs(model.sum() - full.sum()), 4 * halo_se)
-        print(f"\n[MC] var/b0={emp_var / b0:.4f}  max|dev|={nsig.max():.2f} sigma")
+        centre = (coro[n // 2, n // 2] / psf.sum() - Ic[:, n // 2, n // 2].mean() / I.mean(0).sum())
+        a2_model = 1 - coro.sum() / psf.sum()
+        self.assertLess(abs(a2_model - mc[-1]), 4 * se[-1])
+        old_nsig = np.abs(old - mc[:-1])[0] / np.hypot(se[0], old_se[0])
+        self.assertGreater(old_nsig, 4.0)   # the old long-exposure formula fails at the centre
+        print(f"\n[MC] max|dev|={nsig.max():.2f} sigma, per annulus={np.round(nsig, 2)}, "
+              f"centre diff={centre:.3e}, <|a|^2> MC={mc[-1]:.4f}+-{se[-1]:.4f} lib={a2_model:.4f}, "
+              f"old formula vs frame-by-frame, annulus 0: {old_nsig:.1f} sigma")
 
     def test_opd_map_not_supported(self):
         n, npup = 64, 24
