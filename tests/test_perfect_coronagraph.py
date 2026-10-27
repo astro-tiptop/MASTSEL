@@ -113,6 +113,50 @@ class TestPerfectCoronagraph(unittest.TestCase):
               f"centre diff={centre:.3e}, <|a|^2> MC={mc[-1]:.4f}+-{se[-1]:.4f} lib={a2_model:.4f}, "
               f"old formula vs frame-by-frame, annulus 0: {old_nsig:.1f} sigma")
 
+    @unittest.skipUnless(os.path.exists(FIXTURE), "SPHERE fixture not found.")
+    def test_contrast_preserved_by_decimation_and_crop(self):
+        """coro/PSF after decimation (+ crop) equals the native-grid contrast at the same positions."""
+        d = np.load(FIXTURE, allow_pickle=False)
+        psd = np.asarray(d["input_psds"])[0]
+        n = psd.shape[0]
+        wvl = float(np.atleast_1d(d["wavelength"])[0])
+        mask = np.asarray(d["mask"])
+
+        def contrast_pair(psd_in, nout, **kw):
+            host = lambda c: _host(psdSetToPsfSet(inputPSDs=[psd_in], mask=mask, wavelength=[wvl],
+                                                  perfectCoronagraph=c, nPixPsf=nout, **kw))
+            psf, coro = host(False), host(True)
+            return psf, coro
+
+        # legacy path: integer ratio r = point sampling; r = 4 with 48 px also crops the field
+        legacy = dict(nPixPup=int(d["nPixPup"]), freq_range=float(d["freq_range"]), dk=float(d["dk"]))
+        psf_n, coro_n = contrast_pair(psd, n, oversampling=1.0, **legacy)
+        for r, nout in ((2, n // 2), (4, 48)):
+            psf, coro = contrast_pair(psd, nout, oversampling=float(r), **legacy)
+            idx = n // 2 + r * (np.arange(nout) - nout // 2)
+            ok = (idx >= 0) & (idx < n)
+            sel = np.ix_(idx[ok], idx[ok])
+            np.testing.assert_allclose((coro / psf)[np.ix_(ok, ok)], (coro_n / psf_n)[sel],
+                                       rtol=1e-9, atol=0, err_msg=f"legacy r={r}")
+
+        # per-wavelength path: PSD zero-padded to k * npsf samples, output decimated by k = 3
+        k, npsf = 3, 64
+        nn = npsf * k
+        pad = np.zeros((nn, nn))
+        c = min(n, nn)                      # crop or zero-pad the PSD to nn x nn, centred
+        pad[(nn - c) // 2:(nn + c) // 2, (nn - c) // 2:(nn + c) // 2] = psd[(n - c) // 2:(n + c) // 2, (n - c) // 2:(n + c) // 2]
+        pw = dict(nPixPup=[int(d["nPixPup"])], freq_range=[float(d["freq_range"]) * nn / n], dk=[float(d["dk"])])
+
+        def host_w(c, nout):
+            out = psdSetToPsfSet(inputPSDs=[[pad]], mask=mask, wavelength=[wvl],
+                                 perfectCoronagraph=c, nPixPsf=nout, **pw)[0]
+            return np.asarray(cpuArray((out[0] if isinstance(out, list) else out).sampling), dtype=np.float64)
+
+        idx = nn // 2 + k * (np.arange(npsf) - npsf // 2)
+        ref = host_w(True, nn) / host_w(False, nn)
+        np.testing.assert_allclose(host_w(True, npsf) / host_w(False, npsf), ref[np.ix_(idx, idx)],
+                                   rtol=1e-9, atol=0, err_msg="per-wavelength k=3")
+
     def test_opd_map_not_supported(self):
         n, npup = 64, 24
         with self.assertRaises(ValueError):
