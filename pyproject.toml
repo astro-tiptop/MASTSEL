@@ -19,7 +19,7 @@ dependencies = [
     "PyYAML",
     "scipy",
     "symao>=1.0.2",
-    "astro-seeing>=1.2",
+    "astro-seeing>=1.2.1",
 ]
 dynamic = ["version"]
 
