@@ -17,7 +17,13 @@ else:
     print("env variable MASTSEL_DISABLE_GPU prevents using the GPU.")
     cp = np
 
+_gpuEnabled, _cp = gpuEnabled, cp
+
 from mastsel.mavisPsf import *  # noqa
 from mastsel.mavisLO import *  # noqa
 from mastsel.mavisFormulas import *  # noqa
 from mastsel._version import __version__  # noqa
+
+# The star imports re-export SEEING's `cp`/`gpuEnabled` (through SYMAO): restore
+# MASTSEL's own backend choice, which callers read as mastsel.gpuEnabled.
+gpuEnabled, cp = _gpuEnabled, _cp
