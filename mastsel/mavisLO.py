@@ -199,16 +199,32 @@ def maxStableGain(delay):
         maxG = 0.1
     return maxG
 
+def _package_dir(name):
+    """Directory of an installed package, found without importing it.
+
+    importlib.util.find_spec locates a top-level package without executing its
+    __init__: `import tiptop` here would import TIPTOP, hence P3 and astropy,
+    at every `import mastsel`.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.find_spec(name)
+    if spec is None or spec.origin is None:
+        return None
+    return Path(spec.origin).resolve().parent
+
+
 def detect_tiptop_path():
     """Auto-detect the TIPTOP project root path."""
     from pathlib import Path
 
     try:
-        import tiptop
-
-        project_root = Path(tiptop.__file__).resolve().parent.parent
-        return str(project_root)
-    except ImportError:
+        package_dir = _package_dir('tiptop')
+        if package_dir is None:
+            raise ImportError('tiptop not found')
+        return str(package_dir.parent)
+    except (ImportError, ValueError):
         import inspect as inspect_module
 
         try:
@@ -227,11 +243,9 @@ def detect_p3_path():
     from pathlib import Path
 
     try:
-        import p3
-
-        project_root = Path(p3.__file__).resolve().parent
-        return str(project_root)
-    except (ImportError, AttributeError, OSError):
+        package_dir = _package_dir('p3')
+        return None if package_dir is None else str(package_dir)
+    except (ImportError, ValueError, OSError):
         return None
 
 PATH_TIPTOP = detect_tiptop_path()
