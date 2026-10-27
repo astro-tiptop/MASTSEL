@@ -12,7 +12,9 @@ the output-pixel box, i.e. the PSF integrated over the pixel. Checks:
   (very fine native grid, block mean of K x K point samples per pixel).
 - The opdMap branch (otf_tel) applies the sinc exactly once.
 - The legacy path agrees with the per-wavelength path at equal output sampling,
-  and with the brute-force pixel integral for a non-integer pixel ratio.
+  and with the brute-force pixel integral for a non-integer pixel ratio; its
+  exact (Dirichlet) resampling makes the result independent of the native
+  sampling.
 """
 
 import numpy as np
@@ -132,11 +134,15 @@ def test_opdmap_branch_applies_pixel_response_once():
 
 # -------------------------------------------------------------- legacy path
 # The unit-sum peak of a small crop depends on the wings, which differ between
-# the legacy grid (256 samples, bilinear, zero-padded crop) and the
-# per-wavelength grid (n = NP * k): the two paths differ by ~1e-3 (NP=64) to
-# ~1.4e-2 (NP=32) even WITHOUT pixel response. The pixel-specific check is
-# therefore the pixel/point peak ratio inside each path, which cancels most of
-# this (residual <= 7e-3 at NP=32), and the tolerances below are loose (1e-2).
+# the legacy grid (256 samples, zero-padded crop) and the per-wavelength grid
+# (n = NP * k, i.e. only NP / samp_out pupil pixels): the two paths differ by
+# ~1.4e-2 (NP=32) even WITHOUT pixel response. These ratios (output/native = 2
+# and 3, integer) are point sampling in both paths, so the exact resampling
+# leaves them unchanged (identical to the former bilinear values): the difference
+# is the pupil/FoV discretisation of the per-wavelength grid and shrinks with NP
+# (see test_legacy_pixel_response_converges_to_per_wavelength). The pixel-specific
+# check is the pixel/point peak ratio inside each path, which cancels most of
+# this (measured 1.4e-4 and 6.7e-3 at NP=32), tolerance 1e-2.
 @pytest.mark.parametrize("k, samp_out, ov, samp_nat",
                          [(2, 1.5, 2, 3.0), (3, 0.9, 3, 2.7)])
 def test_legacy_pixel_response_matches_per_wavelength(k, samp_out, ov, samp_nat):
@@ -151,32 +157,73 @@ def test_legacy_pixel_response_matches_per_wavelength(k, samp_out, ov, samp_nat)
     assert ratio_f < 0.9 and ratio_g < 0.9
     # a missing or doubled sinc would move the ratio by >10%
     assert ratio_g == pytest.approx(ratio_f, rel=1e-2)
-    assert g_pix.max() == pytest.approx(f_pix.max(), rel=2e-2)
+    assert g_pix.max() == pytest.approx(f_pix.max(), rel=2e-2)  # measured 1.4e-2
     assert np.unravel_index(g_pix.argmax(), g_pix.shape) == (NP // 2, NP // 2)
     assert np.unravel_index(f_pix.argmax(), f_pix.shape) == (NP // 2, NP // 2)
 
 
+# With NP = 128 the per-wavelength pupil has 4x more pixels and the two paths
+# agree much better (measured: ratio 0 and 1.6e-3, unit-sum peak 0 and 1.3e-3).
+@pytest.mark.parametrize("k, samp_out, ov, samp_nat",
+                         [(2, 1.5, 2, 3.0), (3, 0.9, 3, 2.7)])
+def test_legacy_pixel_response_converges_to_per_wavelength(k, samp_out, ov, samp_nat):
+    n_pix = 128
+    f_pix = _unit_sum(_per_wavelength_psf(k, samp_out, n_pix=n_pix, pixelResponse=True))
+    f_pt = _unit_sum(_per_wavelength_psf(k, samp_out, n_pix=n_pix))
+    g_pix = _unit_sum(_legacy_psf(ov, samp_nat, n_pix=n_pix, pixelResponse=True))
+    g_pt = _unit_sum(_legacy_psf(ov, samp_nat, n_pix=n_pix))
+    ratio_f, ratio_g = f_pix.max() / f_pt.max(), g_pix.max() / g_pt.max()
+    print(f"NP={n_pix} k={k}: ratio rel {abs(ratio_g / ratio_f - 1):.2e}, "
+          f"peak rel {abs(g_pix.max() / f_pix.max() - 1):.2e}")
+    assert ratio_g == pytest.approx(ratio_f, rel=5e-3)
+    assert g_pix.max() == pytest.approx(f_pix.max(), rel=4e-3)
 
-# Non-integer native/output ratio (P3 kRef_float). The legacy bilinear
-# interpolation error scales as (native pixel)^2: with native sampling 2.5 and
-# ratio 3.3 it is ~5e-2 of the peak (with or without pixel response), with
-# native sampling 5 and ratio 6.6 ~1e-2. The finer grid is used so that the
-# pixel response is checked, not the interpolation.
-def test_legacy_non_integer_ratio_matches_brute_force():
-    ov, samp_nat, n = 6.6, 5.0, 512
-    samp_out = samp_nat / ov
+
+
+# Non-integer native/output ratio (P3 kRef_float). The legacy path resamples
+# the native PSF with the exact periodic band-limited (Dirichlet) interpolant,
+# so the result no longer depends on the native sampling: the same pupil and
+# output pixel on a 2x finer native grid give the same PSF to rounding error
+# (the former bilinear interpolation differed by 1.6e-2 here, 4.5e-3 without
+# pixel response). That invariance is the sharp check of the resampling.
+#
+# Against the brute-force pixel integral the residual (measured 8.8e-3 of the
+# peak, identical on CPU and GPU) is NOT interpolation: it is the pupil
+# discretisation of the reference. The reference grid spans NP output pixels, so
+# its pupil has only NP / samp_out = 42 pixels, resampled bilinearly from the
+# 128 px mask; the legacy pupil has n / samp_nat = 102 pixels. The legacy PSF
+# itself is stable to 5e-4 when its own pupil sampling is doubled or quadrupled,
+# while the reference error is non-monotonic in NP (8.1e-3 at NP=32, 3.1e-4 at
+# 64, 2.3e-3 at 128), the signature of a pupil-edge effect; the brute-force
+# block size K matters at the 1e-4 to 6e-4 level only. Threshold unchanged
+# (2e-2, 2.3x the measured value).
+def _legacy_non_integer(pix: bool, ov: float = 6.6, samp_nat: float = 5.0,
+                        n: int = 512) -> np.ndarray:
     npp = n / samp_nat
+    out = psdSetToPsfSet([xp.zeros((n, n))], _pupil(), 1e-6, nPixPup=npp,
+                         freq_range=npp, dk=1.0, nPixPsf=NP, oversampling=ov,
+                         pixelResponse=pix)
+    return _unit_sum(_to_host(out[0].sampling))
 
-    def legacy(pix):
-        out = psdSetToPsfSet([xp.zeros((n, n))], _pupil(), 1e-6, nPixPup=npp,
-                             freq_range=npp, dk=1.0, nPixPsf=NP, oversampling=ov,
-                             pixelResponse=pix)
-        return _unit_sum(_to_host(out[0].sampling))
 
+def test_legacy_non_integer_ratio_matches_brute_force():
+    ov, samp_nat = 6.6, 5.0
+    samp_out = samp_nat / ov
     brute = _unit_sum(_brute_force_pixel_psf(samp_out))
-    err_pix = np.abs(legacy(True) - brute).max() / brute.max()
-    err_pt = np.abs(legacy(False) - brute).max() / brute.max()
+    err_pix = np.abs(_legacy_non_integer(True) - brute).max() / brute.max()
+    err_pt = np.abs(_legacy_non_integer(False) - brute).max() / brute.max()
     print(f"ov={ov} samp_out={samp_out:.3f}: legacy pix vs brute {err_pix:.3e}, "
           f"legacy point vs brute pix {err_pt:.3e}")
     assert err_pix < 2e-2
     assert err_pt > 0.1  # the pixel effect itself is ~0.26: the test discriminates
+
+
+@pytest.mark.parametrize("pix", [True, False])
+def test_legacy_non_integer_ratio_independent_of_native_sampling(pix):
+    # same pupil sampling (n / samp_nat = 102.4), same output pixel (ov / samp_nat
+    # = 1.32), native grid and sampling doubled: exact resampling gives the same PSF
+    a = _legacy_non_integer(pix, ov=6.6, samp_nat=5.0, n=512)
+    b = _legacy_non_integer(pix, ov=13.2, samp_nat=10.0, n=1024)
+    err = np.abs(a - b).max() / a.max()
+    print(f"pixelResponse={pix}: 5/512 vs 10/1024 max rel diff {err:.2e}")
+    assert err < 1e-10
