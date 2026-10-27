@@ -866,8 +866,11 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
 
         # 3. PREPARE OPTICAL ELEMENTS AT NATIVE RESOLUTION
         maskField = Field(wvl, n_internal, grid_diameter)
+        # mask, static phase and PSD in the model precision (callers pass float64):
+        # in single precision the FFTs of longExposurePsf then run in float32
         if not isinstance(mask, list):
-            maskField.sampling = pupilOnGrid(mask, wvl_nPixPup, n_internal, maskField.xp)
+            maskField.sampling = pupilOnGrid(mask, wvl_nPixPup, n_internal,
+                                             maskField.xp).astype(defaultArrayDtype, copy=False)
 
         if xp is None:
             xp = maskField.xp
@@ -884,7 +887,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             coeff = defaultArrayBackend.asarray(2 * np.pi * 1e-9 / wvl, dtype=defaultArrayDtype)
             opd_map_backend = defaultArrayBackend.asarray(opdMap, dtype=defaultArrayDtype)
             phaseStat = coeff * opd_map_backend
-            phaseStat = pupilOnGrid(phaseStat, wvl_nPixPup, n_internal, xp)
+            phaseStat = pupilOnGrid(phaseStat, wvl_nPixPup, n_internal,
+                                    xp).astype(defaultArrayDtype, copy=False)
             if mask is None or not isinstance(mask, list):
                 maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                 maskOtf.pupilToOtf()
@@ -904,7 +908,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
         for i, computedPSD in enumerate(wvl_psds):
 
             if isinstance(mask, list):
-                maskField.sampling = pupilOnGrid(mask[i], wvl_nPixPup, n_internal, xp)
+                maskField.sampling = pupilOnGrid(mask[i], wvl_nPixPup, n_internal,
+                                                 xp).astype(defaultArrayDtype, copy=False)
                 if opdMap is not None:
                     maskOtf.sampling = maskField.sampling * xp.exp(i_complex * phaseStat)
                     maskOtf.pupilToOtf()
@@ -912,7 +917,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
                     otf_tel = maskOtf.sampling
 
             # Load PSD
-            psd_sampling = xp.asarray(computedPSD) / wvl_dk**2
+            psd_sampling = xp.asarray(computedPSD, dtype=defaultArrayDtype) / defaultArrayDtype(wvl_dk**2)
             if n_internal != int(N):
                 if internal_grid_mode == 'odd_internal':
                     psd_sampling = _expand_even_psd_to_odd_centered(psd_sampling, xp=xp)
