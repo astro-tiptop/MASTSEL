@@ -70,3 +70,14 @@ def test_lambdify_cached_gpu_and_cpu():
     fcpu = _lambdify_cached(expr, ('f', 'g'), False)
     assert not isinstance(fcpu, _FusedOrPlain)
     np.testing.assert_allclose(fcpu(fv, 2.5), ref, rtol=1e-12, atol=0)
+
+
+def test_unary_op_on_python_scalar_is_not_float16():
+    # -d alone inside cp.fuse is computed in float16 for a Python float (2.3 -> 2.30078);
+    # _FusedOrPlain converts Python scalars to numpy ones, so fusion is valid and used
+    f = _FusedOrPlain(lambda x, d: x**(-d))
+    x = cp.linspace(0.5, 5.0, 1000)
+    xh = cp.asnumpy(x)
+    for d in (2.3, 1.7, 2.3):
+        np.testing.assert_allclose(cp.asnumpy(f(x, d)), xh**(-d), rtol=1e-13, atol=0)
+        assert f.use_fused is True

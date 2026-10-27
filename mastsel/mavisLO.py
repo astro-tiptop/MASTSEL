@@ -73,6 +73,9 @@ def _cached_subs(expr, subs_dict):
     return _subs_cached_impl(expr, items)
 
 
+_PY_TO_NP = {int: np.int64, float: np.float64, complex: np.complex128}
+
+
 class _FusedOrPlain:
     """A lambdified elementwise expression as one fused cupy kernel.
 
@@ -90,6 +93,9 @@ class _FusedOrPlain:
         self.use_fused = None  # unknown until the first call
 
     def __call__(self, *args):
+        # numpy scalars, not Python ones, so that an op on a scalar argument alone
+        # (e.g. -x) is not computed in float16 inside the fused kernel
+        args = tuple(_PY_TO_NP[type(a)](a) if type(a) in _PY_TO_NP else a for a in args)
         if self.use_fused is None:
             ref = self.plain(*args)
             try:
