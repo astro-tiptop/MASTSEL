@@ -5,9 +5,7 @@ import numpy as np
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from astropy.modeling import models, fitting
 
-import scipy.signal
 import scipy.ndimage
 
 from . import gpuEnabled
@@ -193,6 +191,7 @@ def polar_to_cart(polar_data, theta_step, range_step, x, y, order=3):
     return(cart_data.reshape(len(y), len(x)).T)
 
 def fitGaussian(image):
+    from astropy.modeling import models, fitting  # deferred: slow to import (~0.7 s)
     N = image.shape[0]
     center = N // 2
     p_init = models.Gaussian2D(
@@ -204,6 +203,7 @@ def fitGaussian(image):
 
 
 def fitAiry(image):
+    from astropy.modeling import models, fitting
     N = image.shape[0]
     center = N // 2
     p_init = models.AiryDisk2D(amplitude=np.max(image), x_0=center, y_0=center)

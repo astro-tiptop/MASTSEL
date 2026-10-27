@@ -7,7 +7,6 @@ from configparser import ConfigParser
 
 import numpy as np
 import yaml
-from sympy.physics.control.lti import TransferFunction
 
 from . import gpuEnabled
 
@@ -18,7 +17,7 @@ else:
 
 from mastsel.mavisUtilities import *
 from mastsel.mavisFormulas import *
-from mastsel.mavisFormulas import _mavisFormulas
+from mastsel.mavisFormulas import getMavisFormulary
 
 try:
     from IPython.display import display
@@ -51,6 +50,49 @@ def method_lru_cache(maxsize=None, verbose=False):
         return wrapper
 
     return decorator
+
+
+@functools.lru_cache(maxsize=256)
+def _subs_cached_impl(expr, items):
+    return expr.subs({k: v for k, _, v in items})
+
+
+def _cached_subs(expr, subs_dict):
+    """expr.subs(subs_dict), memoized across MavisLO instances.
+
+    sympy expressions are immutable, so sharing the result is safe. The value
+    type is part of the key: 120 and 120.0 are equal and hash alike but sympify
+    to Integer and Float, i.e. to different expressions.
+    """
+    items = tuple((k, type(v), v) for k, v in subs_dict.items())
+    try:
+        hash(items)
+    except TypeError:  # unhashable value (e.g. an array): no caching
+        return expr.subs(subs_dict)
+    return _subs_cached_impl(expr, items)
+
+
+@functools.lru_cache(maxsize=64)
+def _lambdify_cached(expr, names, use_gpulib):
+    return lambdifyByName(expr, list(names), gpulib if use_gpulib else cpulib)
+
+
+@functools.lru_cache(maxsize=None)
+def _ellipse_lambdas():
+    """Covariance -> ellipse (theta, sigma_1, sigma_2) functions, lambdified once."""
+    theta = sp.symbols('theta')
+    sigma_1 = sp.symbols('sigma^2_1')
+    sigma_2 = sp.symbols('sigma^2_2')
+    sigma_X = sp.symbols('sigma^2_X')
+    sigma_Y = sp.symbols('sigma^2_Y')
+    sigma_XY = sp.symbols('sigma_XY')
+    eq1 = sp.Eq(theta, sp.S(1)/sp.S(2) * sp.atan( 2*sigma_XY / ( sigma_X-sigma_Y )) )
+    eq2 = sp.Eq(sigma_1, sp.S(1)/sp.S(2) * ( 2*sigma_XY / sp.sin(2*theta) + sigma_X + sigma_Y ) )
+    eq3 = sp.Eq(sigma_2, sigma_X+sigma_Y-sigma_1 )
+    leq1 = lambdifyByName( eq1.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY'], cpulib)
+    leq2 = lambdifyByName( eq2.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY', 'theta'], cpulib)
+    leq3 = lambdifyByName( eq3.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma^2_1'], cpulib)
+    return leq1, leq2, leq3
 
 
 def _evaluate_config_ast(node):
@@ -507,7 +549,7 @@ class MavisLO(object):
         self.min_freq_turb = 1e-4
         self.max_freq_turb = 1000
 
-        self.MavisFormulas = _mavisFormulas
+        self.MavisFormulas = getMavisFormulary()
         self.zernikeCov_rh1 = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceD')
         self.zernikeCov_rh1_filt = self.MavisFormulas.getFormulaRhs('ZernikeCovarianceDfiltered')
         self.zernikeCov_lh1 = self.MavisFormulas.getFormulaLhs('ZernikeCovarianceD')
@@ -649,14 +691,14 @@ class MavisLO(object):
 
 
     def specializedTurbFuncs(self):
-        aTurbPSDTip = self.MavisFormulas['turbPSDTip'].subs(
+        aTurbPSDTip = _cached_subs(self.MavisFormulas['turbPSDTip'],
             {self.MavisFormulas.symbol_map['V']:self.WindSpeed,
              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
              self.MavisFormulas.symbol_map['L_0']:self.L0,
              self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
              self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
-        aTurbPSDTilt = self.MavisFormulas['turbPSDTilt'].subs(
+        aTurbPSDTilt = _cached_subs(self.MavisFormulas['turbPSDTilt'],
             {self.MavisFormulas.symbol_map['V']:self.WindSpeed,
              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
@@ -679,14 +721,14 @@ class MavisLO(object):
 
 
     def specializedFocusFuncs(self):
-        aTurbPSDFocus = self.MavisFormulas['turbPSDFocus'].subs(
+        aTurbPSDFocus = _cached_subs(self.MavisFormulas['turbPSDFocus'],
             {self.MavisFormulas.symbol_map['V']:self.WindSpeed,
              self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['r_0']:self.r0_Value,
              self.MavisFormulas.symbol_map['L_0']:self.L0,
              self.MavisFormulas.symbol_map['k_y_min']:self.min_freq_turb,
              self.MavisFormulas.symbol_map['k_y_max']:self.max_freq_turb})
-        aSodiumPSDFocus = self.MavisFormulas['sodiumPSDFocus'].subs(
+        aSodiumPSDFocus = _cached_subs(self.MavisFormulas['sodiumPSDFocus'],
             {self.MavisFormulas.symbol_map['R']:self.TelescopeDiameter/2.0,
              self.MavisFormulas.symbol_map['ZenithAngle']:self.ZenithAngle})
         if self.displayEquation:
@@ -707,13 +749,13 @@ class MavisLO(object):
     def specializedNoiseFuncs(self):
         dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
         completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
-        self.fTipS_LO1 = completeIntegralTipLOandTf[0].subs(dict1).function
+        self.fTipS_LO1 = _cached_subs(completeIntegralTipLOandTf[0], dict1).function
         self.fTipS_LO1tfW = completeIntegralTipLOandTf[1]
         self.fTipS_LO1tfN = completeIntegralTipLOandTf[2]
         self.fTipS_LO1ztfW = completeIntegralTipLOandTf[3]
         self.fTipS_LO1ztfN = completeIntegralTipLOandTf[4]
         completeIntegralTiltLOandTf = self.MavisFormulas['completeIntegralTiltLOandTf']
-        self.fTiltS_LO1 = completeIntegralTiltLOandTf[0].subs(dict1).function
+        self.fTiltS_LO1 = _cached_subs(completeIntegralTiltLOandTf[0], dict1).function
         self.fTiltS_LO1tfW = completeIntegralTiltLOandTf[1]
         self.fTiltS_LO1tfN = completeIntegralTiltLOandTf[2]
         self.fTiltS_LO1ztfW = completeIntegralTiltLOandTf[3]
@@ -738,7 +780,7 @@ class MavisLO(object):
     def specializedNoiseFocusFuncs(self):
         dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_Focus, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_Focus}
         completeIntegralTipLOandTf = self.MavisFormulas['completeIntegralTipLOandTf']
-        self.fFocusS_LO1 = completeIntegralTipLOandTf[0].subs(dict1).function
+        self.fFocusS_LO1 = _cached_subs(completeIntegralTipLOandTf[0], dict1).function
         self.fFocusS_LO1tfW = completeIntegralTipLOandTf[1]
         self.fFocusS_LO1tfN = completeIntegralTipLOandTf[2]
         self.fFocusS_LO1ztfW = completeIntegralTipLOandTf[3]
@@ -756,13 +798,13 @@ class MavisLO(object):
     def specializedWindFuncs(self):
         dict1 = {self.MavisFormulas.symbol_map['d']:self.loopDelaySteps_LO, self.MavisFormulas.symbol_map['f_loop']:self.SensorFrameRate_LO}
         completeIntegralTipAndTf = self.MavisFormulas['completeIntegralTipAndTf']
-        self.fTipS1 = completeIntegralTipAndTf[0].subs(dict1).function
+        self.fTipS1 = _cached_subs(completeIntegralTipAndTf[0], dict1).function
         self.fTipS1tfW = completeIntegralTipAndTf[1]
         self.fTipS1tfN = completeIntegralTipAndTf[2]
         self.fTipS1ztfW = completeIntegralTipAndTf[3]
         self.fTipS1ztfN = completeIntegralTipAndTf[4]
         completeIntegralTiltAndTf = self.MavisFormulas['completeIntegralTiltAndTf']
-        self.fTiltS1 = completeIntegralTiltAndTf[0].subs(dict1).function
+        self.fTiltS1 = _cached_subs(completeIntegralTiltAndTf[0], dict1).function
         self.fTiltS1tfW = completeIntegralTiltAndTf[1]
         self.fTiltS1tfN = completeIntegralTiltAndTf[2]
         self.fTiltS1ztfW = completeIntegralTiltAndTf[3]
@@ -810,17 +852,17 @@ class MavisLO(object):
                     kk_value = jj             
                     nj_value, mj_value = noll_to_zern(jj_value)
                     nk_value, mk_value = noll_to_zern(kk_value)
-                    rexpr = expr.subs({self.MavisFormulas.symbol_map['j']: jj_value,
+                    rexpr = _cached_subs(expr, {self.MavisFormulas.symbol_map['j']: jj_value,
                                        self.MavisFormulas.symbol_map['k']: kk_value,
                                        self.MavisFormulas.symbol_map['n_j']: nj_value,
                                        self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                        self.MavisFormulas.symbol_map['n_k']: nk_value,
                                        self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
 
-                    aa = rexpr.subs(paramDictBaseCov)
+                    aa = _cached_subs(rexpr, paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1_filt, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
-                    aaint = aaint.subs({self.MavisFormulas.symbol_map['rho']: sp.Abs(p), self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
+                    aaint = _cached_subs(aaint, {self.MavisFormulas.symbol_map['rho']: sp.Abs(p), self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
                     cov_expr[ii+10*jj] = aaint
         else:
             paramDictBaseCov = { self.MavisFormulas.symbol_map['L_0']: self.L0,
@@ -834,17 +876,17 @@ class MavisLO(object):
                     kk_value = jj
                     nj_value, mj_value = noll_to_zern(jj_value)
                     nk_value, mk_value = noll_to_zern(kk_value)
-                    rexpr = expr.subs({self.MavisFormulas.symbol_map['j']: jj_value,
+                    rexpr = _cached_subs(expr, {self.MavisFormulas.symbol_map['j']: jj_value,
                                        self.MavisFormulas.symbol_map['k']: kk_value,
                                         self.MavisFormulas.symbol_map['n_j']: nj_value,
                                         self.MavisFormulas.symbol_map['m_j']: abs(mj_value),
                                         self.MavisFormulas.symbol_map['n_k']: nk_value,
                                         self.MavisFormulas.symbol_map['m_k']: abs(mk_value)})
 
-                    aa = rexpr.subs(paramDictBaseCov)
+                    aa = _cached_subs(rexpr, paramDictBaseCov)
                     # aa = cov_expr_jk(self.zernikeCov_rh1, ii, jj).subs(paramDictBaseCov)
                     aaint = sp.Integral(aa, covValue_integrationLimits)
-                    aaint = aaint.subs({self.MavisFormulas.symbol_map['rho']: sp.Abs(p),
+                    aaint = _cached_subs(aaint, {self.MavisFormulas.symbol_map['rho']: sp.Abs(p),
                                         self.MavisFormulas.symbol_map['theta']: sp.arg(p)} )
                     cov_expr[ii+10*jj] = aaint
 
@@ -1125,6 +1167,7 @@ class MavisLO(object):
         n,d = sp.fraction(sp.simplify(zTFeq))
         # create a transfer function
         z = sp.symbols('z', real=False)
+        from sympy.physics.control.lti import TransferFunction  # deferred: ~0.17 s to import
         zTF = TransferFunction(n,d,z)
         # check stability thanks to the values of the poles
         if np.max(np.abs(zTF.poles())) > 0.99:
@@ -1167,10 +1210,10 @@ class MavisLO(object):
             {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
         self.fTiltS1 = self.fTiltS_LO.subs(
             {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-        self.fTipS_lambda1 = lambdifyByName(
-            self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-        self.fTiltS_lambda1 = lambdifyByName(
-            self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+        self.fTipS_lambda1 = self._noiseLambda(
+            self.fTipS_LO, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
+        self.fTiltS_lambda1 = self._noiseLambda(
+            self.fTiltS_LO, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], 'phi^noise_Tilt', sigma2Noise)
 
         if self.displayEquation:
             print('computeNoiseResidual')
@@ -1324,8 +1367,8 @@ class MavisLO(object):
         # must wait till this moment to substitute the noise level
         self.fFocusS1 = self.fFocusS_LO.subs(
             {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
-        self.fFocusS_lambda1 = lambdifyByName(
-            self.fFocusS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
+        self.fFocusS_lambda1 = self._noiseLambda(
+            self.fFocusS_LO, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
 
         if self.displayEquation:
             print('computeNoiseResidual')
@@ -1408,6 +1451,16 @@ class MavisLO(object):
             return (resultFocus[minFocusIdx[0][0]])
 
 
+    def _noiseLambda(self, expr, names, noise_name, sigma2Noise):
+        """Numerical function of `names` with the noise level fixed to sigma2Noise.
+
+        Equivalent to lambdifying expr.subs({noise: sigma2Noise}), but the
+        (slow, ~25 ms) lambdify is done once per expression, with the noise
+        level as an extra argument, instead of once per NGS.
+        """
+        f = _lambdify_cached(expr, tuple(names) + (noise_name,), self.platformlib is gpulib)
+        return lambda g, freq, psd: f(g, freq, psd, sigma2Noise)
+
     def computeWindResidual(self, psd_freq, psd_tip_wind0, psd_tilt_wind0, var1x, bias):
         """
         Compute the residual noise due to wind shake after correction by the AO loop,
@@ -1462,20 +1515,20 @@ class MavisLO(object):
                 {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
             self.fTiltS1 = self.fTiltS.subs(
                 {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName(
-                self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName(
-                self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS_lambda1 = self._noiseLambda(
+                self.fTipS, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
+            self.fTiltS_lambda1 = self._noiseLambda(
+                self.fTiltS, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], 'phi^noise_Tilt', sigma2Noise)
         else:
             # control TF in the other cases is an integrator
             self.fTipS1 = self.fTipS_LO.subs(
                 {self.MavisFormulas.symbol_map['phi^noise_Tip']: sigma2Noise})
             self.fTiltS1 = self.fTiltS_LO.subs(
                 {self.MavisFormulas.symbol_map['phi^noise_Tilt']: sigma2Noise})
-            self.fTipS_lambda1 = lambdifyByName(
-                self.fTipS1, ['g^Tip_0', 'f', 'phi^wind_Tip'], self.platformlib)
-            self.fTiltS_lambda1 = lambdifyByName(
-                self.fTiltS1, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], self.platformlib)
+            self.fTipS_lambda1 = self._noiseLambda(
+                self.fTipS_LO, ['g^Tip_0', 'f', 'phi^wind_Tip'], 'phi^noise_Tip', sigma2Noise)
+            self.fTiltS_lambda1 = self._noiseLambda(
+                self.fTiltS_LO, ['g^Tilt_0', 'f', 'phi^wind_Tilt'], 'phi^noise_Tilt', sigma2Noise)
 
         if self.platformlib==gpulib and gpuEnabled:
             xp = cp
@@ -2078,18 +2131,7 @@ class MavisLO(object):
             return None
 
     def ellipsesFromCovMats(self, Ctot):
-        theta = sp.symbols('theta')
-        sigma_1 = sp.symbols('sigma^2_1')
-        sigma_2 = sp.symbols('sigma^2_2')
-        sigma_X = sp.symbols('sigma^2_X')
-        sigma_Y = sp.symbols('sigma^2_Y')
-        sigma_XY = sp.symbols('sigma_XY')
-        eq1 = sp.Eq(theta, sp.S(1)/sp.S(2) * sp.atan( 2*sigma_XY / ( sigma_X-sigma_Y )) )
-        eq2 = sp.Eq(sigma_1, sp.S(1)/sp.S(2) * ( 2*sigma_XY / sp.sin(2*theta) + sigma_X + sigma_Y ) )
-        eq3 = sp.Eq(sigma_2, sigma_X+sigma_Y-sigma_1 )
-        leq1 = lambdifyByName( eq1.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY'], cpulib)
-        leq2 = lambdifyByName( eq2.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma_XY', 'theta'], cpulib)
-        leq3 = lambdifyByName( eq3.rhs, ['sigma^2_X', 'sigma^2_Y', 'sigma^2_1'], cpulib)
+        leq1, leq2, leq3 = _ellipse_lambdas()
 
         def computeCovEllispse(CC):
             if np.abs(CC[1,0]) < 1e-20:
