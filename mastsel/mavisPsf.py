@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 
 from mastsel.mavisUtilities import *
@@ -453,6 +455,81 @@ def pixelOtf(n, pixel_ratio, xp=defaultArrayBackend):
     return s[:, None] * s[None, :]
 
 
+def dirichletResampleMatrix(n_in: int, n_out: int, ratio: float,
+                            xp=defaultArrayBackend, dtype=None):
+    """
+    Exact resampling matrix of a periodic, band-limited n_in x n_in image onto an
+    n_out x n_out grid with pitch `ratio` native pixels: out = G @ A @ G.T.
+
+    Parameters
+    ----------
+    n_in : int
+        Size of the native grid (the PSF from the FFT of longExposurePsf).
+    n_out : int
+        Size of the output grid.
+    ratio : float
+        Output pixel / native pixel, r = p / h (any positive value, also
+        non-integer).
+    xp : module
+        Array backend (numpy or cupy).
+    dtype : dtype, optional
+        dtype of G (that of the image, to avoid a mixed-precision matmul);
+        default defaultArrayDtype.
+
+    Returns
+    -------
+    G : (n_out, n_in) array
+        G_ij = D_N(u_ij), with u_ij = (i - n_out//2) r - (j - n_in//2) in native
+        pixels: the output centre n_out//2 maps onto the native centre n_in//2,
+        as in the integer decimation.
+
+    Notes
+    -----
+    The native PSF A (N x N, pitch h) is the FFT of an OTF that is zero beyond
+    D/lambda, with native sampling >= 2, so it is periodic with period L = N h
+    and band limited. Its exact continuous interpolant is
+
+        I(x) = sum_j A_j D_N(x - x_j),  D_N(u) = (1/N) sum_m exp(2 pi i m u / N),
+
+    with u in native pixels and m over the N FFT frequencies:
+
+        N odd:  m = -(N-1)/2 .. (N-1)/2,  D_N(u) = sin(pi u) / (N sin(pi u / N))
+        N even: m = -N/2 .. N/2 with weight 1/2 on +-N/2 (the Nyquist term,
+                split symmetrically so that D_N is real),
+                D_N(u) = sin(pi u) / (N tan(pi u / N))
+
+    D_N is even, has period N, D_N(0) = 1 and D_N(k) = 0 for the other integers
+    k, so an integer ratio reduces to point sampling. The 2D kernel is separable,
+    hence out = G A G^T. G depends only on (n_in, n_out, r).
+
+    The premise needs native sampling >= 2 (lambda/D per native pixel), i.e. an
+    OTF that fits in the native grid. Below that the native PSF is aliased and
+    the interpolant rings (percent-level negative lobes); the caller warns.
+
+    Output samples outside the native field, |x_i| > L/2, get zero rows: there
+    the periodic interpolant would repeat the PSF (a copy from the FFT period,
+    not physical), so the field is zero-padded as by the previous resampling.
+    """
+    N = int(n_in)
+    i = xp.arange(int(n_out), dtype=xp.float64) - int(n_out) // 2
+    j = xp.arange(N, dtype=xp.float64) - N // 2
+    u = i[:, None] * float(ratio) - j[None, :]
+    # D_N has period N: reduce u to [-N/2, N/2], where the denominator
+    # vanishes only at u = 0
+    u = u - N * xp.round(u / N)
+    if N % 2:
+        den = N * xp.sin(xp.pi * u / N)
+    else:
+        den = N * xp.tan(xp.pi * u / N)
+    zero = u == 0
+    G = xp.where(zero, 1.0, xp.sin(xp.pi * u) / xp.where(zero, 1.0, den))
+    # D_N(k) = 0 exactly at the other integers (sin(pi k) is ~1e-16, not 0), so
+    # that an integer ratio is exact point sampling
+    G = xp.where(~zero & (u == xp.round(u)), 0.0, G)
+    G = xp.where(xp.abs(i * float(ratio))[:, None] > N / 2, 0.0, G)
+    return G.astype(defaultArrayDtype if dtype is None else dtype)
+
+
 def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None):
     xp = mask.xp
     if defaultArrayDtype == defaultArrayBackend.float32:
@@ -681,11 +758,11 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
 
     - Legacy / shared-grid: inputPSDs is a flat list of 2D PSD arrays (one per
       direction), all defined on the same grid; freq_range/dk are scalars.
-      Applies spatial interpolation (bilinear resize) and cropping to reach
-      the requested output pixel scale and field of view -- unchanged from
-      before, for full backward compatibility with existing callers
-      (LO/Focus/open-loop/diffraction-limited PSFs, and any pre-existing
-      shared-grid science PSF call).
+      The native PSF is resampled onto the requested output pixel scale and
+      field of view with the exact interpolant of a periodic band-limited
+      image (see dirichletResampleMatrix), also for a non-integer
+      output/native pixel ratio (LO/Focus/open-loop/diffraction-limited PSFs,
+      and any shared-grid science PSF call).
 
     - Per-wavelength (P3 psdPerWavelength=True): inputPSDs[i_wvl] is itself a
       list of 2D PSD arrays for that wavelength's directions, each wavelength
@@ -693,8 +770,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
       value per wavelength) instead of scalars. Because each wavelength's
       grid is already built (in P3) to hit the requested output pixel scale
       exactly, the only operation needed to reach nPixPsf is an *exact*
-      integer decimation (see _exact_block_decimate), not the bilinear
-      resize/renormalize used in the legacy path -- oversampling is ignored
+      integer decimation (see _exact_block_decimate) -- oversampling is ignored
       in this mode; the exact integer factor is derived from the PSD's own
       grid size instead of being supplied separately, so it cannot drift out
       of sync with what P3 actually built.
@@ -706,15 +782,14 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
 
     pixelResponse=True integrates the PSF over the square output pixel: the
     system OTF on the native grid is multiplied by the pixel transfer function
-    (see pixelOtf) before decimation/interpolation, so that the following point
+    (see pixelOtf) before decimation/resampling, so that the following point
     sampling gives samples of PSF * box, aliasing included, also for output
     sampling < 2. In the per-wavelength path this is exact when the native grid
     is Nyquist sampled (native sampling >= 2, as P3 builds it with
     k = ceil(2/samp)); below that the telescope OTF on the native grid is
     circularly aliased and the product with the sinc is only approximate. The
-    legacy path adds its existing bilinear interpolation error (percent level
-    for a non-integer native/output ratio, with or without pixelResponse).
-    Default False: point-sampled PSF.
+    same holds in the legacy path, whose resampling is exact also for a
+    non-integer native/output ratio. Default False: point-sampled PSF.
     """
     wavelength = np.atleast_1d(wavelength)
     multi_wave = len(wavelength) > 1
@@ -871,11 +946,6 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
 
         if xp is None:
             xp = maskField.xp
-            if not per_wavelength_psd:
-                if xp == cp and gpuEnabled:
-                    from cupyx.scipy.ndimage import affine_transform as a_affine_transform
-                else:
-                    from scipy.ndimage import affine_transform as a_affine_transform
 
         if opdMap is None:
             otf_tel = None
@@ -899,6 +969,9 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             otf_pixel = pixelOtf(n_internal, pixel_ratio, xp)
 
         psfMultiWave = []
+        # legacy path: exact resampling matrix, built on the first PSD of this
+        # wavelength (it depends only on the native size, the ratio and nPixPsf)
+        G = None
 
         # 4. LOOP OVER PSDs AND GENERATE PSFs
         for i, computedPSD in enumerate(wvl_psds):
@@ -940,35 +1013,35 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
                     k = n_internal // int(nPixPsf)
                     psfLE.width = int(nPixPsf) * native_ps_rad * k
             else:
-                # 5. SPATIAL INTERPOLATION & CROP/PAD (Zero-Allocation VRAM optimization)
+                # 5. EXACT RESAMPLING & CROP/PAD of the periodic band-limited PSF
                 if abs(zoom_factor - 1.0) > 1e-6 or psfLE.N != int(nPixPsf):
 
-                    # Measure total flux before interpolation
+                    # Measure total flux before resampling
                     native_flux = float(psfLE.sampling.sum())
 
                     N_out = int(nPixPsf)
-                    cy_out, cx_out = N_out // 2, N_out // 2
-                    cy_in, cx_in = n_internal // 2, n_internal // 2
-
-                    # Calculate affine mapping parameters: input_coord = output_coord * scale + offset
-                    scale = 1.0 / zoom_factor
-                    offset_y = cy_in - (cy_out * scale)
-                    offset_x = cx_in - (cx_out * scale)
-
-                    # CuPy STRICTLY requires the transformation matrix to be an array, not a python list.
-                    # We use xp.asarray to make it perfectly compatible with both numpy and cupy backends.
-                    transform_matrix = xp.asarray([scale, scale], dtype=defaultArrayDtype)
-
-                    # affine_transform avoids creating coordinate grids in memory.
-                    resampled = a_affine_transform(
-                        psfLE.sampling,
-                        matrix=transform_matrix,
-                        offset=[offset_y, offset_x],
-                        output_shape=(N_out, N_out),
-                        order=1,
-                        mode='constant',
-                        cval=0.0
-                    )
+                    n_nat = int(psfLE.N)
+                    r = 1.0 / zoom_factor
+                    k = int(round(r))
+                    if abs(r - k) < 1e-9:
+                        # integer ratio: G reduces to centred point sampling (D_N(k) =
+                        # delta), done by indexing; samples outside |x| <= N/2 are zero
+                        x = k * (xp.arange(N_out) - N_out // 2)
+                        inside = xp.abs(x) <= n_nat / 2
+                        idx = (x + n_nat // 2) % n_nat
+                        resampled = psfLE.sampling[idx][:, idx] * (inside[:, None] & inside[None, :])
+                    else:
+                        if G is None or G.shape[1] != n_nat:
+                            if 2 * float(wvl_nPixPup) > n_nat:
+                                warnings.warn(
+                                    f"psdSetToPsfSet: native sampling {n_nat / float(wvl_nPixPup):.3f} < 2 "
+                                    f"at {wvl * 1e9:.1f} nm: the native PSF is aliased and its "
+                                    f"resampling to a non-integer pixel ratio ({r:.4f}) is not exact.")
+                            # G_ij = D_N((i - N_out//2) r - (j - N//2)), r = 1 / zoom_factor
+                            G = dirichletResampleMatrix(n_nat, N_out, r, xp,
+                                                        dtype=psfLE.sampling.dtype)
+                        # PSF_out(x_i, y_k) = sum_jl G_ij A_jl G_kl
+                        resampled = G @ psfLE.sampling @ G.T
 
                     # 6. RIGOROUS FLUX NORMALIZATION (In-place operation)
                     resampled_flux = float(resampled.sum())
