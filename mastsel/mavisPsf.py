@@ -472,13 +472,23 @@ def longExposurePsf(mask, psd, otf_tel=None):
         maskC.pupilToOtf()
         otf_tel = maskC.sampling
 
-    psd_padded = zeroPad(psd.sampling, psd.sampling.shape[0] // 2, xp)
+    target_n = otf_tel.shape[0]
+    coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
+    # Even N with the OTF on the PSD grid: the lag grid of the zero-padded (2N) IFFT is
+    # decimated by 2 below, and the 2x-decimated 2N-point IFFT of the padded PSD equals
+    # 1/4 of the N-point IFFT of the unpadded PSD (decimation folds the spectrum, and
+    # the padding zeros fold onto nothing). Same samples, 4x fewer FFT points.
+    lag_on_psd_grid = psd.N % 2 == 0 and target_n == psd.N
 
     # step 1 : compute phase autocorrelation (in-place math to save VRAM)
-    coeff = xp.asarray((psd.kk * freq_range) ** 2, dtype=dtype)
-    B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd_padded)))
-    B_phi *= coeff  # In-place scalar multiplication
-    
+    if lag_on_psd_grid:
+        B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd.sampling)))
+        B_phi *= coeff / 4
+    else:
+        psd_padded = zeroPad(psd.sampling, psd.sampling.shape[0] // 2, xp)
+        B_phi = xp.real(xp.fft.ifft2(xp.fft.ifftshift(psd_padded)))
+        B_phi *= coeff  # In-place scalar multiplication
+
     b0 = float(B_phi[0, 0])
     B_phi = xp.fft.fftshift(B_phi)
 
@@ -487,8 +497,7 @@ def longExposurePsf(mask, psd, otf_tel=None):
     B_phi -= b0
     # In-place exponentiation directly into the existing memory buffer
     xp.exp(B_phi, out=B_phi)
-    
-    target_n = otf_tel.shape[0]
+
     if B_phi.shape[0] in (2 * target_n, 2 * target_n - 1):
         # The lag grid is twice as fine: keep every second sample around the
         # centre (fftshift centre B.shape//2 -> target_n//2, as otf_tel). Same
