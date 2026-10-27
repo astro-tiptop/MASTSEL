@@ -386,6 +386,20 @@ def plotEllipses(cartPointingCoords, cov_ellipses, ss):
     ax.set_ylim(-20, 20)
     plt.show()
 
+def _cluster_index(v, tol):
+    """Index of each value among the sorted distinct values of v, values closer than
+    tol to the previous one counting as the same; returns (index, number of values)."""
+    order = np.argsort(v)
+    idx = np.empty(len(v), dtype=int)
+    k, prev = -1, None
+    for i in order:
+        if prev is None or v[i] - prev > tol:
+            k += 1
+        idx[i] = k
+        prev = v[i]
+    return idx, k + 1
+
+
 def tiledDisplay(results, coords=None):
     """
     Log images of the PSFs in a grid of subplots, x to the right and y up.
@@ -408,11 +422,13 @@ def tiledDisplay(results, coords=None):
     nn = len(results)
     cells = None
     if coords is not None and nn > 1:
-        c = np.round(np.asarray(coords, dtype=float).reshape(nn, 2), 6)
-        xs, ys = np.unique(c[:, 0]), np.unique(c[:, 1])
-        ix, iy = np.searchsorted(xs, c[:, 0]), np.searchsorted(ys, c[:, 1])
-        if len(xs) * len(ys) == nn and len(set(zip(ix, iy))) == nn:
-            ncols, nrows = len(xs), len(ys)
+        c = np.asarray(coords, dtype=float).reshape(nn, 2)
+        # grid indices of x and y, merging values closer than 1e-3 of the field extent
+        # (pointings from rounded polar coordinates, e.g. 14.9907 and 15.0)
+        tol = 1e-3 * max(np.ptp(c), 1e-12)
+        ix, ncols = _cluster_index(c[:, 0], tol)
+        iy, nrows = _cluster_index(c[:, 1], tol)
+        if ncols * nrows == nn and len(set(zip(ix, iy))) == nn:
             cells = list(zip(nrows - 1 - iy, ix))
     if cells is None:
         ncols = int(np.sqrt(nn))
