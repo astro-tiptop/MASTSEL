@@ -453,7 +453,26 @@ def pixelOtf(n, pixel_ratio, xp=defaultArrayBackend):
     return s[:, None] * s[None, :]
 
 
-def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None):
+def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph=False):
+    """
+    Long-exposure PSF of a residual phase with power spectral density psd:
+    PSF = FT[OTF_tel exp(B_phi - sigma^2)], with B_phi the phase covariance
+    (inverse FFT of the PSD) and sigma^2 = B_phi(0).
+
+    With perfect_coronagraph=True the coherent part of the long-exposure field,
+    exp(-sigma^2) OTF_tel (the diffraction-limited PSF times exp(-sigma^2)), is
+    removed (perfect coronagraph, Cavarroc et al. 2006, applied to the
+    long-exposure field):
+
+        PSF_coro = FT[OTF_tel (exp(B_phi - sigma^2) - exp(-sigma^2))]
+                 = PSF - exp(-sigma^2) PSF_DL
+
+    exact in the stationary Gaussian model of the residual phase. To first order
+    in B_phi it is exp(-sigma^2) PSF_DL * (2 pi / lambda)^2 PSD, and far from the
+    axis the PSD itself (Fusco et al. 2006). The PSD must be piston filtered (as
+    the P3 PSDs): power at scales larger than the pupil would lower exp(-sigma^2)
+    below the coherent level that a coronagraph removes frame by frame.
+    """
     xp = mask.xp
     if defaultArrayDtype == defaultArrayBackend.float32:
         dtype = xp.float32
@@ -511,6 +530,9 @@ def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None):
     B_phi -= b0
     # In-place exponentiation directly into the existing memory buffer
     xp.exp(B_phi, out=B_phi)
+    if perfect_coronagraph:
+        # remove the coherent part: exp(B - sigma^2) - exp(-sigma^2), sigma^2 = b0
+        B_phi -= np.exp(-b0)
 
     if B_phi.shape[0] in (2 * target_n, 2 * target_n - 1):
         # The lag grid is twice as fine: keep every second sample around the
@@ -673,7 +695,7 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
                    dk=None, nPixPsf=None, wvlRef=None, oversampling=1,
                    opdMap=None, padPSD=False, skip_reshape=False,
                    internal_grid_mode='even_legacy', debug_trace=False,
-                   pixelResponse=False):
+                   pixelResponse=False, perfectCoronagraph=False):
     """
     Transforms a set of PSDs into PSFs.
 
@@ -715,7 +737,15 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
     legacy path adds its existing bilinear interpolation error (percent level
     for a non-integer native/output ratio, with or without pixelResponse).
     Default False: point-sampled PSF.
+
+    perfectCoronagraph=True returns the image behind a perfect coronagraph: the
+    coherent part of the long-exposure field is removed (see longExposurePsf).
+    The result keeps the flux units of the normal PSF, so its sum is the
+    scattered fraction 1 - exp(-sigma^2) of the stellar flux. Not supported with
+    opdMap (static aberrations): ValueError.
     """
+    if perfectCoronagraph and opdMap is not None:
+        raise ValueError("perfectCoronagraph is not supported with opdMap (static aberrations).")
     wavelength = np.atleast_1d(wavelength)
     multi_wave = len(wavelength) > 1
 
@@ -923,7 +953,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             psd.sampling = psd_sampling
 
             # Execute Fourier propagation at Native Scale
-            psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel, otf_pixel=otf_pixel)
+            psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel, otf_pixel=otf_pixel,
+                                    perfect_coronagraph=perfectCoronagraph)
 
             if per_wavelength_psd:
                 # 5. EXACT INTEGER DECIMATION (centred point sampling, no interpolation)
