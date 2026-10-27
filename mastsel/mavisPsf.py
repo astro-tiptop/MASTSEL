@@ -472,21 +472,21 @@ def _perfect_coronagraph_otf(pupil, g, otf_tel, xp):
     pupil, g and otf_tel are centred n x n arrays on the same grid; the result
     has the normalization of otf_tel.
     """
-    P = xp.fft.ifftshift(pupil)                   # origin at index 0
+    # float64 throughout: the image is a near cancellation of the three terms
+    P = xp.fft.ifftshift(xp.asarray(pupil, dtype=xp.float64))   # origin at index 0
     Q = P * P
-    g0 = xp.fft.ifftshift(g)
+    g0 = xp.fft.ifftshift(xp.asarray(g, dtype=xp.float64))
     fP = xp.fft.fft2(P)
-    fQ = xp.fft.fft2(Q)
     A_P = xp.real(xp.fft.ifft2(fP * xp.conj(fP)))
-    A_Q = xp.real(xp.fft.ifft2(fQ * xp.conj(fQ)))
-    Qg = xp.real(xp.fft.ifft2(fQ * xp.fft.fft2(g0)))          # (Q conv g)(x)
+    Qg = xp.real(xp.fft.ifft2(xp.fft.fft2(Q) * xp.fft.fft2(g0)))   # (Q conv g)(x)
     X = xp.real(xp.fft.ifft2(xp.fft.fft2(P * Qg) * xp.conj(fP)))
-    X_minus = xp.roll(xp.flip(X, (0, 1)), 1, axis=(0, 1))       # X(-rho)
+    X_minus = xp.roll(xp.flip(X, (0, 1)), 1, axis=(0, 1))           # X(-rho)
     S = float(Q.sum())
-    sr = float((A_Q * g0).sum()) / S**2
+    sr = float((Q * Qg).sum()) / S**2      # = sum((Q corr Q) g) / S^2, g even
     otf_c = A_P * g0 - (X + X_minus) / S + sr * A_P
     c = otf_tel.shape[0] // 2
-    return xp.fft.fftshift(otf_c) * (otf_tel[c, c] / A_P[0, 0])
+    scale = complex(otf_tel[c, c]) / float(A_P[0, 0])
+    return (xp.fft.fftshift(otf_c) * scale).astype(otf_tel.dtype)
 
 
 def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph=False):
@@ -502,10 +502,10 @@ def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph
     Gaussian phase it is exact (see _perfect_coronagraph_otf); its sum is the
     scattered fraction 1 - SR. Removing instead only the coherent part of the
     long-exposure field, exp(-sigma^2) PSF_DL, would miss <|a|^2> - |<a>|^2, the
-    temporal fluctuation of the coherent energy (low-order modes such as tip-tilt),
-    and overestimate the residual near the axis by up to a factor 2-8 (ERIS end-to-end
-    test). Far from the axis and for small residuals both reduce to the PSD
-    (Fusco et al. 2006).
+    temporal fluctuation of the coherent energy (low-order modes such as tip-tilt):
+    within 0.5 lambda/D it was off by factors 0.4-4 in an ERIS end-to-end test
+    (validation/perfect_coronagraph). Far from the axis and for small residuals both
+    reduce to the PSD (Fusco et al. 2006).
     """
     xp = mask.xp
     if defaultArrayDtype == defaultArrayBackend.float32:
@@ -671,7 +671,7 @@ def _expand_odd_psd_to_even_with_zero_nyquist(psd, xp=defaultArrayBackend):
     return out
 
 
-def _exact_block_decimate(sampling, nPixPsf, xp):
+def _exact_block_decimate(sampling, nPixPsf, xp, ref=None):
     """
     Decimation by an exact integer factor k: point sampling, one native sample
     every k, centred so that the native centre pixel n_in//2 (the PSF peak) lands
@@ -697,7 +697,10 @@ def _exact_block_decimate(sampling, nPixPsf, xp):
     k = n_in // n_out
     idx = n_in // 2 + k * xp.arange(-(n_out // 2), n_out - n_out // 2)
     out = sampling[idx][:, idx]
-    return out * (sampling.sum() / out.sum())
+    # ref (default: the image itself) sets the flux factor: with the PSF as ref a
+    # coronagraphic image keeps the image / PSF ratio (contrast)
+    ref = sampling if ref is None else ref
+    return out * (ref.sum() / ref[idx][:, idx].sum())
 
 
 def pupilOnGrid(a, n_pix_pup, n_out, xp):
@@ -986,14 +989,20 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
             psd.sampling = psd_sampling
 
             # Execute Fourier propagation at Native Scale
-            psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel, otf_pixel=otf_pixel,
-                                    perfect_coronagraph=perfectCoronagraph)
+            psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel, otf_pixel=otf_pixel)
+            psf_ref = None
+            if perfectCoronagraph:
+                # the PSF sets the flux factor of the resampling below, so that the
+                # coronagraphic image / PSF ratio (contrast) is that of the native grid
+                psf_ref = psfLE.sampling
+                psfLE = longExposurePsf(maskField, psd, otf_tel=otf_tel, otf_pixel=otf_pixel,
+                                        perfect_coronagraph=True)
 
             if per_wavelength_psd:
                 # 5. EXACT INTEGER DECIMATION (centred point sampling, no interpolation)
                 if psfLE.N != int(nPixPsf):
                     native_flux = float(psfLE.sampling.sum()) if debug_trace else None
-                    resampled = _exact_block_decimate(psfLE.sampling, nPixPsf, xp)
+                    resampled = _exact_block_decimate(psfLE.sampling, nPixPsf, xp, ref=psf_ref)
                     if debug_trace:
                         print(f"  [PSD {i}] Native Flux : {native_flux:.6e}")
                         print(f"  [PSD {i}] Output Flux : {float(resampled.sum()):.6e}")
@@ -1007,8 +1016,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
                 # 5. SPATIAL INTERPOLATION & CROP/PAD (Zero-Allocation VRAM optimization)
                 if abs(zoom_factor - 1.0) > 1e-6 or psfLE.N != int(nPixPsf):
 
-                    # Measure total flux before interpolation
-                    native_flux = float(psfLE.sampling.sum())
+                    # Measure total flux before interpolation (of the PSF behind a coronagraph)
+                    native_flux = float((psfLE.sampling if psf_ref is None else psf_ref).sum())
 
                     N_out = int(nPixPsf)
                     cy_out, cx_out = N_out // 2, N_out // 2
@@ -1024,8 +1033,8 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
                     transform_matrix = xp.asarray([scale, scale], dtype=defaultArrayDtype)
 
                     # affine_transform avoids creating coordinate grids in memory.
-                    resampled = a_affine_transform(
-                        psfLE.sampling,
+                    resample = lambda img: a_affine_transform(
+                        img,
                         matrix=transform_matrix,
                         offset=[offset_y, offset_x],
                         output_shape=(N_out, N_out),
@@ -1033,9 +1042,10 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
                         mode='constant',
                         cval=0.0
                     )
+                    resampled = resample(psfLE.sampling)
 
                     # 6. RIGOROUS FLUX NORMALIZATION (In-place operation)
-                    resampled_flux = float(resampled.sum())
+                    resampled_flux = float((resampled if psf_ref is None else resample(psf_ref)).sum())
                     if resampled_flux > 0:
                         resampled *= (native_flux / resampled_flux)
 
