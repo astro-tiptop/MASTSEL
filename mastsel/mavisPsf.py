@@ -453,25 +453,59 @@ def pixelOtf(n, pixel_ratio, xp=defaultArrayBackend):
     return s[:, None] * s[None, :]
 
 
+def _perfect_coronagraph_otf(pupil, g, otf_tel, xp):
+    """
+    OTF of the long-exposure image behind a perfect coronagraph.
+
+    The coronagraph removes, frame by frame, the projection a P of the field
+    E = P exp(i phi) on the pupil mode, a = sum(Q exp(i phi)) / S with Q = P^2 and
+    S = sum(Q). With g(rho) = <exp(i (phi(x + rho) - phi(x)))> = exp(-D_phi/2) (the
+    turbulence OTF), only second-order moments of E enter:
+
+        <|FT(E - a P)|^2>  <->  OTF_c = A_P g - (X(rho) + X(-rho)) / S + SR A_P
+
+    where A_P = P corr P (telescope OTF), X = [P (Q conv g)] corr P (the average of
+    a* FT(E)) and SR = sum((Q corr Q) g) / S^2 = <|a|^2>, the long-exposure Strehl
+    ratio. Exact for a Gaussian phase; g = 1 gives OTF_c = 0 and the sum of the
+    image is (1 - SR) times that of the PSF.
+
+    pupil, g and otf_tel are centred n x n arrays on the same grid; the result
+    has the normalization of otf_tel.
+    """
+    P = xp.fft.ifftshift(pupil)                   # origin at index 0
+    Q = P * P
+    g0 = xp.fft.ifftshift(g)
+    fP = xp.fft.fft2(P)
+    fQ = xp.fft.fft2(Q)
+    A_P = xp.real(xp.fft.ifft2(fP * xp.conj(fP)))
+    A_Q = xp.real(xp.fft.ifft2(fQ * xp.conj(fQ)))
+    Qg = xp.real(xp.fft.ifft2(fQ * xp.fft.fft2(g0)))          # (Q conv g)(x)
+    X = xp.real(xp.fft.ifft2(xp.fft.fft2(P * Qg) * xp.conj(fP)))
+    X_minus = xp.roll(xp.flip(X, (0, 1)), 1, axis=(0, 1))       # X(-rho)
+    S = float(Q.sum())
+    sr = float((A_Q * g0).sum()) / S**2
+    otf_c = A_P * g0 - (X + X_minus) / S + sr * A_P
+    c = otf_tel.shape[0] // 2
+    return xp.fft.fftshift(otf_c) * (otf_tel[c, c] / A_P[0, 0])
+
+
 def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph=False):
     """
     Long-exposure PSF of a residual phase with power spectral density psd:
     PSF = FT[OTF_tel exp(B_phi - sigma^2)], with B_phi the phase covariance
     (inverse FFT of the PSD) and sigma^2 = B_phi(0).
 
-    With perfect_coronagraph=True the coherent part of the long-exposure field,
-    exp(-sigma^2) OTF_tel (the diffraction-limited PSF times exp(-sigma^2)), is
-    removed (perfect coronagraph, Cavarroc et al. 2006, applied to the
-    long-exposure field):
-
-        PSF_coro = FT[OTF_tel (exp(B_phi - sigma^2) - exp(-sigma^2))]
-                 = PSF - exp(-sigma^2) PSF_DL
-
-    exact in the stationary Gaussian model of the residual phase. To first order
-    in B_phi it is exp(-sigma^2) PSF_DL * (2 pi / lambda)^2 PSD, and far from the
-    axis the PSD itself (Fusco et al. 2006). The PSD must be piston filtered (as
-    the P3 PSDs): power at scales larger than the pupil would lower exp(-sigma^2)
-    below the coherent level that a coronagraph removes frame by frame.
+    With perfect_coronagraph=True: image behind a perfect coronagraph (Cavarroc
+    et al. 2006), which removes, frame by frame, the projection a P of the field
+    E = P exp(i phi) on the pupil mode, a = sum(P E) / sum(P^2). Its long-exposure
+    average depends only on the second-order moments of the field, so for a
+    Gaussian phase it is exact (see _perfect_coronagraph_otf); its sum is the
+    scattered fraction 1 - SR. Removing instead only the coherent part of the
+    long-exposure field, exp(-sigma^2) PSF_DL, would miss <|a|^2> - |<a>|^2, the
+    temporal fluctuation of the coherent energy (low-order modes such as tip-tilt),
+    and overestimate the residual near the axis by up to a factor 2-8 (ERIS end-to-end
+    test). Far from the axis and for small residuals both reduce to the PSD
+    (Fusco et al. 2006).
     """
     xp = mask.xp
     if defaultArrayDtype == defaultArrayBackend.float32:
@@ -530,9 +564,6 @@ def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph
     B_phi -= b0
     # In-place exponentiation directly into the existing memory buffer
     xp.exp(B_phi, out=B_phi)
-    if perfect_coronagraph:
-        # remove the coherent part: exp(B - sigma^2) - exp(-sigma^2), sigma^2 = b0
-        B_phi -= np.exp(-b0)
 
     if B_phi.shape[0] in (2 * target_n, 2 * target_n - 1):
         # The lag grid is twice as fine: keep every second sample around the
@@ -546,7 +577,10 @@ def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph
         B_phi = congrid(B_phi, [target_n, target_n])
 
     # step 4 : combine telescope and turbulence otfs
-    otf_system = B_phi * otf_tel
+    if perfect_coronagraph:
+        otf_system = _perfect_coronagraph_otf(mask.sampling, B_phi, otf_tel, xp)
+    else:
+        otf_system = B_phi * otf_tel
     if otf_pixel is not None:
         # detector pixel integration: PSF * box  <->  OTF . sinc
         otf_system *= otf_pixel
@@ -738,11 +772,10 @@ def psdSetToPsfSet(inputPSDs, mask, wavelength,
     for a non-integer native/output ratio, with or without pixelResponse).
     Default False: point-sampled PSF.
 
-    perfectCoronagraph=True returns the image behind a perfect coronagraph: the
-    coherent part of the long-exposure field is removed (see longExposurePsf).
-    The result keeps the flux units of the normal PSF, so its sum is the
-    scattered fraction 1 - exp(-sigma^2) of the stellar flux. Not supported with
-    opdMap (static aberrations): ValueError.
+    perfectCoronagraph=True returns the long-exposure image behind a perfect
+    coronagraph (see longExposurePsf). The result keeps the flux units of the
+    normal PSF, so its sum is the scattered fraction 1 - SR of the stellar flux.
+    Not supported with opdMap (static aberrations): ValueError.
     """
     if perfectCoronagraph and opdMap is not None:
         raise ValueError("perfectCoronagraph is not supported with opdMap (static aberrations).")
