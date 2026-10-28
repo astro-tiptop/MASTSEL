@@ -150,8 +150,12 @@ class Field(object):
             width,
             unit='m',
             xp=defaultArrayBackend,
-            _dtype=defaultArrayDtype):
+            _dtype=None):
         self.xp = xp
+        # dtype read at call time: a default argument would freeze the
+        # precision set at import, ignoring mastselPsfPrecision()
+        if _dtype is None:
+            _dtype = defaultArrayDtype
         self.sampling = self.xp.zeros((N, N), dtype=_dtype)
         self.__N = N
         self.unit = unit
@@ -227,7 +231,7 @@ class Field(object):
     def setAsGaussianKernel(self, sigma_X, sigma_Y, angle):
         yg, xg = self.xp.mgrid[:self.N, :self.N]
         hostSampling1 = self.gModel1(xg, yg, sigma_X, sigma_Y, angle)
-        self.sampling = hostSampling1
+        self.sampling = hostSampling1.astype(self.sampling.dtype, copy=False)
 
 
     def setAsTelescopeMask(self, telescope_radius, occlusion_radius=0):

@@ -173,3 +173,34 @@ def test_opdmap_branch_single_matches_double(monkeypatch):
         )
 
     _compare(call, monkeypatch, "HARMONI opdMap")
+
+
+def _kernel_and_convolution(precision: str) -> tuple:
+    """Return (host kernel, kernel dtype, host convolved PSF, its dtype) for ``precision``."""
+    n = 128
+    mp.mastselPsfPrecision(precision)
+    try:
+        kernel = mp.residualToSpectrum([0.3, 5.0, 3.0], 1.65e-6, n, 1 / (n * 5.0))
+        psf = mp.Field(1.65e-6, n, 1.0, unit='')
+        yy, xx = np.mgrid[:n, :n]
+        psf.sampling[...] = psf.xp.asarray(
+            np.exp(-((xx - n // 2) ** 2 + (yy - n // 2) ** 2) / (2 * 3.0 ** 2)))
+        psf.sampling /= psf.sampling.sum()  # unit-sum PSF
+        res = mp.convolve(psf, kernel)
+        k, c = _to_host(kernel.sampling), _to_host(res.sampling)
+        return k.copy(), k.dtype, psf.sampling.dtype, c.copy(), c.dtype
+    finally:
+        mp.mastselPsfPrecision("double")
+
+
+def test_gaussian_kernel_and_convolve_follow_precision():
+    # Regression: Field default dtype was frozen at import (float64) and the
+    # Gaussian kernel was never cast, so single precision was ignored here.
+    k_d, kdt_d, pdt_d, c_d, cdt_d = _kernel_and_convolution("double")
+    k_s, kdt_s, pdt_s, c_s, cdt_s = _kernel_and_convolution("single")
+    assert kdt_d == np.float64 and cdt_d == np.float64
+    assert pdt_s == np.float32 and kdt_s == np.float32 and cdt_s == np.float32
+    # single kernel equals double kernel to float32 rounding
+    assert np.abs(k_s.astype(np.float64) - k_d).max() <= 1e-6 * np.abs(k_d).max()
+    # convolution of a unit-sum PSF with the (unit-DC) kernel conserves the sum
+    assert abs(float(c_s.astype(np.float64).sum()) - 1.0) < 1e-6
