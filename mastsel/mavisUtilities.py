@@ -214,7 +214,8 @@ def fitAiry(image):
 def standardPsfPlot(img2):
     fig, axs = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
     s = img2.shape[0]
-    axs[0].imshow(img2, cmap=cm.gist_heat)
+    # origin='lower': x = column, y = row index increasing upwards, as the PSF array
+    axs[0].imshow(img2, cmap=cm.gist_heat, origin='lower')
     axs[1].plot(img2[s // 2, :])
     axs[2].plot(img2[:, s // 2])
     plt.show()
@@ -385,27 +386,57 @@ def plotEllipses(cartPointingCoords, cov_ellipses, ss):
     ax.set_ylim(-20, 20)
     plt.show()
 
-def tiledDisplay(results):    
+def _cluster_index(v, tol):
+    """Index of each value among the sorted distinct values of v, values closer than
+    tol to the previous one counting as the same; returns (index, number of values)."""
+    order = np.argsort(v)
+    idx = np.empty(len(v), dtype=int)
+    k, prev = -1, None
+    for i in order:
+        if prev is None or v[i] - prev > tol:
+            k += 1
+        idx[i] = k
+        prev = v[i]
+    return idx, k + 1
+
+
+def tiledDisplay(results, coords=None):
+    """
+    Log images of the PSFs in a grid of subplots, x to the right and y up.
+
+    Each image is drawn with origin='lower', so that its axes are those of the
+    PSF array (x = column, y = row index increasing upwards), i.e. the frame of
+    the pointing coordinates and of plotEllipses. With the default
+    origin='upper' every PSF was flipped vertically.
+
+    Parameters
+    ----------
+    results : list of Field
+        The PSFs.
+    coords : (n, 2) array, optional
+        (x, y) of each PSF, e.g. the Cartesian pointing coordinates. When they
+        form a full regular grid, each PSF is drawn in the subplot of its
+        (x, y); otherwise the PSFs fill a square grid by index, row by row
+        from the bottom (the previous layout).
+    """
     nn = len(results)
-    ncols = int(np.sqrt(nn))
-    nrows = ncols
-    fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=[10,10])
-
-    if nrows>1 or ncols>1:
-        for i in range(nrows):
-            for j in range(ncols):
-                img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
-                ax[nrows-i-1,j].imshow(img, cmap='hot')
-                #ax[nrows-i-1,j].axis('off')
-    else:
-        img = np.log(np.abs(results[0].sampling) + 1e-20)
-        ax.imshow(img, cmap='hot')
-
-
-#    for i in range(nrows):
-#        for j in range(ncols):
-#            img = np.log(np.abs(results[i*ncols+j].sampling) + 1e-20)
-#            ax[nrows-i-1,j].imshow(img, cmap='hot')
-#            #ax[nrows-i-1,j].axis('off')
+    cells = None
+    if coords is not None and nn > 1:
+        c = np.asarray(coords, dtype=float).reshape(nn, 2)
+        # grid indices of x and y, merging values closer than 1e-3 of the field extent
+        # (pointings from rounded polar coordinates, e.g. 14.9907 and 15.0)
+        tol = 1e-3 * max(np.ptp(c), 1e-12)
+        ix, ncols = _cluster_index(c[:, 0], tol)
+        iy, nrows = _cluster_index(c[:, 1], tol)
+        if ncols * nrows == nn and len(set(zip(ix, iy))) == nn:
+            cells = list(zip(nrows - 1 - iy, ix))
+    if cells is None:
+        ncols = int(np.sqrt(nn))
+        nrows = ncols
+        cells = [(nrows - 1 - k // ncols, k % ncols) for k in range(nrows * ncols)]
+    fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=[10, 10], squeeze=False)
+    for k, (row, col) in enumerate(cells):
+        img = np.log(np.abs(results[k].sampling) + 1e-20)
+        ax[row, col].imshow(img, cmap='hot', origin='lower')
     fig.tight_layout()
     plt.show()
