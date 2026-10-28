@@ -1,9 +1,9 @@
 main:
   class:             'SimulParams'
   root_dir:          '/raid1/guido/PASSATA/VLT'         # Root directory for calibration manager  
-  pixel_pupil:       360                    # Linear dimension of pupil phase array
-  pixel_pitch:       0.02255                # [m] Pitch of the pupil phase array
-  total_time:        1.000                  # [s] Total simulation running time
+  pixel_pupil:       160                    # Linear dimension of pupil phase array
+  pixel_pitch:       0.05                # [m] Pitch of the pupil phase array
+  total_time:        2.000                  # [s] Total simulation running time
   time_step:         0.001                  # [s] Simulation time step
   zenithAngleInDeg:  30.0                   # [deg] Airmass correction
   display_server:    false                   # Display server on auto-selected port
@@ -39,7 +39,9 @@ source_ngs:
 
 pupilstop:                                 # Default parameters (circular pupil)
   class: 'Pupilstop'
-  tag: 'pupilstop_vlt_360p'
+  simul_params_ref:  'main'
+  mask_diam : 1.                           # pupil mask diameter (relative number)
+  obs_diam : 0.138                         # pupil mask obscuration diameter (relative number)
 
 
 atmo:
@@ -100,7 +102,7 @@ detector:
 slopec:
   class:             'ShSlopec'
   thr_value:         0
-  subapdata_object:  'subapdata_vlt'        # subaperture data tag
+  subapdata_object:  'eris_subaps'        # subaperture data tag
   weightedPixRad:    2
   interleave:        True                   # interleave x and y slopes
   inputs:
@@ -129,13 +131,21 @@ integrator:
 dm:
   class:             'DM'
   simul_params_ref:  'main'
-  ifunc_object:      'DSMifuncZonal360pV1'
-  m2c_object:        'modal_base_vlt'
+  ifunc_object:      'VLT_ifunc'
   nmodes:            702
   height:            0                        # DM height [m]
   inputs:
       in_command: 'integrator.out_comm'
   outputs:  ['out_layer']
+
+
+
+modal_analysis:
+  class:                'ModalAnalysis'
+  ifunc_object:         'VLT_ifunc'
+  inputs:
+    in_ef: 'prop.out_source_ngs_ef'
+  outputs: ['out_modes']
 
 
 psf:

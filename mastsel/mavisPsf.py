@@ -458,16 +458,27 @@ def _perfect_coronagraph_otf(pupil, g, otf_tel, xp):
     OTF of the long-exposure image behind a perfect coronagraph.
 
     The coronagraph removes, frame by frame, the projection a P of the field
-    E = P exp(i phi) on the pupil mode, a = sum(Q exp(i phi)) / S with Q = P^2 and
-    S = sum(Q). With g(rho) = <exp(i (phi(x + rho) - phi(x)))> = exp(-D_phi/2) (the
-    turbulence OTF), only second-order moments of E enter:
+    E = P exp(i phi) on the pupil mode: a = sum(Q exp(i phi)) / S, Q = P^2,
+    S = sum(Q). The long-exposure image of E - a P is
 
-        <|FT(E - a P)|^2>  <->  OTF_c = A_P g - (X(rho) + X(-rho)) / S + SR A_P
+        <|FT(E - a P)|^2> = <|FT E|^2> - 2 Re[<a* FT E> conj(FT P)] + <|a|^2> |FT P|^2
 
-    where A_P = P corr P (telescope OTF), X = [P (Q conv g)] corr P (the average of
-    a* FT(E)) and SR = sum((Q corr Q) g) / S^2 = <|a|^2>, the long-exposure Strehl
-    ratio. Exact for a Gaussian phase; g = 1 gives OTF_c = 0 and the sum of the
-    image is (1 - SR) times that of the PSF.
+    and each term depends only on g(x - y) = <exp(i (phi(x) - phi(y)))>, which
+    for a Gaussian, stationary phase is exp(-D_phi / 2) (the turbulence OTF):
+
+        <a* E(x)>  = P(x) (Q conv g)(x) / S
+        <|a|^2>    = sum((Q corr Q) g) / S^2 = SR, the long-exposure Strehl ratio
+
+    so that, in the OTF (autocorrelation) domain,
+
+        OTF_c = A_P g - (X(rho) + X(-rho)) / S + SR A_P,
+        A_P = P corr P (telescope OTF),  X = [P (Q conv g)] corr P.
+
+    Exact under those two assumptions; g = 1 gives OTF_c = 0, and the image sums
+    to (1 - SR) times the PSF. Simpler recipes, PSF - SR PSF_DL or
+    PSF - exp(-sigma^2) PSF_DL, replace <a* FT E> by SR FT P (or |<a>|^2 FT P),
+    i.e. they assume that the field correlated with a is diffraction limited;
+    that fails within 1-2 lambda/D (see longExposurePsf).
 
     pupil, g and otf_tel are centred n x n arrays on the same grid; the result
     has the normalization of otf_tel.
@@ -498,14 +509,19 @@ def longExposurePsf(mask, psd, otf_tel=None, otf_pixel=None, perfect_coronagraph
     With perfect_coronagraph=True: image behind a perfect coronagraph (Cavarroc
     et al. 2006), which removes, frame by frame, the projection a P of the field
     E = P exp(i phi) on the pupil mode, a = sum(P E) / sum(P^2). Its long-exposure
-    average depends only on the second-order moments of the field, so for a
-    Gaussian phase it is exact (see _perfect_coronagraph_otf); its sum is the
-    scattered fraction 1 - SR. Removing instead only the coherent part of the
-    long-exposure field, exp(-sigma^2) PSF_DL, would miss <|a|^2> - |<a>|^2, the
-    temporal fluctuation of the coherent energy (low-order modes such as tip-tilt):
-    within 0.5 lambda/D it was off by factors 0.4-4 in an ERIS end-to-end test
-    (validation/perfect_coronagraph). Far from the axis and for small residuals both
-    reduce to the PSD (Fusco et al. 2006).
+    average depends only on the second-order moments of the field, so it is exact
+    for a Gaussian, stationary phase (see _perfect_coronagraph_otf); its sum is
+    the scattered fraction 1 - SR.
+    The simpler recipes PSF - exp(-sigma^2) PSF_DL (removal of the coherent part
+    of the long-exposure field) and PSF - SR PSF_DL assume that the field
+    correlated with a is diffraction limited; the first also misses
+    <|a|^2> - |<a>|^2, the frame-to-frame fluctuation of the coherent energy
+    (tip-tilt jitter). Against a frame-by-frame coronagraph on SPECULA ERIS
+    residual fields (validation/perfect_coronagraph, SR 0.77-0.97) they are off
+    by 26-30 % at 0.5-1 lambda/D and by factors 0.01-1.3 within 0.5 lambda/D;
+    this formula is within 7 % beyond 0.5 lambda/D and +17..+41 % within it
+    (non-Gaussian residual, a hypothesis). Beyond 2 lambda/D all agree within
+    6 %, and far from the axis they reduce to the PSD (Fusco et al. 2006).
     """
     xp = mask.xp
     if defaultArrayDtype == defaultArrayBackend.float32:

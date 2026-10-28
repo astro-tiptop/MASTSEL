@@ -1,49 +1,61 @@
 # Perfect coronagraph: end-to-end validation with SPECULA
 
-This is a validation, not part of the test suite. It checks how the MASTSEL perfect-coronagraph image (`psdSetToPsfSet(..., perfectCoronagraph=True)`) compares with a frame-by-frame perfect coronagraph applied to the residual fields of a SPECULA end-to-end simulation.
+This is a validation, not part of the test suite. It checks the MASTSEL perfect-coronagraph image (`psdSetToPsfSet(..., perfectCoronagraph=True)`) against a frame-by-frame perfect coronagraph applied to the residual fields of a SPECULA end-to-end simulation.
 
 ## Files
 
 | File | Content |
 |---|---|
-| `params_eris_ngs.yml` | The ERIS NGS SCAO configuration: SH 40×40, 702 modes, VLT pupil. |
+| `params_eris_ngs.yml` | ERIS NGS SCAO: 8 m pupil (160 px, obscuration 0.138), SH 40×40, 702 modes. |
+| `calib_eris_ngs_subaps.yml`, `calib_eris_ngs_rec.yml` | Calibration of the subapertures and of the interaction/reconstruction matrices (`eris_subaps`, `eris_rec_test`). |
 | `coro_override.yml` | The overrides for this run: on-axis NGS, four `PsfCoronagraph` objects (J, H, K, L at nd = 4), 4 s, and the residual field saved every 4 ms. |
 | `specula_paired_comparison.py` | The comparison, run on the saved fields. |
-| `specula_eris_reference.npz` | Radial profiles (contrast units) and 128×128 crops of the long-exposure PSF and of the frame-by-frame coronagraphic image, for t = 0.1–2.0 s. |
+| `specula_eris_reference.npz` | Radial profiles (contrast units) of the frame-by-frame image and of the long-exposure formulas, and 128×128 crops of the long-exposure PSF and of the frame-by-frame coronagraphic image, for t = 0.1–4.0 s. |
 
 ## How to run
 
+The calibration data go in the `root_dir` of `params_eris_ngs.yml`. The DM influence functions (`VLT_ifunc`) are not distributed here.
+
 ```
-specula params_eris_ngs.yml coro_override.yml        # ~75 s on a Quadro RTX 6000; ~1 GB of fields in ./out_ef
-python specula_paired_comparison.py out_ef/<run>/ef.fits 2.0 specula_eris_reference.npz
+specula params_eris_ngs.yml calib_eris_ngs_subaps.yml   # subapertures
+specula params_eris_ngs.yml calib_eris_ngs_rec.yml      # interaction and reconstruction matrices
+specula params_eris_ngs.yml coro_override.yml           # ~45 s on a Quadro RTX 6000; ~0.2 GB of fields in ./out_ef
+python specula_paired_comparison.py out_ef/<run>/ef.fits 4.0 specula_eris_reference.npz
 ```
 
-The calibration data are in the `root_dir` of `params_eris_ngs.yml`.
+## The run
+
+- The loop is stable over the 4 s. In 0.5 s windows, the residual is 102–104 nm RMS, the tip-tilt is 16–24 nm RMS, and the K-band |a|² is 0.915–0.919.
+- The long-exposure SR is J 0.77, H 0.86, K 0.92, L 0.97.
+- The script computes the frame-by-frame image from 975 fields (every 4 ms). It agrees with SPECULA `PsfCoronagraph`, which integrates every 1 ms, within 0.8 %: the ratio is 0.992–1.004 per annulus in all bands.
 
 ## Result
 
-The frame-by-frame computation from the saved fields agrees with SPECULA `PsfCoronagraph` to 0.1 % (ratio 0.999–1.002 per annulus). This was checked on the full 4 s run and is not part of the script.
+The table gives the ratio of each long-exposure formula to the frame-by-frame image, per annulus. The range covers the four bands:
 
-The table gives the ratio of each long-exposure formula to the frame-by-frame image, per annulus. The range covers the four bands, J to L, with SR between 0.32 and 0.86:
-
-| r [λ/D] | long-exposure coherent removal | SR·PSF_DL removal | Gaussian frame-by-frame formula, empirical g |
+| r [λ/D] | coherent removal, ⟨I⟩ − \|⟨a⟩\|² PSF_DL | SR removal, ⟨I⟩ − SR PSF_DL | Gaussian formula (MASTSEL), empirical g |
 |---|---|---|---|
-| 0–0.5 | 0.40–4.1 | 0.02–1.40 | 0.77–0.87 |
-| 0.5–1 | 0.81–1.29 | 0.80–1.05 | 0.88–0.94 |
-| 1.5–2 (first dark ring) | 1.13–1.43 | 1.04–1.40 | 1.09–1.62 |
-| 2–5 | 0.95–1.09 | 0.94–1.05 | 0.98–1.20 |
-| > 5 | 0.93–1.01 | 0.93–0.99 | 0.97–1.05 |
+| 0–0.5 | 0.009–1.34 | 0.000–1.27 | 1.17–1.41 |
+| 0.5–1 | 1.26–1.30 | 1.26–1.29 | 1.04–1.07 |
+| 1–1.5 | 0.90–0.96 | 0.90–0.96 | 0.95–1.02 |
+| 1.5–2 | 0.89–0.99 | 0.89–0.99 | 1.00–1.05 |
+| 2–5 | 0.94–0.97 | 0.94–0.97 | 0.96–0.99 |
+| 5–40 | 0.97–1.00 | 0.97–1.00 | 0.98–1.00 |
 
-- **Long-exposure coherent removal.** Removing e^{−σ²}·PSF_DL misses ⟨|a|²⟩ − |⟨a⟩|², the temporal fluctuation of the coherent energy, which is dominated by tip-tilt and the other low-order modes. This is why the near-axis ratios in the first column are far from 1.
-- **The last column.** It is the formula used by MASTSEL, evaluated by the script with the empirical g = OTF_LE/OTF_tel of the same frames, so it tests the Gaussian/stationary assumption, not the MASTSEL code (that is covered by the Monte Carlo test). The formula is exact for a Gaussian, stationary phase.
-- **What remains.** The deviation is plausibly due to the non-Gaussian, non-stationary part of the real residual (pupil edge, spiders, finite statistics), but this is a hypothesis, not demonstrated. It is largest in the first dark ring at high SR.
+### Why the simpler formulas fail near the axis
 
-## Known problem of this run
+The frame-by-frame image is
 
-After about 2.2 s the simulation degrades:
-- the instantaneous K-band SR falls from ~0.8 to 0.03–0.3;
-- the tip-tilt grows from ~190 nm to ~500 nm RMS.
+⟨|FT(E − a P)|²⟩ = ⟨I⟩ − 2 Re[⟨a* FT(E)⟩ conj(FT P)] + ⟨|a|²⟩ |FT P|².
 
-The same happens with integrator gain 0.2, so it is not a loop instability. It is not investigated here; possible causes are the phase screens or the calibration. For this reason only t < 2 s is used.
+Both simpler formulas assume ⟨a* FT(E)⟩ = ⟨|a|²⟩ FT(P), i.e. that the part of the field correlated with a has the shape of the diffraction-limited field. This is not true: the residual phase correlates a with the scattered field within 1–2 λ/D.
 
-For the same reason, a direct TIPTOP vs SPECULA comparison is not meaningful with this configuration: TIPTOP gives a K-band SR of 0.94, SPECULA 0.65 on t < 2 s.
+- The coherent removal also replaces ⟨|a|²⟩ = SR by |⟨a⟩|². The difference is the frame-to-frame fluctuation of the coherent energy, dominated by tip-tilt jitter. It is small in this run (|⟨a⟩|² = SR to 3 digits), but it was large in an earlier run with ~200–500 nm of tip-tilt.
+- In the L band, within 0.5 λ/D, both remove almost everything (ratio 0.01 and 0.00). Between 0.5 and 1 λ/D they overestimate by 26–30 % in every band.
+
+### The MASTSEL formula
+
+- The script evaluates it with the empirical g = OTF_LE / OTF_tel of the same frames. This tests the Gaussian/stationary assumption of the formula, not the MASTSEL code; the code is covered by the Monte Carlo test.
+- It computes ⟨a* FT(E)⟩ from the second-order moments of the field and is exact for a Gaussian, stationary phase.
+- It is within 7 % of the frame-by-frame image beyond 0.5 λ/D and within 5 % beyond 2 λ/D.
+- Within 0.5 λ/D it overestimates by 17–41 %. This is plausibly due to the non-Gaussian, non-stationary part of the real residual, but that is a hypothesis, not demonstrated.

@@ -3,7 +3,8 @@ Perfect coronagraph: frame-by-frame reference vs long-exposure formulas, on the
 residual fields of a SPECULA end-to-end run (validation only, not a test).
 
 Inputs : the residual electric field saved by SPECULA (DataStore of
-         'prop.out_source_ngs_ef', here every 4 ms), see coro_override.yml.
+         'prop.out_source_ngs_ef', here every 4 ms), see coro_override.yml
+         and README.md for the whole run sequence.
 Outputs: ratio tables printed per band and annulus (lambda/D), and
          specula_eris_reference.npz with radial profiles and 128x128 crops of
          the long-exposure PSF and of the frame-by-frame coronagraphic image.
@@ -63,5 +64,5 @@ for band, wl in bands:
     print(f"{'r':>9s} {'fbf':>9s} {'LE coh':>7s} {'SR rem':>7s} {'model':>7s}")
     for i, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
         f = prof['fbf'][i]
-        print(f"{lo:4.1f}-{hi:<4.0f} {f:9.2e} {prof['le_coherent'][i]/f:7.3f} {prof['sr_removal'][i]/f:7.3f} {prof['model'][i]/f:7.3f}")
+        print(f"{lo:4.1f}-{hi:<4.1f} {f:9.2e} {prof['le_coherent'][i]/f:7.3f} {prof['sr_removal'][i]/f:7.3f} {prof['model'][i]/f:7.3f}")
 np.savez_compressed(out_file, **out)
