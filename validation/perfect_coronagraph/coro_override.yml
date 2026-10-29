@@ -1,0 +1,68 @@
+# Perfect-coronagraph reference for the MASTSEL/TIPTOP coronagraphic PSF (validation only).
+# Run: specula params_eris_ngs.yml coro_override.yml   (ERIS NGS SCAO, on-axis NGS)
+
+main_override:
+  total_time:        4.000                  # [s]
+
+source_ngs_override:
+  polar_coordinates: [0.0, 0.0]             # on axis
+
+remove: ['psf']
+
+psf_J:
+  class:             'PsfCoronagraph'
+  simul_params_ref:  'main'
+  wavelengthInNm:    1250
+  nd:                4
+  start_time:        0.1
+  inputs:
+    in_ef: 'prop.out_source_ngs_ef'
+  outputs: ['out_int_psf', 'out_int_coronagraph_psf', 'out_int_sr']
+
+psf_H:
+  class:             'PsfCoronagraph'
+  simul_params_ref:  'main'
+  wavelengthInNm:    1650
+  nd:                4
+  start_time:        0.1
+  inputs:
+    in_ef: 'prop.out_source_ngs_ef'
+  outputs: ['out_int_psf', 'out_int_coronagraph_psf', 'out_int_sr']
+
+psf_K:
+  class:             'PsfCoronagraph'
+  simul_params_ref:  'main'
+  wavelengthInNm:    2200
+  nd:                4
+  start_time:        0.1
+  inputs:
+    in_ef: 'prop.out_source_ngs_ef'
+  outputs: ['out_int_psf', 'out_int_coronagraph_psf', 'out_int_sr']
+
+psf_L:
+  class:             'PsfCoronagraph'
+  simul_params_ref:  'main'
+  wavelengthInNm:    3800
+  nd:                4
+  start_time:        0.1
+  inputs:
+    in_ef: 'prop.out_source_ngs_ef'
+  outputs: ['out_int_psf', 'out_int_coronagraph_psf', 'out_int_sr']
+
+store_psf:
+  class:             'DataStore'
+  store_dir:         './out'
+  start_time:        3.999                  # last step only: the integrated PSFs
+  inputs:
+    input_list: ['psfJ-psf_J.out_int_psf', 'coroJ-psf_J.out_int_coronagraph_psf', 'srJ-psf_J.out_int_sr',
+                 'psfH-psf_H.out_int_psf', 'coroH-psf_H.out_int_coronagraph_psf', 'srH-psf_H.out_int_sr',
+                 'psfK-psf_K.out_int_psf', 'coroK-psf_K.out_int_coronagraph_psf', 'srK-psf_K.out_int_sr',
+                 'psfL-psf_L.out_int_psf', 'coroL-psf_L.out_int_coronagraph_psf', 'srL-psf_L.out_int_sr']
+
+store_ef:
+  class:             'DataStore'
+  store_dir:         './out_ef'
+  start_time:        0.1
+  downsample_factor: 4                      # one residual field every 4 ms (scratch only, ~1 GB)
+  inputs:
+    input_list: ['ef-prop.out_source_ngs_ef']
