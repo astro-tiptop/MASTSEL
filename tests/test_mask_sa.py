@@ -8,7 +8,7 @@ accumulated in the same array and every such list entry was the same object (the
 last modified one). ``maskSA([1, 4, 8], 3, pupil)`` returned masks with sums
 ``[full pupil, (N/4)^2, (N/4)^2]`` instead of ``[full pupil, (N/4)^2, (N/8)^2]``.
 
-Expected: one independent array per star; for ``nSA >= 4`` the mask is the centred
+Expected: one independent array per star; for ``nSA >= 4`` the mask is the centered
 square of side N/nSA (not multiplied by the pupil).
 """
 
@@ -22,7 +22,7 @@ from mastsel.mavisPsf import maskSA
 N = 64  # divisible by 8
 
 
-def _centred_square(n, side):
+def _centered_square(n, side):
     ref = np.zeros((n, n))
     lo = n // 2 - side // 2
     ref[lo:lo + side, lo:lo + side] = 1
@@ -42,8 +42,8 @@ class TestMaskSA(unittest.TestCase):
         self.assertEqual(len(masks), 3)
         m = [_host(x) for x in masks]
         np.testing.assert_array_equal(m[0], self.pupil)
-        np.testing.assert_array_equal(m[1], _centred_square(N, N // 4))
-        np.testing.assert_array_equal(m[2], _centred_square(N, N // 8))
+        np.testing.assert_array_equal(m[1], _centered_square(N, N // 4))
+        np.testing.assert_array_equal(m[2], _centered_square(N, N // 8))
         self.assertEqual(m[1].sum(), (N // 4) ** 2)
         self.assertEqual(m[2].sum(), (N // 8) ** 2)
         self.assertIsNot(masks[1], masks[2])
@@ -63,12 +63,12 @@ class TestMaskSA(unittest.TestCase):
     def test_single_mask_case_unchanged(self):
         mask = maskSA([4], 3, self.pupil)  # len(nSA) != nMask -> single array
         self.assertIsInstance(mask, np.ndarray)
-        np.testing.assert_array_equal(mask, _centred_square(N, N // 4))
+        np.testing.assert_array_equal(mask, _centered_square(N, N // 4))
 
     def test_equal_entries_have_equal_values(self):
         m0, m1 = [_host(x) for x in maskSA([4, 4], 2, self.pupil)]
         np.testing.assert_array_equal(m0, m1)
-        np.testing.assert_array_equal(m0, _centred_square(N, N // 4))
+        np.testing.assert_array_equal(m0, _centered_square(N, N // 4))
 
 
 if __name__ == "__main__":

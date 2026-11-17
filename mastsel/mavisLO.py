@@ -1070,19 +1070,27 @@ class MavisLO(object):
 
     def computeBiasAndVariance(self, aNGS_flux, aNGS_freq, aNGS_EE,
                                aNGS_FWHM_mas, PixelScale, doLO=True):
-        if doLO:
-            if self.WindowRadiusWCoG_LO == 0:
-                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/PixelScale)),1)
-            else:
-                WindowRadiusWCoG = self.WindowRadiusWCoG_LO
-            self.mediumPixelScale = PixelScale/self.downsample_factor
+        """Bias (optical gain) and variance [pixel^2] of the WCoG on a Gaussian spot.
+
+        With WindowRadiusWCoG = 'optimize' (stored as 0) the window radius R is the
+        integer, from 1 to half the medium grid, that minimizes the noise-equivalent
+        variance varx / bias^2. This is the quantity that enters the residuals
+        (sigma2Noise = var / bias^2 in computeNoiseResidual/computeWindResidual), which
+        with an optimized loop gain do not decrease when the noise increases: the
+        chosen R minimizes the LO residual. With a fixed loop gain the same criterion
+        is used, but the optical gain is not compensated (it also scales the effective
+        loop gain), so R is not guaranteed to be optimal: a numeric WindowRadiusWCoG
+        can be set instead.
+        The radius used is stored in self.windowRadiusWCoG (per star in self.wcogRadius
+        and self.wcogRadiusF after computeTotalResidualMatrix / computeFocusTotalResidualMatrix).
+        """
+        WindowRadiusWCoG = self.WindowRadiusWCoG_LO if doLO else self.WindowRadiusWCoG_Focus
+        self.mediumPixelScale = PixelScale/self.downsample_factor
+        if WindowRadiusWCoG == 0:
+            radii = range(1, self.mediumGridSize//2 + 1)
         else:
-            if self.WindowRadiusWCoG_Focus == 0:
-                WindowRadiusWCoG = max(int(np.ceil((aNGS_FWHM_mas/2)/PixelScale)),1)
-            else:
-                WindowRadiusWCoG = self.WindowRadiusWCoG_Focus
-            self.mediumPixelScale = PixelScale/self.downsample_factor
-        self.smallGridSize = 2*WindowRadiusWCoG
+            radii = [WindowRadiusWCoG]
+        self.smallGridSize = 2*max(radii)
 
         # aNGS_flux is provided in photons/s
         aNGS_frameflux = aNGS_flux / aNGS_freq
@@ -1102,38 +1110,44 @@ class MavisLO(object):
 
         I_k_data = intRebin(I_k_data, self.mediumShape) * self.downsample_factor**2
         I_k_prime_data = intRebin(I_k_prime_data,self.mediumShape) * self.downsample_factor**2
-        W_Mask = np.zeros(self.mediumShape, dtype=self.dtype)
         # this is the array with the CoG weights, they are not normalized and so
         # the variance is in pixel2
         ffx = np.arange(-self.mediumGridSize/2, self.mediumGridSize/2, 1.0) + 0.5
         (fx, fy) = np.meshgrid(ffx, ffx)
-        # binary mask
-        W_Mask = np.where(np.logical_or(fx**2 +fy**2 > WindowRadiusWCoG**2, fx**2 + fy**2 < 0**2),
-                          0.0, 1.0)
+        # the crop only saves time: the masked sums are zero outside the window
         if self.smallGridSize < self.mediumGridSize/2:
             ii1, ii2 = int(self.mediumGridSize/2-self.smallGridSize), \
                        int(self.mediumGridSize/2+self.smallGridSize)
             I_k_data = I_k_data[ii1:ii2,ii1:ii2]
             I_k_prime_data = I_k_prime_data[ii1:ii2,ii1:ii2]
-            W_Mask = W_Mask[ii1:ii2,ii1:ii2]
             fx = fx[ii1:ii2,ii1:ii2]
             fy = fy[ii1:ii2,ii1:ii2]
         mu_ktr_array, var_ktr_array, _ = \
                                self.meanVarSigma(I_k_data, doLO=doLO)
         mu_ktr_prime_array, _, _ = \
                                self.meanVarSigma(I_k_prime_data, doLO=doLO)
-        masked_mu0 = W_Mask * mu_ktr_array
-        masked_mu = W_Mask * mu_ktr_prime_array
-        masked_sigma = W_Mask**2 * var_ktr_array
-        # NOTE: keep the historical normalization convention used by the MAVIS model.
-        mux = np.sum(masked_mu*fx)/np.sum(masked_mu)
-        muy = np.sum(masked_mu*fy)/np.sum(masked_mu)
-        varx = np.sum(masked_sigma*fx**2)/(np.sum(masked_mu0)**2)
-        vary = np.sum(masked_sigma*fy**2)/(np.sum(masked_mu0)**2)
 
-        bias = mux/(self.p_offset/self.downsample_factor)
+        best_noise_equiv = np.inf
+        for radius in radii:
+            # binary mask
+            W_Mask = np.where(fx**2 + fy**2 > radius**2, 0.0, 1.0)
+            masked_mu0 = W_Mask * mu_ktr_array
+            masked_mu = W_Mask * mu_ktr_prime_array
+            masked_sigma = W_Mask**2 * var_ktr_array
+            # NOTE: keep the historical normalization convention used by the MAVIS model.
+            mux = np.sum(masked_mu*fx)/np.sum(masked_mu)
+            muy = np.sum(masked_mu*fy)/np.sum(masked_mu)
+            varx = np.sum(masked_sigma*fx**2)/(np.sum(masked_mu0)**2)
+            vary = np.sum(masked_sigma*fy**2)/(np.sum(masked_mu0)**2)
+            bias = mux/(self.p_offset/self.downsample_factor)
 
-        return (bias,(mux,muy),(varx,vary))
+            noise_equiv = varx/bias**2 if bias > 0 else np.inf
+            if len(radii) == 1 or noise_equiv < best_noise_equiv:
+                best_noise_equiv = noise_equiv
+                result = (bias,(mux,muy),(varx,vary))
+                self.windowRadiusWCoG = radius
+
+        return result
 
 
     # The cache ignores `self`: every instance attribute the result depends on
@@ -1947,6 +1961,7 @@ class MavisLO(object):
         self.bias = []
         self.amu = []
         self.avar = []
+        self.wcogRadius = []
         self.wr = []
         self.ar = []
         self.nr = []
@@ -1987,6 +2002,7 @@ class MavisLO(object):
             self.bias.append(bias)
             self.amu.append(amu)
             self.avar.append(avar)
+            self.wcogRadius.append(self.windowRadiusWCoG)
 
             var1x = float(cpuArray(var1x) * self.mas2nm**2)
 
@@ -2099,6 +2115,7 @@ class MavisLO(object):
         self.biasF = []
         self.amuF = []
         self.avarF = []
+        self.wcogRadiusF = []
         self.nrF = []
 
         maxFluxIndex = np.where(aNGS_flux==np.amax(aNGS_flux))
@@ -2133,6 +2150,7 @@ class MavisLO(object):
             self.biasF.append(bias)
             self.amuF.append(amu)
             self.avarF.append(avar)
+            self.wcogRadiusF.append(self.windowRadiusWCoG)
 
             # noise propagation coefficient of focus is 0.4 times the one of tilt
             Cnoise = 0.4
