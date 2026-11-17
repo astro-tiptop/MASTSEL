@@ -1073,11 +1073,11 @@ class MavisLO(object):
         """Bias (optical gain) and variance [pixel^2] of the WCoG on a Gaussian spot.
 
         With WindowRadiusWCoG = 'optimize' (stored as 0) the window radius R is the
-        integer, from 1 to half the medium grid, that minimises the noise-equivalent
+        integer, from 1 to half the medium grid, that minimizes the noise-equivalent
         variance varx / bias^2. This is the quantity that enters the residuals
         (sigma2Noise = var / bias^2 in computeNoiseResidual/computeWindResidual), which
-        with an optimised loop gain do not decrease when the noise increases: the
-        chosen R minimises the LO residual. With a fixed loop gain the same criterion
+        with an optimized loop gain do not decrease when the noise increases: the
+        chosen R minimizes the LO residual. With a fixed loop gain the same criterion
         is used, but the optical gain is not compensated (it also scales the effective
         loop gain), so R is not guaranteed to be optimal: a numeric WindowRadiusWCoG
         can be set instead.

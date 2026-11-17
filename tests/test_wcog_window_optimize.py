@@ -6,13 +6,13 @@ Physical expectation
 For a Gaussian spot the WCoG with window radius R has an optical gain (bias)
 b(R) and a centroid variance var(R) [pixel^2]. With ``LoopGain_LO = 'optimize'``
 the bias enters the residuals only through sigma2Noise = var/b^2
-(``computeNoiseResidual``, ``computeWindResidual``), and the optimised-gain
+(``computeNoiseResidual``, ``computeWindResidual``), and the optimized-gain
 residual does not decrease when the noise level increases. Hence the radius
-that minimises var/b^2 must also minimise the LO residual nr + wr, and:
+that minimizes var/b^2 must also minimize the LO residual nr + wr, and:
 
 1. with a numeric window the result is identical to the previous implementation;
 2. the chosen R is the brute-force argmin over R = 1..mediumGridSize//2 of var/b^2;
-3. the chosen R minimises nr + wr among the other radii;
+3. the chosen R minimizes nr + wr among the other radii;
 4. the chosen R does not decrease with the spot FWHM (as long as it does not
    saturate at the grid edge, mediumGridSize//2 = 25: a known limit, beyond
    which the window cannot grow any further);
@@ -40,7 +40,7 @@ EE = 0.5               # encircled energy used to scale the spot
 
 
 def _load_config() -> dict:
-    """Test ini as nested dict, with an ANDES-like LO sensor and optimised window/gain."""
+    """Test ini as nested dict, with an ANDES-like LO sensor and optimized window/gain."""
     parser = configparser.ConfigParser()
     parser.optionxform = str
     parser.read(INI_PATH)
@@ -168,7 +168,7 @@ class TestWcogWindowOptimize(unittest.TestCase):
             np.testing.assert_allclose(res[0], ref[0], rtol=1e-12)
             np.testing.assert_allclose(res[2], ref[2], rtol=1e-12)
 
-    def test_3_optimize_minimises_residual(self):
+    def test_3_optimize_minimizes_residual(self):
         for fwhm_px in (3.0, 10.0, 20.0):
             _, radius = self._optimized(fwhm_px)
             self.assertLess(radius, self.rmax)
