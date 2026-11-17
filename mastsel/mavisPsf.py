@@ -623,7 +623,6 @@ def residualToSpectrum(ellp, wvl, N,  pixel_scale_otf):
 def maskSA(nSA, nMask, telPupil):
     # define a set 2D array with the mask of the sub-aperture of the WFS
     pupilSidePix = int(telPupil.shape[0])
-    saMask = telPupil * 0
     if len(nSA) == nMask:
         mask = []
     else:
@@ -633,6 +632,9 @@ def maskSA(nSA, nMask, telPupil):
         if nSA[i] == 1:
             maskI = telPupil
         else:
+            # a new array for each mask: a shared one accumulated the squares of the
+            # previous stars and all list entries pointed to the last mask
+            saMask = telPupil * 0
             if nSA[i] == 2:
                 saMask[0:saSidePix,0:saSidePix] = 1
                 saMask *= telPupil
